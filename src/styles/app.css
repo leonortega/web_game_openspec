@@ -1,0 +1,130 @@
+:root {
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  color: #f7f3d6;
+  background:
+    radial-gradient(circle at top, #345b63 0%, rgba(52, 91, 99, 0.2) 35%, transparent 60%),
+    linear-gradient(180deg, #13231f 0%, #091310 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+  width: 100%;
+}
+
+body {
+  min-height: 100vh;
+}
+
+#app {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.game-shell {
+  position: relative;
+  width: min(100%, 1080px);
+  aspect-ratio: 16 / 9;
+  border: 2px solid rgba(247, 243, 214, 0.25);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  background: #0e1c19;
+}
+
+.game-shell canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hud-layer {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px;
+}
+
+.hud-top,
+.hud-bottom {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hud-card {
+  min-width: 140px;
+  padding: 12px 14px;
+  border: 1px solid rgba(247, 243, 214, 0.18);
+  border-radius: 14px;
+  background: rgba(10, 20, 18, 0.7);
+  backdrop-filter: blur(6px);
+}
+
+.hud-label {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #b6c7b2;
+}
+
+.hud-value {
+  display: block;
+  margin-top: 4px;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.message-panel {
+  position: absolute;
+  left: 50%;
+  top: 24px;
+  transform: translateX(-50%);
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(197, 145, 65, 0.88);
+  color: #11150f;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.message-panel.visible {
+  opacity: 1;
+}
+
+@media (max-width: 720px) {
+  #app {
+    padding: 12px;
+  }
+
+  .game-shell {
+    aspect-ratio: auto;
+    min-height: 88vh;
+  }
+
+  .hud-layer {
+    padding: 10px;
+  }
+
+  .hud-card {
+    min-width: 110px;
+    padding: 10px 12px;
+  }
+
+  .hud-value {
+    font-size: 1rem;
+  }
+}

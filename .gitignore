@@ -1,0 +1,9 @@
+node_modules/
+dist/
+
+.preview.out.log
+.preview.err.log
+.playtest-*.png
+
+.DS_Store
+Thumbs.db
