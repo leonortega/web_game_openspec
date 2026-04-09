@@ -2,7 +2,11 @@ import Phaser from 'phaser';
 import { stageDefinitions } from '../../game/content/stages';
 import { SceneBridge } from '../adapters/sceneBridge';
 
+const AUTO_ADVANCE_MS = 2800;
+
 export class CompleteScene extends Phaser.Scene {
+  private autoAdvanceTimeout: number | null = null;
+
   constructor() {
     super('complete');
   }
@@ -13,6 +17,33 @@ export class CompleteScene extends Phaser.Scene {
     const state = session.getState();
     const finalStage = state.stageIndex >= stageDefinitions.length - 1;
     const { width, height } = this.scale;
+    let transitioning = false;
+
+    const goToMenu = () => {
+      if (transitioning) {
+        return;
+      }
+      transitioning = true;
+      this.scene.start('menu');
+    };
+
+    const replayStage = () => {
+      if (transitioning) {
+        return;
+      }
+      transitioning = true;
+      session.restartStage();
+      this.scene.start('stage-intro');
+    };
+
+    const continueForward = () => {
+      if (transitioning || finalStage) {
+        return;
+      }
+      transitioning = true;
+      session.advanceToNextStage();
+      this.scene.start('stage-intro');
+    };
 
     this.add.rectangle(width / 2, height / 2, width, height, 0x091310, 0.92).setOrigin(0.5);
     this.add
@@ -28,7 +59,7 @@ export class CompleteScene extends Phaser.Scene {
       .text(
         width / 2,
         250,
-        `Recovered crystals: ${state.progress.totalCrystals}\nUnlocked stages: ${state.progress.unlockedStageIndex + 1}`,
+        `Recovered crystals: ${state.progress.totalCrystals}\nUnlocked stages: ${state.progress.unlockedStageIndex + 1}\nPower: ${state.progress.unlockedPowers.dash ? 'Air Dash online' : 'Dormant'}`,
         {
           align: 'center',
           fontFamily: 'Trebuchet MS',
@@ -44,28 +75,30 @@ export class CompleteScene extends Phaser.Scene {
         width / 2,
         390,
         finalStage
-          ? 'Press M for menu or R to replay the final stage'
-          : 'Press N for the next stage, R to replay, or M for menu',
+          ? 'Final stage clear. Press M for menu or R to replay.'
+          : `Next stage opens automatically in ${Math.round(AUTO_ADVANCE_MS / 1000)} seconds.\nPress R to replay or M for menu.`,
         {
           align: 'center',
           fontFamily: 'Trebuchet MS',
           fontSize: '20px',
           color: '#b9cab8',
+          lineSpacing: 8,
         },
       )
       .setOrigin(0.5);
 
-    this.input.keyboard?.once('keydown-R', () => {
-      session.restartStage();
-      this.scene.start('game');
-    });
-    this.input.keyboard?.once('keydown-M', () => {
-      this.scene.start('menu');
-    });
-    this.input.keyboard?.once('keydown-N', () => {
-      if (!finalStage) {
-        session.advanceToNextStage();
-        this.scene.start('game');
+    this.input.keyboard?.once('keydown-R', replayStage);
+    this.input.keyboard?.once('keydown-M', goToMenu);
+    this.input.keyboard?.once('keydown-N', continueForward);
+
+    if (!finalStage) {
+      this.autoAdvanceTimeout = window.setTimeout(continueForward, AUTO_ADVANCE_MS);
+    }
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (this.autoAdvanceTimeout !== null) {
+        window.clearTimeout(this.autoAdvanceTimeout);
+        this.autoAdvanceTimeout = null;
       }
     });
   }

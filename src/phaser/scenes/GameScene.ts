@@ -3,21 +3,33 @@ import type {
   CheckpointState,
   CollectibleState,
   EnemyState,
-  HazardState,
+  PlatformState,
   ProjectileState,
 } from '../../game/simulation/state';
 import { createHud } from '../../ui/hud/hud';
 import { SceneBridge } from '../adapters/sceneBridge';
+import { SynthAudio } from '../audio/SynthAudio';
 import { configureCamera } from '../view/camera/configureCamera';
 
 export class GameScene extends Phaser.Scene {
   private bridge!: SceneBridge;
+
+  private audio!: SynthAudio;
+
   private player!: Phaser.GameObjects.Rectangle;
+
+  private platformSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
   private enemySprites = new Map<string, Phaser.GameObjects.Sprite>();
+
   private checkpointSprites = new Map<string, Phaser.GameObjects.Sprite>();
+
   private collectibleSprites = new Map<string, Phaser.GameObjects.Sprite>();
+
   private projectileSprites = new Map<string, Phaser.GameObjects.Sprite>();
+
   private exitSprite!: Phaser.GameObjects.Sprite;
+
   private hud = createHud(document.createElement('div'));
 
   constructor() {
@@ -26,6 +38,7 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.bridge = this.registry.get('bridge') as SceneBridge;
+    this.audio = new SynthAudio(this);
     const mount = this.game.canvas.parentElement as HTMLElement;
     this.hud.root.remove();
     this.hud = createHud(mount);
@@ -43,16 +56,17 @@ export class GameScene extends Phaser.Scene {
     bg.fillCircle(220, 160, 180);
     bg.fillCircle(stage.world.width - 220, 120, 120);
 
-    for (const platform of stage.platforms) {
-      this.add
+    for (const platform of state.stageRuntime.platforms) {
+      const sprite = this.add
         .rectangle(
           platform.x + platform.width / 2,
           platform.y + platform.height / 2,
           platform.width,
           platform.height,
-          stage.palette.ground,
+          this.platformColor(platform),
         )
         .setOrigin(0.5);
+      this.platformSprites.set(platform.id, sprite);
     }
 
     for (const hazard of state.stageRuntime.hazards) {
@@ -82,10 +96,16 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
     this.syncView();
     this.bridge.syncHud(this.hud);
+    this.audio.startStageMusic(stage.id);
   }
 
   update(_: number, delta: number): void {
     this.bridge.consumeFrame(delta);
+    const cues = this.bridge.drainCues();
+    for (const cue of cues) {
+      this.audio.playCue(cue);
+    }
+
     const state = this.bridge.getSession().getState();
     this.syncView();
     this.bridge.syncHud(this.hud);
@@ -98,7 +118,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   shutdown(): void {
+    this.audio.stopMusic();
     this.hud.root.remove();
+    this.platformSprites.clear();
     this.enemySprites.clear();
     this.checkpointSprites.clear();
     this.collectibleSprites.clear();
@@ -110,9 +132,14 @@ export class GameScene extends Phaser.Scene {
     const left = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.A);
     const right = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.D);
     const up = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+    const shift = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
     const space = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     const r = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.R);
     const esc = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+
+    const unlockAudio = () => this.audio.unlock();
+    this.input.keyboard?.once('keydown', unlockAudio);
+    this.input.once('pointerdown', unlockAudio);
 
     const updateInput = () => {
       const moveLeft = Boolean(cursors?.left.isDown || left?.isDown);
@@ -129,6 +156,7 @@ export class GameScene extends Phaser.Scene {
     for (const key of [cursors?.up, up, space]) {
       key?.on('down', () => this.bridge.pressJump());
     }
+    shift?.on('down', () => this.bridge.pressDash());
 
     r?.on('down', () => {
       this.bridge.getSession().restartStage();
@@ -142,31 +170,18 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.events.off(Phaser.Scenes.Events.UPDATE, updateInput);
       this.hud.root.remove();
+      this.audio.stopMusic();
     });
   }
 
-  private drawHazard(hazard: HazardState): void {
-    if (hazard.kind === 'spikes') {
-      this.add
-        .rectangle(
-          hazard.rect.x + hazard.rect.width / 2,
-          hazard.rect.y + hazard.rect.height / 2,
-          hazard.rect.width,
-          hazard.rect.height,
-          0xe75b5b,
-        )
-        .setOrigin(0.5);
-      return;
-    }
-
-    const color = hazard.kind === 'lava' ? 0xff6a2e : 0x000000;
+  private drawHazard(hazard: { kind: string; rect: { x: number; y: number; width: number; height: number } }): void {
     this.add
       .rectangle(
         hazard.rect.x + hazard.rect.width / 2,
         hazard.rect.y + hazard.rect.height / 2,
         hazard.rect.width,
         hazard.rect.height,
-        color,
+        0xe75b5b,
       )
       .setOrigin(0.5);
   }
@@ -176,6 +191,11 @@ export class GameScene extends Phaser.Scene {
     const { player } = state;
     this.player.setPosition(player.x, player.y);
     this.player.setAlpha(player.invulnerableMs > 0 && Math.floor(player.invulnerableMs / 90) % 2 === 0 ? 0.45 : 1);
+    this.player.setFillStyle(player.dashTimerMs > 0 ? 0xffffff : 0xf5cf64);
+
+    for (const platform of state.stageRuntime.platforms) {
+      this.syncPlatform(platform);
+    }
 
     for (const checkpoint of state.stageRuntime.checkpoints) {
       this.syncCheckpoint(checkpoint);
@@ -203,6 +223,23 @@ export class GameScene extends Phaser.Scene {
     this.exitSprite.setAlpha(state.stageRuntime.exitReached ? 0.55 : 1);
   }
 
+  private syncPlatform(platform: PlatformState): void {
+    const sprite = this.platformSprites.get(platform.id);
+    if (!sprite) {
+      return;
+    }
+
+    sprite.setPosition(platform.x + platform.width / 2, platform.y + platform.height / 2);
+    sprite.setFillStyle(this.platformColor(platform));
+
+    if (platform.kind === 'falling' && platform.fall) {
+      const alpha = platform.fall.falling ? 0.45 : platform.fall.triggered ? 0.7 : 1;
+      sprite.setAlpha(alpha);
+    } else {
+      sprite.setAlpha(1);
+    }
+  }
+
   private syncCheckpoint(checkpoint: CheckpointState): void {
     const sprite = this.checkpointSprites.get(checkpoint.id);
     sprite?.setTint(checkpoint.activated ? 0xd8ff74 : 0x91f275);
@@ -228,6 +265,12 @@ export class GameScene extends Phaser.Scene {
     if (enemy.alive) {
       sprite.setPosition(enemy.x, enemy.y);
       sprite.setFlipX(enemy.direction < 0);
+      sprite.setTint(
+        enemy.kind === 'charger' ? 0xffa16f : enemy.kind === 'flyer' ? 0xc9fdff : 0xffffff,
+      );
+      if (enemy.kind === 'charger' && enemy.charger?.state === 'windup') {
+        sprite.setTint(0xffe38a);
+      }
     }
   }
 
@@ -245,5 +288,18 @@ export class GameScene extends Phaser.Scene {
     }
 
     sprite.setPosition(projectile.x, projectile.y);
+  }
+
+  private platformColor(platform: PlatformState): number {
+    switch (platform.kind) {
+      case 'moving':
+        return 0x8faec6;
+      case 'falling':
+        return 0xc78f59;
+      case 'spring':
+        return 0x8fd37c;
+      default:
+        return this.bridge.getSession().getState().stage.palette.ground;
+    }
   }
 }

@@ -1,9 +1,18 @@
 import type {
   EnemyKind,
   HazardKind,
+  PlatformKind,
   Rect,
   Vector2,
 } from '../simulation/state';
+
+export type PlatformDefinition = Rect & {
+  id: string;
+  kind: PlatformKind;
+  move?: { axis: 'x' | 'y'; range: number; speed: number };
+  fall?: { triggerDelayMs: number };
+  spring?: { boost: number; cooldownMs: number };
+};
 
 export type EnemyDefinition = {
   id: string;
@@ -12,6 +21,8 @@ export type EnemyDefinition = {
   patrol?: { left: number; right: number; speed: number };
   hop?: { intervalMs: number; impulse: number; speed: number };
   turret?: { intervalMs: number };
+  charger?: { left: number; right: number; patrolSpeed: number; chargeSpeed: number; windupMs: number; cooldownMs: number };
+  flyer?: { left: number; right: number; speed: number; bobAmp: number; bobSpeed: number };
 };
 
 export type StageDefinition = {
@@ -37,7 +48,7 @@ export type StageDefinition = {
     gravity: number;
   };
   playerSpawn: Vector2;
-  platforms: Rect[];
+  platforms: PlatformDefinition[];
   checkpoints: { id: string; rect: Rect }[];
   collectibles: { id: string; position: Vector2 }[];
   hazards: { id: string; kind: HazardKind; rect: Rect }[];
@@ -46,11 +57,51 @@ export type StageDefinition = {
   hint: string;
 };
 
-const ground = (x: number, y: number, width: number, height = 32): Rect => ({
+const ground = (x: number, y: number, width: number, height = 32): PlatformDefinition => ({
+  id: `platform-${x}-${y}`,
+  kind: 'static',
   x,
   y,
   width,
   height,
+});
+
+const moving = (
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  axis: 'x' | 'y',
+  range: number,
+  speed: number,
+): PlatformDefinition => ({
+  id: `platform-${x}-${y}-moving`,
+  kind: 'moving',
+  x,
+  y,
+  width,
+  height,
+  move: { axis, range, speed },
+});
+
+const falling = (x: number, y: number, width: number, height = 32, triggerDelayMs = 650): PlatformDefinition => ({
+  id: `platform-${x}-${y}-falling`,
+  kind: 'falling',
+  x,
+  y,
+  width,
+  height,
+  fall: { triggerDelayMs },
+});
+
+const spring = (x: number, y: number, width: number, height = 32, boost = 860): PlatformDefinition => ({
+  id: `platform-${x}-${y}-spring`,
+  kind: 'spring',
+  x,
+  y,
+  width,
+  height,
+  spring: { boost, cooldownMs: 350 },
 });
 
 export const stageDefinitions: StageDefinition[] = [
@@ -79,13 +130,13 @@ export const stageDefinitions: StageDefinition[] = [
       ground(760, 525, 180),
       ground(1020, 470, 190),
       ground(1290, 540, 220),
-      ground(1610, 600, 240),
+      moving(1610, 600, 240, 32, 'x', 120, 80),
       ground(1920, 540, 180),
       ground(2180, 495, 180),
       ground(2440, 450, 210),
       ground(2720, 520, 220),
       ground(3040, 590, 250),
-      ground(3370, 535, 190),
+      falling(3370, 535, 190),
       ground(3630, 470, 180),
       ground(3890, 420, 190),
       ground(4170, 485, 200),
@@ -97,17 +148,17 @@ export const stageDefinitions: StageDefinition[] = [
       ground(5820, 450, 200),
       ground(6100, 520, 200),
       ground(6380, 590, 220),
-      ground(6680, 520, 180),
+      spring(6680, 520, 180),
       ground(6940, 460, 180),
       ground(7200, 400, 180),
       ground(7460, 470, 200),
       ground(7750, 540, 220),
     ],
     checkpoints: [
-      { id: 'cp-1', rect: { x: 1540, y: 520, width: 24, height: 80 } },
-      { id: 'cp-2', rect: { x: 3400, y: 455, width: 24, height: 80 } },
+      { id: 'cp-1', rect: { x: 1420, y: 460, width: 24, height: 80 } },
+      { id: 'cp-2', rect: { x: 3090, y: 510, width: 24, height: 80 } },
       { id: 'cp-3', rect: { x: 5130, y: 460, width: 24, height: 80 } },
-      { id: 'cp-4', rect: { x: 6990, y: 380, width: 24, height: 80 } },
+      { id: 'cp-4', rect: { x: 6430, y: 510, width: 24, height: 80 } },
     ],
     collectibles: [
       { id: 'crystal-1', position: { x: 820, y: 470 } },
@@ -119,15 +170,11 @@ export const stageDefinitions: StageDefinition[] = [
       { id: 'crystal-7', position: { x: 7830, y: 490 } },
     ],
     hazards: [
-      { id: 'spikes-1', kind: 'spikes', rect: { x: 430, y: 604, width: 70, height: 16 } },
-      { id: 'pit-1', kind: 'pit', rect: { x: 1515, y: 640, width: 80, height: 80 } },
-      { id: 'spikes-2', kind: 'spikes', rect: { x: 2130, y: 524, width: 40, height: 16 } },
-      { id: 'pit-2', kind: 'pit', rect: { x: 2945, y: 640, width: 90, height: 80 } },
-      { id: 'spikes-3', kind: 'spikes', rect: { x: 3600, y: 454, width: 30, height: 16 } },
-      { id: 'pit-3', kind: 'pit', rect: { x: 4670, y: 640, width: 90, height: 80 } },
-      { id: 'spikes-4', kind: 'spikes', rect: { x: 5255, y: 454, width: 30, height: 16 } },
-      { id: 'pit-4', kind: 'pit', rect: { x: 6605, y: 640, width: 70, height: 80 } },
-      { id: 'spikes-5', kind: 'spikes', rect: { x: 7390, y: 384, width: 60, height: 16 } },
+      { id: 'spikes-1', kind: 'spikes', rect: { x: 175, y: 604, width: 70, height: 16 } },
+      { id: 'spikes-2', kind: 'spikes', rect: { x: 2250, y: 479, width: 40, height: 16 } },
+      { id: 'spikes-3', kind: 'spikes', rect: { x: 3705, y: 454, width: 30, height: 16 } },
+      { id: 'spikes-4', kind: 'spikes', rect: { x: 5860, y: 434, width: 30, height: 16 } },
+      { id: 'spikes-5', kind: 'spikes', rect: { x: 7260, y: 384, width: 60, height: 16 } },
     ],
     enemies: [
       {
@@ -140,7 +187,13 @@ export const stageDefinitions: StageDefinition[] = [
         id: 'hopper-1',
         kind: 'hopper',
         position: { x: 1930, y: 512 },
-        hop: { intervalMs: 1400, impulse: 600, speed: 110 },
+        hop: { intervalMs: 1400, impulse: 820, speed: 110 },
+      },
+      {
+        id: 'flyer-1',
+        kind: 'flyer',
+        position: { x: 3530, y: 360 },
+        flyer: { left: 3430, right: 3920, speed: 95, bobAmp: 22, bobSpeed: 4.2 },
       },
       {
         id: 'walker-2',
@@ -152,12 +205,12 @@ export const stageDefinitions: StageDefinition[] = [
         id: 'hopper-2',
         kind: 'hopper',
         position: { x: 4210, y: 453 },
-        hop: { intervalMs: 1250, impulse: 640, speed: 120 },
+        hop: { intervalMs: 1250, impulse: 860, speed: 120 },
       },
       {
         id: 'turret-1',
         kind: 'turret',
-        position: { x: 5345, y: 432 },
+        position: { x: 5418, y: 432 },
         turret: { intervalMs: 1900 },
       },
       {
@@ -167,10 +220,16 @@ export const stageDefinitions: StageDefinition[] = [
         patrol: { left: 6100, right: 6300, speed: 110 },
       },
       {
+        id: 'charger-1',
+        kind: 'charger',
+        position: { x: 6980, y: 430 },
+        charger: { left: 6940, right: 7120, patrolSpeed: 65, chargeSpeed: 280, windupMs: 500, cooldownMs: 900 },
+      },
+      {
         id: 'hopper-3',
         kind: 'hopper',
         position: { x: 7470, y: 438 },
-        hop: { intervalMs: 1200, impulse: 700, speed: 130 },
+        hop: { intervalMs: 1200, impulse: 900, speed: 130 },
       },
     ],
     exit: { x: 7990, y: 460, width: 40, height: 80 },
@@ -183,7 +242,7 @@ export const stageDefinitions: StageDefinition[] = [
     segments: [
       { id: 'mouth', title: 'Cavern Mouth', startX: 0, endX: 1450, focus: 'intro hazards' },
       { id: 'lifts', title: 'Ore Lifts', startX: 1450, endX: 3050, focus: 'vertical traversal' },
-      { id: 'forge', title: 'Forge Tunnels', startX: 3050, endX: 4700, focus: 'lava timing' },
+      { id: 'forge', title: 'Forge Tunnels', startX: 3050, endX: 4700, focus: 'hazard timing' },
       { id: 'barracks', title: 'Stone Barracks', startX: 4700, endX: 6400, focus: 'mixed encounters' },
       { id: 'heart', title: 'Amber Heart', startX: 6400, endX: 8200, focus: 'turret gauntlet' },
     ],
@@ -201,7 +260,7 @@ export const stageDefinitions: StageDefinition[] = [
       ground(760, 510, 180),
       ground(1020, 460, 180),
       ground(1280, 410, 220),
-      ground(1590, 470, 180),
+      moving(1590, 470, 180, 32, 'y', 90, 70),
       ground(1850, 540, 180),
       ground(2110, 480, 200),
       ground(2390, 420, 180),
@@ -211,7 +270,7 @@ export const stageDefinitions: StageDefinition[] = [
       ground(3490, 580, 240),
       ground(3800, 520, 190),
       ground(4070, 450, 190),
-      ground(4350, 390, 200),
+      falling(4350, 390, 200, 32, 700),
       ground(4630, 460, 180),
       ground(4890, 530, 220),
       ground(5200, 590, 230),
@@ -219,7 +278,7 @@ export const stageDefinitions: StageDefinition[] = [
       ground(5770, 460, 180),
       ground(6030, 400, 200),
       ground(6310, 470, 180),
-      ground(6570, 540, 220),
+      spring(6570, 540, 220, 32, 900),
       ground(6880, 600, 220),
       ground(7170, 530, 190),
       ground(7440, 470, 180),
@@ -228,9 +287,9 @@ export const stageDefinitions: StageDefinition[] = [
     ],
     checkpoints: [
       { id: 'cp-1', rect: { x: 1310, y: 330, width: 24, height: 80 } },
-      { id: 'cp-2', rect: { x: 3200, y: 440, width: 24, height: 80 } },
+      { id: 'cp-2', rect: { x: 3510, y: 500, width: 24, height: 80 } },
       { id: 'cp-3', rect: { x: 5200, y: 510, width: 24, height: 80 } },
-      { id: 'cp-4', rect: { x: 7180, y: 450, width: 24, height: 80 } },
+      { id: 'cp-4', rect: { x: 6910, y: 520, width: 24, height: 80 } },
     ],
     collectibles: [
       { id: 'amber-1', position: { x: 530, y: 500 } },
@@ -243,63 +302,72 @@ export const stageDefinitions: StageDefinition[] = [
       { id: 'amber-8', position: { x: 7730, y: 360 } },
     ],
     hazards: [
-      { id: 'spikes-1', kind: 'spikes', rect: { x: 430, y: 604, width: 60, height: 16 } },
-      { id: 'pit-1', kind: 'pit', rect: { x: 691, y: 640, width: 65, height: 80 } },
-      { id: 'pit-2', kind: 'pit', rect: { x: 1509, y: 640, width: 76, height: 80 } },
-      { id: 'lava-1', kind: 'lava', rect: { x: 2315, y: 610, width: 70, height: 10 } },
-      { id: 'spikes-2', kind: 'spikes', rect: { x: 3100, y: 604, width: 70, height: 16 } },
-      { id: 'lava-2', kind: 'lava', rect: { x: 4690, y: 610, width: 90, height: 10 } },
-      { id: 'pit-3', kind: 'pit', rect: { x: 5429, y: 640, width: 78, height: 80 } },
-      { id: 'spikes-3', kind: 'spikes', rect: { x: 6320, y: 454, width: 50, height: 16 } },
-      { id: 'lava-3', kind: 'lava', rect: { x: 7060, y: 610, width: 90, height: 10 } },
+      { id: 'spikes-1', kind: 'spikes', rect: { x: 180, y: 604, width: 60, height: 16 } },
+      { id: 'spikes-forge-1', kind: 'spikes', rect: { x: 2440, y: 404, width: 72, height: 16 } },
+      { id: 'spikes-2', kind: 'spikes', rect: { x: 3880, y: 504, width: 60, height: 16 } },
+      { id: 'spikes-barracks-1', kind: 'spikes', rect: { x: 4960, y: 514, width: 80, height: 16 } },
+      { id: 'spikes-3', kind: 'spikes', rect: { x: 6380, y: 454, width: 40, height: 16 } },
+      { id: 'spikes-heart-1', kind: 'spikes', rect: { x: 7235, y: 514, width: 60, height: 16 } },
     ],
     enemies: [
       {
         id: 'walker-1',
         kind: 'walker',
-        position: { x: 530, y: 528 },
-        patrol: { left: 500, right: 680, speed: 100 },
+        position: { x: 540, y: 530 },
+        patrol: { left: 508, right: 672, speed: 100 },
       },
       {
         id: 'hopper-1',
         kind: 'hopper',
-        position: { x: 1900, y: 508 },
-        hop: { intervalMs: 1250, impulse: 680, speed: 120 },
+        position: { x: 1910, y: 510 },
+        hop: { intervalMs: 1250, impulse: 860, speed: 110 },
       },
       {
         id: 'turret-1',
         kind: 'turret',
-        position: { x: 3220, y: 490 },
+        position: { x: 3338, y: 482 },
         turret: { intervalMs: 1800 },
       },
       {
         id: 'walker-2',
         kind: 'walker',
-        position: { x: 4080, y: 418 },
-        patrol: { left: 4070, right: 4260, speed: 105 },
+        position: { x: 4090, y: 420 },
+        patrol: { left: 4082, right: 4248, speed: 105 },
       },
       {
         id: 'hopper-2',
         kind: 'hopper',
-        position: { x: 4910, y: 500 },
-        hop: { intervalMs: 1300, impulse: 700, speed: 125 },
+        position: { x: 4935, y: 500 },
+        hop: { intervalMs: 1300, impulse: 900, speed: 120 },
       },
       {
         id: 'turret-2',
         kind: 'turret',
-        position: { x: 6035, y: 360 },
+        position: { x: 6116, y: 362 },
         turret: { intervalMs: 1600 },
+      },
+      {
+        id: 'charger-1',
+        kind: 'charger',
+        position: { x: 7460, y: 440 },
+        charger: { left: 7440, right: 7620, patrolSpeed: 70, chargeSpeed: 300, windupMs: 520, cooldownMs: 950 },
       },
       {
         id: 'walker-3',
         kind: 'walker',
-        position: { x: 7210, y: 498 },
-        patrol: { left: 7170, right: 7360, speed: 110 },
+        position: { x: 7215, y: 500 },
+        patrol: { left: 7178, right: 7352, speed: 110 },
+      },
+      {
+        id: 'flyer-1',
+        kind: 'flyer',
+        position: { x: 7420, y: 360 },
+        flyer: { left: 7310, right: 7950, speed: 105, bobAmp: 24, bobSpeed: 4.6 },
       },
       {
         id: 'turret-3',
         kind: 'turret',
-        position: { x: 7710, y: 390 },
+        position: { x: 7776, y: 382 },
         turret: { intervalMs: 1400 },
       },
     ],
@@ -313,7 +381,7 @@ export const stageDefinitions: StageDefinition[] = [
     segments: [
       { id: 'stairs', title: 'Cloud Stairs', startX: 0, endX: 1550, focus: 'opening precision' },
       { id: 'gallery', title: 'Wind Gallery', startX: 1550, endX: 3300, focus: 'recovery and ascent' },
-      { id: 'bridges', title: 'Shattered Bridges', startX: 3300, endX: 5000, focus: 'pit pressure' },
+      { id: 'bridges', title: 'Shattered Bridges', startX: 3300, endX: 5000, focus: 'gap pressure' },
       { id: 'orbits', title: 'Orbital Bastion', startX: 5000, endX: 6800, focus: 'turret lanes' },
       { id: 'summit', title: 'Sanctum Summit', startX: 6800, endX: 8800, focus: 'endurance finale' },
     ],
@@ -332,7 +400,7 @@ export const stageDefinitions: StageDefinition[] = [
       ground(950, 430, 180),
       ground(1220, 500, 170),
       ground(1480, 420, 180),
-      ground(1750, 350, 180),
+      moving(1750, 350, 180, 32, 'x', 140, 90),
       ground(2020, 430, 170),
       ground(2280, 520, 190),
       ground(2570, 450, 180),
@@ -347,23 +415,23 @@ export const stageDefinitions: StageDefinition[] = [
       ground(4990, 600, 210),
       ground(5290, 530, 180),
       ground(5550, 460, 180),
-      ground(5810, 390, 180),
+      moving(5810, 390, 180, 32, 'y', 100, 80),
       ground(6070, 330, 180),
       ground(6330, 400, 180),
       ground(6590, 470, 180),
       ground(6850, 540, 200),
       ground(7140, 470, 180),
       ground(7400, 400, 180),
-      ground(7660, 330, 180),
+      falling(7660, 330, 180, 32, 650),
       ground(7920, 410, 180),
       ground(8180, 500, 190),
       ground(8460, 590, 220),
     ],
     checkpoints: [
-      { id: 'cp-1', rect: { x: 1490, y: 340, width: 24, height: 80 } },
+      { id: 'cp-1', rect: { x: 1240, y: 420, width: 24, height: 80 } },
       { id: 'cp-2', rect: { x: 3380, y: 470, width: 24, height: 80 } },
-      { id: 'cp-3', rect: { x: 5310, y: 450, width: 24, height: 80 } },
-      { id: 'cp-4', rect: { x: 7155, y: 390, width: 24, height: 80 } },
+      { id: 'cp-3', rect: { x: 5030, y: 520, width: 24, height: 80 } },
+      { id: 'cp-4', rect: { x: 6890, y: 460, width: 24, height: 80 } },
     ],
     collectibles: [
       { id: 'sky-1', position: { x: 450, y: 500 } },
@@ -377,15 +445,11 @@ export const stageDefinitions: StageDefinition[] = [
       { id: 'sky-9', position: { x: 8510, y: 540 } },
     ],
     hazards: [
-      { id: 'spikes-3', kind: 'spikes', rect: { x: 580, y: 544, width: 60, height: 16 } },
-      { id: 'pit-3', kind: 'pit', rect: { x: 840, y: 640, width: 86, height: 80 } },
-      { id: 'spikes-4', kind: 'spikes', rect: { x: 1890, y: 334, width: 68, height: 16 } },
-      { id: 'pit-4', kind: 'pit', rect: { x: 2460, y: 640, width: 100, height: 80 } },
-      { id: 'spikes-5', kind: 'spikes', rect: { x: 3650, y: 474, width: 40, height: 16 } },
-      { id: 'pit-5', kind: 'pit', rect: { x: 4990, y: 640, width: 90, height: 80 } },
-      { id: 'spikes-6', kind: 'spikes', rect: { x: 6290, y: 384, width: 40, height: 16 } },
-      { id: 'pit-6', kind: 'pit', rect: { x: 6985, y: 640, width: 90, height: 80 } },
-      { id: 'spikes-7', kind: 'spikes', rect: { x: 7880, y: 394, width: 40, height: 16 } },
+      { id: 'spikes-3', kind: 'spikes', rect: { x: 475, y: 544, width: 60, height: 16 } },
+      { id: 'spikes-4', kind: 'spikes', rect: { x: 2071, y: 414, width: 68, height: 16 } },
+      { id: 'spikes-5', kind: 'spikes', rect: { x: 3730, y: 474, width: 40, height: 16 } },
+      { id: 'spikes-6', kind: 'spikes', rect: { x: 6400, y: 384, width: 40, height: 16 } },
+      { id: 'spikes-7', kind: 'spikes', rect: { x: 7990, y: 394, width: 40, height: 16 } },
     ],
     enemies: [
       {
@@ -398,12 +462,18 @@ export const stageDefinitions: StageDefinition[] = [
         id: 'hopper-1',
         kind: 'hopper',
         position: { x: 1510, y: 388 },
-        hop: { intervalMs: 1200, impulse: 700, speed: 130 },
+        hop: { intervalMs: 1200, impulse: 900, speed: 130 },
+      },
+      {
+        id: 'flyer-1',
+        kind: 'flyer',
+        position: { x: 1930, y: 300 },
+        flyer: { left: 1770, right: 2440, speed: 110, bobAmp: 26, bobSpeed: 5.2 },
       },
       {
         id: 'turret-1',
         kind: 'turret',
-        position: { x: 2590, y: 420 },
+        position: { x: 2646, y: 412 },
         turret: { intervalMs: 1500 },
       },
       {
@@ -416,19 +486,25 @@ export const stageDefinitions: StageDefinition[] = [
         id: 'hopper-2',
         kind: 'hopper',
         position: { x: 5320, y: 498 },
-        hop: { intervalMs: 1200, impulse: 740, speed: 135 },
+        hop: { intervalMs: 1200, impulse: 940, speed: 135 },
       },
       {
         id: 'turret-2',
         kind: 'turret',
-        position: { x: 6080, y: 300 },
+        position: { x: 6146, y: 292 },
         turret: { intervalMs: 1450 },
       },
       {
         id: 'turret-3',
         kind: 'turret',
-        position: { x: 7170, y: 440 },
+        position: { x: 7216, y: 432 },
         turret: { intervalMs: 1400 },
+      },
+      {
+        id: 'charger-1',
+        kind: 'charger',
+        position: { x: 8210, y: 470 },
+        charger: { left: 8180, right: 8370, patrolSpeed: 72, chargeSpeed: 320, windupMs: 500, cooldownMs: 900 },
       },
       {
         id: 'walker-3',
@@ -439,7 +515,7 @@ export const stageDefinitions: StageDefinition[] = [
       {
         id: 'turret-4',
         kind: 'turret',
-        position: { x: 8480, y: 560 },
+        position: { x: 8556, y: 552 },
         turret: { intervalMs: 1400 },
       },
     ],

@@ -23,9 +23,14 @@ export class SceneBridge {
     this.input.jumpPressed = true;
   }
 
+  pressDash(): void {
+    this.input.dashPressed = true;
+  }
+
   consumeFrame(deltaMs: number): void {
     this.session.update(deltaMs, this.input);
     this.input.jumpPressed = false;
+    this.input.dashPressed = false;
   }
 
   getSession(): GameSession {
@@ -52,11 +57,16 @@ export class SceneBridge {
       segmentTitle: currentSegment?.title ?? 'Stage',
       crystals: state.progress.totalCrystals,
       health: state.player.health,
+      powerLabel: state.progress.unlockedPowers.dash ? 'Air Dash' : 'Dormant',
       message: state.stageMessage,
     };
   }
 
   syncHud(hud: Parameters<typeof updateHud>[0]): void {
     updateHud(hud, this.getHudModel());
+  }
+
+  drainCues(): string[] {
+    return this.session.consumeCues();
   }
 }

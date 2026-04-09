@@ -4,6 +4,7 @@ import { BootScene } from './scenes/BootScene';
 import { CompleteScene } from './scenes/CompleteScene';
 import { GameScene } from './scenes/GameScene';
 import { MenuScene } from './scenes/MenuScene';
+import { StageIntroScene } from './scenes/StageIntroScene';
 
 export const createGameApp = (mountNode: HTMLElement | null): Phaser.Game => {
   if (!mountNode) {
@@ -26,7 +27,7 @@ export const createGameApp = (mountNode: HTMLElement | null): Phaser.Game => {
     width: 960,
     height: 540,
     backgroundColor: '#091310',
-    scene: [BootScene, MenuScene, GameScene, CompleteScene],
+    scene: [BootScene, MenuScene, StageIntroScene, GameScene, CompleteScene],
     physics: {
       default: 'arcade',
       arcade: {

@@ -1,42 +1,36 @@
 # enemy-hazard-system Specification
 
-## Purpose
-TBD - created by archiving change mvp-platform-game. Update Purpose after archive.
-## Requirements
-### Requirement: The MVP includes multiple readable threat types
-The game SHALL include at least one ground-patrolling enemy, one jumping or hopping enemy, and one stationary ranged or timing-based threat. Each threat type MUST have a distinct movement or attack pattern that the player can learn through observation.
+## ADDED Requirements
 
-#### Scenario: Encountering a patrol enemy
-- **WHEN** the player enters an area with a patrol enemy
-- **THEN** the enemy moves in a consistent pattern across walkable terrain
+### Requirement: The game does not use pit hazards
+The game SHALL not author, render, or evaluate `pit` as a hazard kind. Falling out of bounds remains a valid death condition, but holes in the stage MUST be represented through level geometry and out-of-bounds death rather than a dedicated pit hazard element.
 
-#### Scenario: Encountering a hopping enemy
-- **WHEN** the player enters an area with a hopping enemy
-- **THEN** the enemy repeats a visible jump pattern that affects the timing of safe traversal
+#### Scenario: Falling beyond the play area
+- **WHEN** the player falls below the traversable world
+- **THEN** the game triggers the existing death flow without requiring a pit hazard
 
-#### Scenario: Encountering a stationary ranged or timing threat
-- **WHEN** the player enters the attack zone of a fixed-position threat
-- **THEN** the threat applies pressure through a repeated attack or timing cycle
+#### Scenario: Validating stage hazard kinds
+- **WHEN** stage content is checked for hazard kinds
+- **THEN** `pit` is rejected or absent from the authored hazard set
 
-### Requirement: Environmental hazards can defeat or damage the player
-The game SHALL include stage hazards such as spikes, pits, or lava that punish unsafe traversal.
+### Requirement: Lava hazards are represented as spikes
+The game SHALL represent former `lava` hazard placements as spikes. The authored stage content MUST use `spikes` for damaging hot-surface style hazards instead of a separate lava hazard kind.
 
-#### Scenario: Touching a damaging hazard
-- **WHEN** the player touches a damaging hazard surface
-- **THEN** the game applies damage or defeat according to the player damage rules
+#### Scenario: Loading authored stage content
+- **WHEN** a stage includes a former lava hazard location
+- **THEN** that location is authored as spikes
 
-#### Scenario: Falling into a pit
-- **WHEN** the player falls outside the traversable play area
-- **THEN** the game triggers the player's death or defeat flow
+#### Scenario: Rendering hazards
+- **WHEN** the game draws a hazard that used to be lava
+- **THEN** it appears using the spike hazard visual treatment
 
-### Requirement: Threat interaction outcomes are consistent
-The game SHALL apply consistent outcomes when the player collides with enemies or hazards so that the player can learn the rules through repetition.
+### Requirement: Static spikes and shooting enemies do not share a support surface
+The game SHALL keep static spike hazards and turret-style shooting enemies separated so they do not occupy the same support platform area. If authored content places them on the same platform, the content MUST be adjusted so one of the two moves to a different readable support location.
 
-#### Scenario: Contacting a non-stomp interaction zone
-- **WHEN** the player collides with an enemy in a way that is not a valid stomp
-- **THEN** the player takes damage or is defeated according to the player state rules
+#### Scenario: Turret and spike on the same platform
+- **WHEN** a turret and a spike hazard are authored onto one support surface
+- **THEN** the stage content places at least one of them on a different supported location
 
-#### Scenario: Repeating the same encounter
-- **WHEN** the player performs the same interaction against the same threat type in the same state
-- **THEN** the game produces the same gameplay outcome
-
+#### Scenario: Loading a stage with turrets and spikes
+- **WHEN** a stage is loaded
+- **THEN** the active layout keeps spikes and turrets from sharing the same platform space

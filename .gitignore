@@ -1,5 +1,6 @@
 node_modules/
 dist/
+test_results/
 
 .preview.out.log
 .preview.err.log

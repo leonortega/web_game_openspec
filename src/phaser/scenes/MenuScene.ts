@@ -34,7 +34,7 @@ export class MenuScene extends Phaser.Scene {
       .text(
         width / 2,
         290,
-        `Unlocked stages: ${state.progress.unlockedStageIndex + 1}\nCrystals recovered: ${state.progress.totalCrystals}\nMain stages target ${state.stage.targetDurationMinutes}+ minutes`,
+        `Unlocked stages: ${state.progress.unlockedStageIndex + 1}\nCrystals recovered: ${state.progress.totalCrystals}\nPower: ${state.progress.unlockedPowers.dash ? 'Air Dash' : 'Dormant'}\nMain stages target ${state.stage.targetDurationMinutes}+ minutes`,
         {
           align: 'center',
           fontFamily: 'Trebuchet MS',
@@ -62,14 +62,14 @@ export class MenuScene extends Phaser.Scene {
 
     this.input.keyboard?.once('keydown-SPACE', () => {
       bridge.startStage(bridge.getSession().getState().stageIndex);
-      this.scene.start('game');
+      this.scene.start('stage-intro');
     });
 
     for (const key of ['ONE', 'TWO', 'THREE'] as const) {
       this.input.keyboard?.once(`keydown-${key}`, () => {
         const index = { ONE: 0, TWO: 1, THREE: 2 }[key];
         bridge.startStage(index);
-        this.scene.start('game');
+        this.scene.start('stage-intro');
       });
     }
   }
