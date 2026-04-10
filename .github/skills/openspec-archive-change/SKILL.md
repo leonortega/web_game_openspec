@@ -1,6 +1,6 @@
 ---
 name: openspec-archive-change
-description: Archive a completed change in the experimental workflow. Use when the user wants to finalize and archive a change after implementation is complete.
+description: Run the OpenSpec archive stage for post-verify spec sync, archive execution, and final archive summary after a change has passed verification.
 license: MIT
 compatibility: Requires openspec CLI.
 metadata:

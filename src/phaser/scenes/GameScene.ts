@@ -1,10 +1,13 @@
 import Phaser from 'phaser';
-import type {
-  CheckpointState,
-  CollectibleState,
-  EnemyState,
-  PlatformState,
-  ProjectileState,
+import {
+  PLAYER_POWER_VARIANTS,
+  type CheckpointState,
+  type CollectibleState,
+  type EnemyState,
+  type PlatformState,
+  type ProjectileState,
+  type RewardBlockState,
+  type RewardRevealState,
 } from '../../game/simulation/state';
 import { createHud } from '../../ui/hud/hud';
 import { SceneBridge } from '../adapters/sceneBridge';
@@ -16,7 +19,17 @@ export class GameScene extends Phaser.Scene {
 
   private audio!: SynthAudio;
 
+  private playerAura!: Phaser.GameObjects.Ellipse;
+
   private player!: Phaser.GameObjects.Rectangle;
+
+  private playerHeadband!: Phaser.GameObjects.Rectangle;
+
+  private playerAccent!: Phaser.GameObjects.Rectangle;
+
+  private playerWingLeft!: Phaser.GameObjects.Rectangle;
+
+  private playerWingRight!: Phaser.GameObjects.Rectangle;
 
   private platformSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
@@ -26,9 +39,19 @@ export class GameScene extends Phaser.Scene {
 
   private collectibleSprites = new Map<string, Phaser.GameObjects.Sprite>();
 
+  private rewardBlockSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
+  private rewardBlockLabels = new Map<string, Phaser.GameObjects.Text>();
+
+  private rewardRevealTexts = new Map<string, Phaser.GameObjects.Text>();
+
   private projectileSprites = new Map<string, Phaser.GameObjects.Sprite>();
 
   private exitSprite!: Phaser.GameObjects.Sprite;
+
+  private pauseOverlay!: Phaser.GameObjects.Rectangle;
+
+  private pauseText!: Phaser.GameObjects.Text;
 
   private hud = createHud(document.createElement('div'));
 
@@ -38,7 +61,7 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.bridge = this.registry.get('bridge') as SceneBridge;
-    this.audio = new SynthAudio(this);
+    this.audio = new SynthAudio(this, () => this.bridge.getSession().getState().progress.runSettings.masterVolume);
     const mount = this.game.canvas.parentElement as HTMLElement;
     this.hud.root.remove();
     this.hud = createHud(mount);
@@ -73,7 +96,12 @@ export class GameScene extends Phaser.Scene {
       this.drawHazard(hazard);
     }
 
+    this.playerAura = this.add.ellipse(0, 0, 44, 58, 0x92f7ff, 0.22).setVisible(false);
     this.player = this.add.rectangle(0, 0, 26, 42, 0xf5cf64).setOrigin(0, 0);
+    this.playerHeadband = this.add.rectangle(0, 0, 18, 6, 0xf7f3d6).setVisible(false);
+    this.playerAccent = this.add.rectangle(0, 0, 10, 8, 0xf7f3d6).setVisible(false);
+    this.playerWingLeft = this.add.rectangle(0, 0, 8, 16, 0xeafff0).setVisible(false);
+    this.playerWingRight = this.add.rectangle(0, 0, 8, 16, 0xeafff0).setVisible(false);
 
     for (const checkpoint of state.stageRuntime.checkpoints) {
       const sprite = this.add.sprite(checkpoint.rect.x, checkpoint.rect.y, 'checkpoint').setOrigin(0, 0);
@@ -85,6 +113,29 @@ export class GameScene extends Phaser.Scene {
       this.collectibleSprites.set(collectible.id, sprite);
     }
 
+    for (const rewardBlock of state.stageRuntime.rewardBlocks) {
+      const blockSprite = this.add
+        .rectangle(
+          rewardBlock.x + rewardBlock.width / 2,
+          rewardBlock.y + rewardBlock.height / 2,
+          rewardBlock.width,
+          rewardBlock.height,
+          this.rewardBlockColor(rewardBlock),
+        )
+        .setStrokeStyle(2, 0xf7f3d6, 0.3)
+        .setOrigin(0.5);
+      const label = this.add
+        .text(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2, this.rewardBlockLabel(rewardBlock), {
+          fontFamily: 'Trebuchet MS',
+          fontSize: '14px',
+          color: '#11150f',
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5);
+      this.rewardBlockSprites.set(rewardBlock.id, blockSprite);
+      this.rewardBlockLabels.set(rewardBlock.id, label);
+    }
+
     for (const enemy of state.stageRuntime.enemies) {
       const sprite = this.add.sprite(enemy.x, enemy.y, enemy.kind).setOrigin(0, 0);
       this.enemySprites.set(enemy.id, sprite);
@@ -92,14 +143,43 @@ export class GameScene extends Phaser.Scene {
 
     this.exitSprite = this.add.sprite(stage.exit.x, stage.exit.y, 'exit').setOrigin(0, 0).setTint(stage.palette.accent);
 
+    this.pauseOverlay = this.add
+      .rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x08100d, 0.7)
+      .setDepth(100)
+      .setScrollFactor(0)
+      .setVisible(false);
+    this.pauseText = this.add
+      .text(this.scale.width / 2, this.scale.height / 2, 'PAUSE', {
+        fontFamily: 'Trebuchet MS',
+        fontSize: '44px',
+        color: '#f7f3d6',
+        fontStyle: 'bold',
+        letterSpacing: 4,
+      })
+      .setOrigin(0.5)
+      .setDepth(101)
+      .setScrollFactor(0)
+      .setVisible(false);
+
     this.setupInput();
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
     this.syncView();
     this.bridge.syncHud(this.hud);
     this.audio.startStageMusic(stage.id);
+
+    const syncPauseOverlayLayout = ({ width, height }: { width: number; height: number }): void => {
+      this.pauseOverlay.setPosition(width / 2, height / 2).setSize(width, height);
+      this.pauseText.setPosition(width / 2, height / 2);
+    };
+    this.scale.on(Phaser.Scale.Events.RESIZE, syncPauseOverlayLayout);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, syncPauseOverlayLayout);
+    });
   }
 
   update(_: number, delta: number): void {
+    const view = this.cameras.main.worldView;
+    this.bridge.setCameraViewBox({ x: view.x, y: view.y, width: view.width, height: view.height });
     this.bridge.consumeFrame(delta);
     const cues = this.bridge.drainCues();
     for (const cue of cues) {
@@ -119,12 +199,16 @@ export class GameScene extends Phaser.Scene {
 
   shutdown(): void {
     this.audio.stopMusic();
+    this.setPauseOverlayVisible(false);
     this.hud.root.remove();
     this.platformSprites.clear();
     this.enemySprites.clear();
     this.checkpointSprites.clear();
     this.collectibleSprites.clear();
     this.projectileSprites.clear();
+    this.rewardBlockSprites.clear();
+    this.rewardBlockLabels.clear();
+    this.rewardRevealTexts.clear();
   }
 
   private setupInput(): void {
@@ -134,6 +218,7 @@ export class GameScene extends Phaser.Scene {
     const up = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.W);
     const shift = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
     const space = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    const f = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.F);
     const r = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.R);
     const esc = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
 
@@ -157,14 +242,29 @@ export class GameScene extends Phaser.Scene {
       key?.on('down', () => this.bridge.pressJump());
     }
     shift?.on('down', () => this.bridge.pressDash());
+    f?.on('down', () => this.bridge.pressShoot());
 
     r?.on('down', () => {
-      this.bridge.getSession().restartStage();
+      this.bridge.restartStage();
+      this.setPauseOverlayVisible(false);
       this.scene.restart();
     });
 
     esc?.on('down', () => {
-      this.scene.start('menu');
+      if (this.bridge.isRunPaused()) {
+        if (!this.bridge.resumeRun()) {
+          return;
+        }
+
+        this.setPauseOverlayVisible(false);
+        return;
+      }
+
+      if (!this.bridge.pauseRun()) {
+        return;
+      }
+
+      this.setPauseOverlayVisible(true);
     });
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -189,9 +289,24 @@ export class GameScene extends Phaser.Scene {
   private syncView(): void {
     const state = this.bridge.getSession().getState();
     const { player } = state;
+    const variantKey = state.player.presentationPower ?? 'base';
+    const variant = PLAYER_POWER_VARIANTS[variantKey];
+    const centerX = player.x + player.width / 2;
+    const centerY = player.y + player.height / 2;
     this.player.setPosition(player.x, player.y);
     this.player.setAlpha(player.invulnerableMs > 0 && Math.floor(player.invulnerableMs / 90) % 2 === 0 ? 0.45 : 1);
-    this.player.setFillStyle(player.dashTimerMs > 0 ? 0xffffff : 0xf5cf64);
+    this.player.setFillStyle(variant.bodyColor);
+    this.player.setStrokeStyle(2, variant.detailColor, 0.95);
+    this.playerAura
+      .setPosition(centerX, centerY)
+      .setFillStyle(variant.auraColor ?? variant.accentColor, variant.auraColor ? 0.24 : 0.12)
+      .setVisible(Boolean(variant.auraColor))
+      .setAlpha(variant.auraColor ? 0.18 + Math.abs(Math.sin(this.time.now / 140)) * 0.22 : 0);
+    this.playerHeadband.setVisible(false);
+    this.playerAccent.setVisible(false);
+    this.playerWingLeft.setVisible(false);
+    this.playerWingRight.setVisible(false);
+    this.syncPlayerAccessories(variantKey, variant, player);
 
     for (const platform of state.stageRuntime.platforms) {
       this.syncPlatform(platform);
@@ -203,6 +318,14 @@ export class GameScene extends Phaser.Scene {
 
     for (const collectible of state.stageRuntime.collectibles) {
       this.syncCollectible(collectible);
+    }
+
+    for (const rewardBlock of state.stageRuntime.rewardBlocks) {
+      this.syncRewardBlock(rewardBlock);
+    }
+
+    for (const rewardReveal of state.stageRuntime.rewardReveals) {
+      this.syncRewardReveal(rewardReveal);
     }
 
     for (const enemy of state.stageRuntime.enemies) {
@@ -220,7 +343,34 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    for (const [id, text] of this.rewardRevealTexts.entries()) {
+      if (!state.stageRuntime.rewardReveals.find((rewardReveal) => rewardReveal.id === id)) {
+        text.destroy();
+        this.rewardRevealTexts.delete(id);
+      }
+    }
+
     this.exitSprite.setAlpha(state.stageRuntime.exitReached ? 0.55 : 1);
+  }
+
+  getDebugSnapshot(): {
+    runPaused: boolean;
+    pauseOverlayVisible: boolean;
+    pauseText: string | null;
+    hudVisible: boolean;
+  } {
+    return {
+      runPaused: this.bridge.isRunPaused(),
+      pauseOverlayVisible: this.pauseOverlay.visible && this.pauseText.visible,
+      pauseText: this.pauseText.visible ? this.pauseText.text : null,
+      hudVisible: this.hud.root.style.visibility !== 'hidden',
+    };
+  }
+
+  private setPauseOverlayVisible(visible: boolean): void {
+    this.pauseOverlay.setVisible(visible);
+    this.pauseText.setVisible(visible);
+    this.hud.root.style.visibility = visible ? 'hidden' : 'visible';
   }
 
   private syncPlatform(platform: PlatformState): void {
@@ -254,6 +404,51 @@ export class GameScene extends Phaser.Scene {
     if (!collectible.collected) {
       sprite.setPosition(collectible.position.x, collectible.position.y);
     }
+  }
+
+  private syncRewardBlock(rewardBlock: RewardBlockState): void {
+    const sprite = this.rewardBlockSprites.get(rewardBlock.id);
+    const label = this.rewardBlockLabels.get(rewardBlock.id);
+    if (!sprite || !label) {
+      return;
+    }
+
+    const flashProgress = Phaser.Math.Clamp(rewardBlock.hitFlashMs / 180, 0, 1);
+    const bumpOffset = flashProgress > 0 ? 10 * flashProgress : 0;
+    const alpha = rewardBlock.used ? 0.35 : 1;
+
+    sprite.setPosition(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2 - bumpOffset);
+    sprite.setFillStyle(this.rewardBlockColor(rewardBlock));
+    sprite.setStrokeStyle(2, flashProgress > 0 ? 0xffffff : 0xf7f3d6, flashProgress > 0 ? 0.8 : 0.3);
+    sprite.setAlpha(alpha);
+    label.setPosition(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2 - bumpOffset);
+    label.setText(this.rewardBlockLabel(rewardBlock));
+    label.setAlpha(alpha);
+  }
+
+  private syncRewardReveal(rewardReveal: RewardRevealState): void {
+    let text = this.rewardRevealTexts.get(rewardReveal.id);
+    if (!text) {
+      text = this.add
+        .text(rewardReveal.x, rewardReveal.y, this.rewardRevealText(rewardReveal), {
+          fontFamily: 'Trebuchet MS',
+          fontSize: '18px',
+          color: this.rewardRevealColor(rewardReveal),
+          fontStyle: 'bold',
+          stroke: '#08100d',
+          strokeThickness: 4,
+        })
+        .setOrigin(0.5)
+        .setDepth(12);
+      this.rewardRevealTexts.set(rewardReveal.id, text);
+    }
+
+    const alpha = Phaser.Math.Clamp(rewardReveal.timerMs / rewardReveal.durationMs, 0, 1);
+    const floatOffset = (1 - alpha) * 24;
+    text.setText(this.rewardRevealText(rewardReveal));
+    text.setColor(this.rewardRevealColor(rewardReveal));
+    text.setPosition(rewardReveal.x, rewardReveal.y - floatOffset);
+    text.setAlpha(alpha);
   }
 
   private syncEnemy(enemy: EnemyState): void {
@@ -300,6 +495,149 @@ export class GameScene extends Phaser.Scene {
         return 0x8fd37c;
       default:
         return this.bridge.getSession().getState().stage.palette.ground;
+    }
+  }
+
+  private rewardBlockColor(rewardBlock: RewardBlockState): number {
+    if (rewardBlock.reward.kind === 'coins') {
+      return 0xf5cf64;
+    }
+
+    switch (rewardBlock.reward.power) {
+      case 'doubleJump':
+        return 0x9df4b4;
+      case 'shooter':
+        return 0xffb56f;
+      case 'invincible':
+        return 0x92f7ff;
+      case 'dash':
+        return 0xf7f3d6;
+    }
+  }
+
+  private rewardBlockLabel(rewardBlock: RewardBlockState): string {
+    if (rewardBlock.reward.kind === 'coins') {
+      return rewardBlock.remainingHits > 0 ? `C${rewardBlock.remainingHits}` : '--';
+    }
+
+    if (rewardBlock.used) {
+      return '--';
+    }
+
+    switch (rewardBlock.reward.power) {
+      case 'doubleJump':
+        return 'DJ';
+      case 'shooter':
+        return 'SH';
+      case 'invincible':
+        return 'IV';
+      case 'dash':
+        return 'DA';
+    }
+  }
+
+  private rewardRevealText(rewardReveal: RewardRevealState): string {
+    if (rewardReveal.reward.kind === 'coins') {
+      return 'COIN';
+    }
+
+    switch (rewardReveal.reward.power) {
+      case 'doubleJump':
+        return 'DOUBLE JUMP';
+      case 'shooter':
+        return 'SHOOTER';
+      case 'invincible':
+        return 'INVINCIBLE';
+      case 'dash':
+        return 'DASH';
+    }
+  }
+
+  private rewardRevealColor(rewardReveal: RewardRevealState): string {
+    if (rewardReveal.reward.kind === 'coins') {
+      return '#f5cf64';
+    }
+
+    switch (rewardReveal.reward.power) {
+      case 'doubleJump':
+        return '#9df4b4';
+      case 'shooter':
+        return '#ffb56f';
+      case 'invincible':
+        return '#92f7ff';
+      case 'dash':
+        return '#f7f3d6';
+    }
+  }
+
+  private syncPlayerAccessories(
+    variantKey: keyof typeof PLAYER_POWER_VARIANTS,
+    variant: (typeof PLAYER_POWER_VARIANTS)[keyof typeof PLAYER_POWER_VARIANTS],
+    player: { x: number; y: number; width: number; height: number; facing: 1 | -1; dashTimerMs: number },
+  ): void {
+    const centerX = player.x + player.width / 2;
+    const facingOffset = player.facing === 1 ? 1 : -1;
+    switch (variantKey) {
+      case 'doubleJump':
+        this.playerHeadband
+          .setPosition(centerX, player.y + 8)
+          .setSize(18, 5)
+          .setFillStyle(variant.detailColor)
+          .setVisible(true);
+        this.playerWingLeft
+          .setPosition(player.x - 4, player.y + 18)
+          .setSize(8, 16)
+          .setFillStyle(variant.accentColor)
+          .setVisible(true);
+        this.playerWingRight
+          .setPosition(player.x + player.width + 4, player.y + 18)
+          .setSize(8, 16)
+          .setFillStyle(variant.accentColor)
+          .setVisible(true);
+        break;
+      case 'shooter':
+        this.playerHeadband
+          .setPosition(centerX, player.y + 13)
+          .setSize(18, 6)
+          .setFillStyle(variant.detailColor)
+          .setVisible(true);
+        this.playerAccent
+          .setPosition(centerX + facingOffset * 12, player.y + 22)
+          .setSize(12, 9)
+          .setFillStyle(variant.accentColor)
+          .setVisible(true);
+        break;
+      case 'invincible':
+        this.playerHeadband
+          .setPosition(centerX, player.y + 6)
+          .setSize(20, 6)
+          .setFillStyle(variant.accentColor)
+          .setVisible(true);
+        this.playerAccent
+          .setPosition(centerX, player.y - 1)
+          .setSize(10, 6)
+          .setFillStyle(variant.detailColor)
+          .setVisible(true);
+        break;
+      case 'dash':
+        this.playerHeadband
+          .setPosition(centerX, player.y + player.height - 7)
+          .setSize(20, 5)
+          .setFillStyle(variant.detailColor)
+          .setVisible(true);
+        this.playerAccent
+          .setPosition(centerX - facingOffset * 14, player.y + 20)
+          .setSize(player.dashTimerMs > 0 ? 16 : 10, 8)
+          .setFillStyle(variant.accentColor)
+          .setVisible(true);
+        break;
+      default:
+        this.playerHeadband
+          .setPosition(centerX, player.y + 10)
+          .setSize(14, 4)
+          .setFillStyle(variant.detailColor)
+          .setVisible(true);
+        break;
     }
   }
 }

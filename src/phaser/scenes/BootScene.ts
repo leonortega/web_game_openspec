@@ -13,7 +13,7 @@ export class BootScene extends Phaser.Scene {
     this.createRectTexture('charger', 34, 30, 0xff7f50);
     this.createRectTexture('flyer', 34, 24, 0x8ef0ff);
     this.createRectTexture('projectile', 12, 12, 0xffc15b);
-    this.createRectTexture('collectible', 20, 20, 0x79f0ff);
+    this.createRectTexture('collectible', 20, 20, 0xf5cf64);
     this.createRectTexture('checkpoint', 24, 80, 0x91f275);
     this.createRectTexture('exit', 48, 80, 0xf7f3d6);
     this.scene.start('menu');

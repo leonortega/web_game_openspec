@@ -56,9 +56,8 @@ body {
 }
 
 .hud-top,
-.hud-bottom {
+.hud-meta {
   display: flex;
-  justify-content: flex-start;
   gap: 12px;
 }
 
@@ -68,7 +67,7 @@ body {
 }
 
 .hud-card {
-  min-width: 140px;
+  min-width: 142px;
   padding: 12px 14px;
   border: 1px solid rgba(247, 243, 214, 0.18);
   border-radius: 14px;
@@ -88,6 +87,36 @@ body {
   display: block;
   margin-top: 4px;
   font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.hud-meta {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  color: rgba(247, 243, 214, 0.82);
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.hud-meta-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.hud-meta-label {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #b6c7b2;
+}
+
+.hud-meta-value {
   font-weight: 700;
 }
 
@@ -135,6 +164,12 @@ body {
 
   .hud-value {
     font-size: 1rem;
+  }
+
+  .hud-meta {
+    right: 10px;
+    bottom: 10px;
+    font-size: 0.64rem;
   }
 
   .message-panel {

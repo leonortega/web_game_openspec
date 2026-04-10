@@ -9,7 +9,10 @@ const MUSIC_PATTERNS: Record<string, number[]> = {
 export class SynthAudio {
   private musicEvent?: Phaser.Time.TimerEvent;
 
-  constructor(private readonly scene: Phaser.Scene) {}
+  constructor(
+    private readonly scene: Phaser.Scene,
+    private readonly getMasterVolume: () => number,
+  ) {}
 
   unlock(): void {
     try {
@@ -48,6 +51,10 @@ export class SynthAudio {
       case 'jump':
         this.playTone(520, 90, 'square', 0.03);
         break;
+      case 'double-jump':
+        this.playTone(620, 90, 'square', 0.03);
+        this.playTone(760, 110, 'triangle', 0.02);
+        break;
       case 'land':
         this.playTone(180, 70, 'triangle', 0.025);
         break;
@@ -63,11 +70,21 @@ export class SynthAudio {
         this.playTone(700, 90, 'sine', 0.03);
         this.playTone(880, 120, 'sine', 0.025);
         break;
+      case 'heal':
+        this.playTone(640, 130, 'sine', 0.03);
+        this.playTone(820, 160, 'triangle', 0.024);
+        break;
       case 'hurt':
         this.playTone(150, 180, 'sawtooth', 0.035);
         break;
       case 'stomp':
         this.playTone(260, 90, 'square', 0.03);
+        break;
+      case 'shoot':
+        this.playTone(540, 70, 'square', 0.03);
+        break;
+      case 'shoot-hit':
+        this.playTone(420, 80, 'triangle', 0.028);
         break;
       case 'turret-fire':
         this.playTone(340, 100, 'square', 0.03);
@@ -80,6 +97,13 @@ export class SynthAudio {
         this.playTone(523.25, 120, 'sine', 0.03);
         this.playTone(659.25, 140, 'sine', 0.025);
         this.playTone(783.99, 180, 'sine', 0.022);
+        break;
+      case 'power':
+        this.playTone(493.88, 120, 'triangle', 0.03);
+        this.playTone(659.25, 140, 'sine', 0.025);
+        break;
+      case 'block':
+        this.playTone(310, 90, 'square', 0.02);
         break;
       case 'collapse':
         this.playTone(210, 120, 'sawtooth', 0.025);
@@ -98,6 +122,10 @@ export class SynthAudio {
       if (!context) {
         return;
       }
+      const masterVolume = Phaser.Math.Clamp(this.getMasterVolume(), 0, 1);
+      if (masterVolume <= 0) {
+        return;
+      }
 
       const startAt = context.currentTime;
       const gain = context.createGain();
@@ -105,7 +133,7 @@ export class SynthAudio {
       oscillator.type = type;
       oscillator.frequency.setValueAtTime(frequency, startAt);
       gain.gain.setValueAtTime(0.0001, startAt);
-      gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.01);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume * masterVolume), startAt + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.0001, startAt + durationMs / 1000);
 
       oscillator.connect(gain);

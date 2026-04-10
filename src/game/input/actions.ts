@@ -4,6 +4,7 @@ export type InputState = {
   jumpHeld: boolean;
   jumpPressed: boolean;
   dashPressed: boolean;
+  shootPressed: boolean;
 };
 
 export const defaultInputState = (): InputState => ({
@@ -12,4 +13,5 @@ export const defaultInputState = (): InputState => ({
   jumpHeld: false,
   jumpPressed: false,
   dashPressed: false,
+  shootPressed: false,
 });

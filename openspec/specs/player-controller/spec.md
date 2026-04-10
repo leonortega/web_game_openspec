@@ -23,11 +23,23 @@ The game SHALL provide a player-controlled character that can run left and right
 - **THEN** the controller performs a normal jump rather than dropping the player out of jumpable support early
 
 ### Requirement: Player can take damage and recover through respawn
-The game SHALL track player health or hit state, apply damage from enemies and hazards, and return the player to active play through death and respawn rules. The respawn flow MUST place the player at the most recently activated checkpoint or level start.
+The game SHALL track player health or hit state, apply damage from enemies and hazards, and return the player to active play through death and respawn rules. When the player collides with a damaging enemy or hazard while one or more active non-invincible powers are present and invincibility is not active, the game MUST clear those active non-invincible powers and MUST NOT reduce health for that hit. When invincibility is active, damaging contact MUST preserve invincibility until its timer expires, MUST keep health unchanged for that hit, and MUST still clear any other active non-invincible powers. When the player has no active powers, damaging contact MUST reduce health as normal. The respawn flow MUST place the player at the most recently activated checkpoint or level start.
 
-#### Scenario: Taking damage from a threat
-- **WHEN** the player collides with a damaging enemy or hazard
+#### Scenario: Taking damage from a threat while unpowered
+- **WHEN** the player collides with a damaging enemy or hazard and has no active powers
 - **THEN** the game applies damage or loss of health to the player
+
+#### Scenario: Consuming non-invincible powers on a protected hit
+- **WHEN** the player collides with a damaging enemy or hazard while active non-invincible powers are present and invincibility is not active
+- **THEN** the game clears those active non-invincible powers and does not remove health for that hit
+
+#### Scenario: Retaining invincibility on damaging contact
+- **WHEN** the player collides with a damaging enemy or hazard while invincibility is active
+- **THEN** the game keeps invincibility active for its remaining timer and does not remove health for that hit
+
+#### Scenario: Clearing other powers while invincible
+- **WHEN** the player collides with a damaging enemy or hazard while invincibility and another active power are both present
+- **THEN** the game preserves invincibility and clears the other active power states for that hit
 
 #### Scenario: Losing all health
 - **WHEN** the player reaches the defeat condition
@@ -36,6 +48,10 @@ The game SHALL track player health or hit state, apply damage from enemies and h
 #### Scenario: Respawning from a checkpoint
 - **WHEN** the player has activated a checkpoint before dying
 - **THEN** the player respawns at that checkpoint instead of the stage start
+
+#### Scenario: Losing powers after death
+- **WHEN** the player dies after taking damage
+- **THEN** the game clears the player's active powers
 
 ### Requirement: Player can defeat eligible enemies by stomping
 The game SHALL allow the player to defeat stompable enemy types by landing on them from above while falling.
@@ -49,12 +65,13 @@ The game SHALL allow the player to defeat stompable enemy types by landing on th
 - **THEN** the player takes damage instead of defeating the enemy
 
 ### Requirement: Player abilities can expand the core moveset through progression
-The game SHALL allow the player's base controller to be extended by unlocked powers such as advanced jumps, dashes, or special stomps. Added powers MUST remain responsive and use consistent activation rules.
+The game SHALL allow the player's base controller to be extended by interactive block rewards such as double jump, shooter, invincibility, and dash. Added powers MUST remain responsive and use consistent activation rules.
 
 #### Scenario: Using an unlocked movement ability
-- **WHEN** the player activates an unlocked traversal power
-- **THEN** the controller applies the expected movement effect consistently
+- **WHEN** the player activates an authored power reward
+- **THEN** the controller applies the expected movement or combat effect consistently
 
-#### Scenario: Combining base movement and unlocked powers
-- **WHEN** the player runs, jumps, and uses an unlocked ability in sequence
+#### Scenario: Combining base movement and block-granted powers
+- **WHEN** the player runs, jumps, and uses a block-granted power in sequence
 - **THEN** the character remains controllable and responsive under the combined moveset
+

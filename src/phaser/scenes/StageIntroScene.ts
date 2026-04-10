@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { formatRunSettings, getActivePowerLabels } from '../../game/simulation/state';
 import { SceneBridge } from '../adapters/sceneBridge';
 
 const INTRO_DURATION_MS = 2400;
@@ -14,6 +15,7 @@ export class StageIntroScene extends Phaser.Scene {
     const bridge = this.registry.get('bridge') as SceneBridge;
     const state = bridge.getSession().getState();
     const { width, height } = this.scale;
+    const activePowers = getActivePowerLabels(state.progress.activePowers, state.progress.powerTimers);
 
     this.add.rectangle(width / 2, height / 2, width, height, 0x08110f, 0.96).setOrigin(0.5);
     this.add.rectangle(width / 2, height / 2, width - 120, height - 150, 0x14201d, 0.92).setStrokeStyle(2, 0xf5cf64, 0.45);
@@ -50,13 +52,15 @@ export class StageIntroScene extends Phaser.Scene {
       .text(
         width / 2,
         330,
-        `Crystals: ${state.progress.totalCrystals}\nHealth: ${state.player.health}/${state.player.maxHealth}\nPower: ${state.progress.unlockedPowers.dash ? 'Air Dash ready' : 'Dormant'}`,
+        `Coins: ${state.progress.totalCoins}\nStage coins: ${state.stageRuntime.totalCoins}\nPowers: ${activePowers.length > 0 ? activePowers.join(', ') : 'None'}${
+          state.progress.powerTimers.invincibleMs > 0 ? ` (${Math.ceil(state.progress.powerTimers.invincibleMs / 1000)}s)` : ''
+        }\nRun: ${formatRunSettings(state.progress.runSettings)}`,
         {
           fontFamily: 'Trebuchet MS',
-          fontSize: '24px',
+          fontSize: '22px',
           color: '#f5cf64',
           align: 'center',
-          lineSpacing: 12,
+          lineSpacing: 10,
         },
       )
       .setOrigin(0.5);

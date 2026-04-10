@@ -19,7 +19,7 @@ The game SHALL organize play into discrete stages with a defined start position,
 - **THEN** the stage is marked complete and the stage-clear flow begins
 
 ### Requirement: Checkpoints update respawn progress within a stage
-The game SHALL support in-level checkpoints that update the player's respawn location after activation. Stages targeting the long-form duration requirement MUST include enough checkpoint coverage that a late-stage failure does not force the player to replay most of the stage.
+The game SHALL support in-level checkpoints that update the player's respawn location after activation. Stages targeting the long-form duration requirement MUST include enough checkpoint coverage that a late-stage failure does not force the player to replay most of the stage. A checkpoint respawn within the same stage run MUST preserve already collected finite level coins and the current stage coin total, while fresh stage starts or manual restarts MUST rebuild collectible state normally.
 
 #### Scenario: Activating a checkpoint
 - **WHEN** the player touches an inactive checkpoint
@@ -29,9 +29,17 @@ The game SHALL support in-level checkpoints that update the player's respawn loc
 - **WHEN** the player dies after activating a checkpoint
 - **THEN** the game respawns the player at that checkpoint
 
+#### Scenario: Respawning with prior coin progress
+- **WHEN** the player respawns from an activated checkpoint after collecting coins earlier in the same stage run
+- **THEN** the checkpoint restore keeps those collected coins removed and preserves the current stage coin total
+
 #### Scenario: Failing late in a long stage
 - **WHEN** the player fails in a late stage segment
 - **THEN** the active checkpoint places them near that portion of progress instead of near the stage start
+
+#### Scenario: Restarting the stage after prior checkpoint progress
+- **WHEN** the player manually restarts the stage or begins a fresh stage attempt
+- **THEN** the stage rebuilds its collectible state instead of preserving prior checkpoint coin progress
 
 ### Requirement: Stages support optional collectible rewards
 The game SHALL include collectible items within stages that reward exploration or clean traversal without blocking stage completion. In long-form stages, collectibles MUST be distributed across early, middle, and late segments so optional rewards remain relevant throughout the run.
@@ -59,19 +67,19 @@ The game SHALL unlock the next stage in the MVP sequence after the current stage
 - **WHEN** the player returns to the stage selection flow after completing a stage
 - **THEN** previously unlocked stages remain available
 
-### Requirement: Main stages sustain at least 10 minutes of first-time play
-The game SHALL author each main stage so that an average first-time player requires at least 10 minutes to complete it under intended play conditions. The stage duration MUST be achieved through meaningful gameplay content such as traversal segments, hazards, enemy encounters, optional detours, and checkpointed sub-goals rather than empty travel distance.
+### Requirement: Main stages sustain at least 20 minutes of first-time play
+The game SHALL author each main stage so that an average first-time player requires at least 20 minutes to complete it under intended play conditions. The stage duration MUST be achieved through meaningful gameplay content such as traversal segments, hazards, enemy encounters, optional detours, and checkpointed sub-goals rather than empty travel distance.
 
 #### Scenario: First-time stage completion target
 - **WHEN** a main stage is playtested by a first-time average player following the intended route
-- **THEN** the stage takes at least 10 minutes to complete
+- **THEN** the stage takes at least 20 minutes to complete
 
 #### Scenario: Stage duration is driven by gameplay content
 - **WHEN** stage content is extended to meet the duration target
 - **THEN** the added time comes from authored gameplay segments and not from long empty movement sections
 
 ### Requirement: Stages are divided into multiple pacing segments
-The game SHALL structure each main stage into multiple authored segments with distinct challenge emphasis, recovery beats, or environmental transitions so that progression remains readable across a longer runtime.
+The game SHALL structure each main stage into multiple authored segments with distinct challenge emphasis, recovery beats, or environmental transitions so that progression remains readable across the doubled route length.
 
 #### Scenario: Progressing through a long stage
 - **WHEN** the player advances through a main stage
@@ -115,8 +123,17 @@ The game SHALL place checkpoints only on authored locations that are safely reac
 - **THEN** they return to a safe location that does not immediately drop them into danger
 
 ### Requirement: Authored interactives remain on intended routes
-The game SHALL place collectibles and other authored interactives only in positions that belong to intended reachable traversal routes or optional authored detours.
+The game SHALL place collectibles and other authored interactives only in positions that belong to intended reachable traversal routes or optional authored detours. Punchable interactive blocks MUST leave enough vertical clearance between the floor and the block for the player to reach them from below, and the intended route after collecting any reward from a block MUST remain safely traversable without requiring immediate enemy contact, including contact with non-stompable hazard enemies.
 
 #### Scenario: Spotting an interactive element
 - **WHEN** the player sees a collectible or similar authored interactive
 - **THEN** there is a valid reachable route to that element within the intended stage flow
+
+#### Scenario: Punching a block from below
+- **WHEN** the player jumps upward beneath an interactive block
+- **THEN** the block is reachable from below without requiring an impossible jump arc
+
+#### Scenario: Continuing after collecting a coin
+- **WHEN** the player collects a coin reward from an authored block
+- **THEN** the intended route ahead remains safely traversable without forcing an immediate enemy hit or unavoidable contact with a hazard enemy
+

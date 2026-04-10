@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { stageDefinitions } from '../../game/content/stages';
+import { formatRunSettings, getActivePowerLabels } from '../../game/simulation/state';
 import { SceneBridge } from '../adapters/sceneBridge';
 
 const AUTO_ADVANCE_MS = 2800;
@@ -18,6 +19,7 @@ export class CompleteScene extends Phaser.Scene {
     const finalStage = state.stageIndex >= stageDefinitions.length - 1;
     const { width, height } = this.scale;
     let transitioning = false;
+    const activePowers = getActivePowerLabels(state.progress.activePowers, state.progress.powerTimers);
 
     const goToMenu = () => {
       if (transitioning) {
@@ -59,7 +61,7 @@ export class CompleteScene extends Phaser.Scene {
       .text(
         width / 2,
         250,
-        `Recovered crystals: ${state.progress.totalCrystals}\nUnlocked stages: ${state.progress.unlockedStageIndex + 1}\nPower: ${state.progress.unlockedPowers.dash ? 'Air Dash online' : 'Dormant'}`,
+        `Recovered coins: ${state.progress.totalCoins}\nStage coins: ${state.stageRuntime.collectedCoins}/${state.stageRuntime.totalCoins}\nPowers: ${activePowers.length > 0 ? activePowers.join(', ') : 'None'}\nRun: ${formatRunSettings(state.progress.runSettings)}`,
         {
           align: 'center',
           fontFamily: 'Trebuchet MS',

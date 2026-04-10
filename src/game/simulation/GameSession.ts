@@ -1,17 +1,27 @@
 import Phaser from 'phaser';
 import { stageDefinitions, type StageDefinition } from '../content/stages';
 import type { InputState } from '../input/actions';
-import type {
-  CheckpointState,
-  CollectibleState,
-  EnemyState,
-  HazardState,
-  PlatformState,
-  PlayerState,
-  ProjectileState,
-  Rect,
-  SessionProgress,
-  StageRuntime,
+import {
+  createDefaultPowerInventory,
+  createDefaultPowerTimers,
+  createDefaultRunSettings,
+  createDefaultSessionProgress,
+  type CheckpointState,
+  type CollectibleState,
+  type DifficultySetting,
+  type EnemyPressureSetting,
+  type EnemyState,
+  type HazardState,
+  type PlatformState,
+  type PlayerState,
+  type PowerType,
+  type ProjectileState,
+  type Rect,
+  type RewardBlockState,
+  type RewardRevealState,
+  type RunSettings,
+  type SessionProgress,
+  type StageRuntime,
 } from './state';
 
 const PLAYER_WIDTH = 26;
@@ -29,6 +39,12 @@ const STOMP_BOUNCE = 360;
 const DASH_SPEED = 520;
 const DASH_DURATION_MS = 120;
 const DASH_COOLDOWN_MS = 700;
+const SHOOT_COOLDOWN_MS = 260;
+const PLAYER_PROJECTILE_SPEED = 520;
+const POWER_INVINCIBLE_MS = 10_000;
+const REWARD_REVEAL_MS = 1000;
+const REWARD_BLOCK_FLASH_MS = 180;
+const TURRET_VIEW_LEAD_MARGIN = 96;
 const CHARGER_TRIGGER_RANGE = 220;
 const ENEMY_SPACING_BUFFER = 28;
 const HAZARD_SPACING_BUFFER = 52;
@@ -38,6 +54,37 @@ const HOP_FLIGHT_TIME_MIN = 0.42;
 const HOP_FLIGHT_TIME_MAX = 0.78;
 const HOP_HORIZONTAL_SPEED_LIMIT = 420;
 const HOP_IMPULSE_LIMIT = 980;
+const PLAYER_PRESENTATION_ORDER: PowerType[] = ['invincible', 'shooter', 'doubleJump', 'dash'];
+
+const DIFFICULTY_CONFIG: Record<
+  DifficultySetting,
+  { maxHealth: number; enemySpeedMultiplier: number; enemyIntervalMultiplier: number }
+> = {
+  casual: { maxHealth: 4, enemySpeedMultiplier: 0.92, enemyIntervalMultiplier: 1.08 },
+  standard: { maxHealth: 3, enemySpeedMultiplier: 1, enemyIntervalMultiplier: 1 },
+  expert: { maxHealth: 2, enemySpeedMultiplier: 1.12, enemyIntervalMultiplier: 0.9 },
+};
+
+const ENEMY_PRESSURE_CONFIG: Record<
+  EnemyPressureSetting,
+  { keepEnemy: (index: number) => boolean; enemySpeedMultiplier: number; enemyIntervalMultiplier: number }
+> = {
+  low: {
+    keepEnemy: (index) => index % 3 !== 2,
+    enemySpeedMultiplier: 0.94,
+    enemyIntervalMultiplier: 1.1,
+  },
+  normal: {
+    keepEnemy: () => true,
+    enemySpeedMultiplier: 1,
+    enemyIntervalMultiplier: 1,
+  },
+  high: {
+    keepEnemy: () => true,
+    enemySpeedMultiplier: 1.16,
+    enemyIntervalMultiplier: 0.82,
+  },
+};
 
 export type SessionSnapshot = {
   stageIndex: number;
@@ -47,13 +94,45 @@ export type SessionSnapshot = {
   player: PlayerState;
   progress: SessionProgress;
   activeCheckpointId: string | null;
-  stageStartCrystals: number;
+  stageStartCoins: number;
   levelCompleted: boolean;
   levelJustCompleted: boolean;
   gameCompleted: boolean;
   stageMessage: string;
+  stageMessageTimerMs: number;
   respawnTimerMs: number;
 };
+
+type CheckpointRestoreState = {
+  collectedCollectibleIds: Set<string>;
+  coinRewardBlocks: Map<string, { used: boolean; remainingHits: number }>;
+  collectedCoins: number;
+  allCoinsRecovered: boolean;
+};
+
+type SolidSurface =
+  | {
+      id: string;
+      kind: 'platform';
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      vx: number;
+      vy: number;
+      platform: PlatformState;
+    }
+  | {
+      id: string;
+      kind: 'rewardBlock';
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      vx: 0;
+      vy: 0;
+      rewardBlock: RewardBlockState;
+    };
 
 const intersectsRect = (a: Rect, b: Rect): boolean =>
   a.x < b.x + b.width &&
@@ -82,11 +161,11 @@ const projectileRect = (projectile: ProjectileState): Rect => ({
   height: projectile.height,
 });
 
-const platformRect = (platform: PlatformState): Rect => ({
-  x: platform.x,
-  y: platform.y,
-  width: platform.width,
-  height: platform.height,
+const expandRect = (rect: Rect, paddingX: number, paddingY = paddingX): Rect => ({
+  x: rect.x - paddingX,
+  y: rect.y - paddingY,
+  width: rect.width + paddingX * 2,
+  height: rect.height + paddingY * 2,
 });
 
 const groundedEnemyKinds: EnemyState['kind'][] = ['walker', 'hopper', 'turret', 'charger'];
@@ -132,13 +211,6 @@ const clampLaneToSupport = (
 
   return { laneLeft, laneRight };
 };
-
-const expandRect = (rect: Rect, paddingX: number, paddingY = paddingX): Rect => ({
-  x: rect.x - paddingX,
-  y: rect.y - paddingY,
-  width: rect.width + paddingX * 2,
-  height: rect.height + paddingY * 2,
-});
 
 const isGroundedSpacingEnemy = (enemy: Pick<EnemyState, 'kind'>): boolean =>
   enemy.kind === 'walker' || enemy.kind === 'turret' || enemy.kind === 'charger';
@@ -332,17 +404,55 @@ const findReachableHopTarget = (
   return candidates[0] ?? null;
 };
 
+const cloneProgress = (progress: SessionProgress): SessionProgress => ({
+  unlockedStageIndex: progress.unlockedStageIndex,
+  totalCoins: progress.totalCoins,
+  activePowers: { ...progress.activePowers },
+  powerTimers: { ...progress.powerTimers },
+  runSettings: { ...progress.runSettings },
+});
+
+const createSolidSurfaceList = (runtime: StageRuntime): SolidSurface[] => [
+  ...runtime.platforms.map<SolidSurface>((platform) => ({
+    id: platform.id,
+    kind: 'platform',
+    x: platform.x,
+    y: platform.y,
+    width: platform.width,
+    height: platform.height,
+    vx: platform.vx,
+    vy: platform.vy,
+    platform,
+  })),
+  ...runtime.rewardBlocks.map<SolidSurface>((rewardBlock) => ({
+    id: rewardBlock.id,
+    kind: 'rewardBlock',
+    x: rewardBlock.x,
+    y: rewardBlock.y,
+    width: rewardBlock.width,
+    height: rewardBlock.height,
+    vx: 0,
+    vy: 0,
+    rewardBlock,
+  })),
+];
+
+const surfaceRect = (surface: SolidSurface): Rect => ({
+  x: surface.x,
+  y: surface.y,
+  width: surface.width,
+  height: surface.height,
+});
+
 export class GameSession {
   private snapshot: SessionSnapshot;
 
   private cues: string[] = [];
 
+  private cameraViewBox: Rect | null = null;
+
   constructor() {
-    this.snapshot = this.createSnapshot(0, {
-      unlockedStageIndex: 0,
-      totalCrystals: 0,
-      unlockedPowers: { dash: false },
-    });
+    this.snapshot = this.createSnapshot(0, createDefaultSessionProgress());
   }
 
   getState(): Readonly<SessionSnapshot> {
@@ -356,17 +466,17 @@ export class GameSession {
   }
 
   restartStage(): void {
-    this.snapshot = this.createSnapshot(this.snapshot.stageIndex, this.snapshot.progress);
+    this.snapshot = this.createSnapshot(this.snapshot.stageIndex, cloneProgress(this.snapshot.progress));
   }
 
   startStage(index: number): void {
     const clamped = Math.max(0, Math.min(index, this.snapshot.progress.unlockedStageIndex));
-    this.snapshot = this.createSnapshot(clamped, this.snapshot.progress);
+    this.snapshot = this.createSnapshot(clamped, cloneProgress(this.snapshot.progress));
   }
 
   forceStartStage(index: number): void {
     const clamped = Math.max(0, Math.min(index, stageDefinitions.length - 1));
-    this.snapshot = this.createSnapshot(clamped, this.snapshot.progress);
+    this.snapshot = this.createSnapshot(clamped, cloneProgress(this.snapshot.progress));
   }
 
   advanceToNextStage(): void {
@@ -378,15 +488,35 @@ export class GameSession {
     this.startStage(this.snapshot.stageIndex + 1);
   }
 
+  updateRunSettings(next: Partial<RunSettings>): void {
+    this.snapshot.progress.runSettings = {
+      ...this.snapshot.progress.runSettings,
+      ...next,
+      masterVolume:
+        next.masterVolume == null
+          ? this.snapshot.progress.runSettings.masterVolume
+          : Phaser.Math.Clamp(next.masterVolume, 0, 1),
+    };
+  }
+
+  setCameraViewBox(viewBox: Rect | null): void {
+    this.cameraViewBox = viewBox;
+  }
+
+  updateViewBounds(viewBox: Rect | null): void {
+    this.setCameraViewBox(viewBox);
+  }
+
   update(deltaMs: number, input: InputState): void {
     const deltaSec = deltaMs / 1000;
     const { player, stage, stageRuntime } = this.snapshot;
     const wasOnGround = player.onGround;
 
     this.snapshot.levelJustCompleted = false;
-    if (this.snapshot.stageMessage && !player.dead && !this.snapshot.levelCompleted) {
-      this.snapshot.stageMessage = '';
-    }
+    this.updateMessageTimer(deltaMs);
+    this.updatePowerTimers(deltaMs);
+    this.updateRewardFeedback(deltaMs);
+    this.syncPlayerPresentationPower();
 
     if (player.dead) {
       this.snapshot.respawnTimerMs -= deltaMs;
@@ -398,18 +528,16 @@ export class GameSession {
 
     this.updatePlatforms(deltaMs, deltaSec);
 
-    const supportPlatform = player.supportPlatformId
-      ? stageRuntime.platforms.find((platform) => platform.id === player.supportPlatformId) ?? null
-      : null;
-    if (supportPlatform && player.onGround) {
+    const supportSurface = player.supportPlatformId ? this.findSupportSurface(player.supportPlatformId) : null;
+    if (supportSurface && player.onGround) {
       const stillSupported =
-        Math.abs(player.y + player.height - supportPlatform.y) <= 8 &&
-        player.x + player.width > supportPlatform.x + 6 &&
-        player.x < supportPlatform.x + supportPlatform.width - 6;
+        Math.abs(player.y + player.height - supportSurface.y) <= 8 &&
+        player.x + player.width > supportSurface.x + 6 &&
+        player.x < supportSurface.x + supportSurface.width - 6;
 
       if (stillSupported) {
-        player.x = Phaser.Math.Clamp(player.x + supportPlatform.vx * deltaSec, 0, stage.world.width - player.width);
-        player.y += supportPlatform.vy * deltaSec;
+        player.x = Phaser.Math.Clamp(player.x + supportSurface.vx * deltaSec, 0, stage.world.width - player.width);
+        player.y += supportSurface.vy * deltaSec;
       } else {
         player.onGround = false;
         player.supportPlatformId = null;
@@ -421,13 +549,29 @@ export class GameSession {
     }
     player.dashCooldownMs = Math.max(0, player.dashCooldownMs - deltaMs);
     player.dashTimerMs = Math.max(0, player.dashTimerMs - deltaMs);
+    player.shootCooldownMs = Math.max(0, player.shootCooldownMs - deltaMs);
 
     const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (direction !== 0) {
       player.facing = direction > 0 ? 1 : -1;
     }
 
-    if (input.dashPressed && this.snapshot.progress.unlockedPowers.dash && player.dashCooldownMs <= 0) {
+    if (input.shootPressed && this.snapshot.progress.activePowers.shooter && player.shootCooldownMs <= 0) {
+      player.shootCooldownMs = SHOOT_COOLDOWN_MS;
+      stageRuntime.projectiles.push({
+        id: `player-shot-${Math.random().toString(36).slice(2, 8)}`,
+        owner: 'player',
+        x: player.facing === 1 ? player.x + player.width : player.x - 16,
+        y: player.y + player.height / 2 - 6,
+        vx: player.facing * PLAYER_PROJECTILE_SPEED,
+        width: 16,
+        height: 12,
+        alive: true,
+      });
+      this.emitCue('shoot');
+    }
+
+    if (input.dashPressed && this.snapshot.progress.activePowers.dash && player.dashCooldownMs <= 0) {
       player.dashTimerMs = DASH_DURATION_MS;
       player.dashCooldownMs = DASH_COOLDOWN_MS;
       player.vx = player.facing * DASH_SPEED;
@@ -447,18 +591,28 @@ export class GameSession {
 
       if (player.onGround) {
         player.coyoteMs = COYOTE_TIME_MS;
+        player.airJumpsRemaining = this.snapshot.progress.activePowers.doubleJump ? 1 : 0;
       } else {
         player.coyoteMs = Math.max(0, player.coyoteMs - deltaMs);
       }
 
       player.jumpBufferMs = input.jumpPressed ? JUMP_BUFFER_MS : Math.max(0, player.jumpBufferMs - deltaMs);
-      if (player.jumpBufferMs > 0 && player.coyoteMs > 0) {
-        player.vy = -JUMP_SPEED;
-        player.onGround = false;
-        player.supportPlatformId = null;
-        player.coyoteMs = 0;
-        player.jumpBufferMs = 0;
-        this.emitCue('jump');
+      if (player.jumpBufferMs > 0) {
+        if (player.coyoteMs > 0) {
+          player.vy = -JUMP_SPEED;
+          player.onGround = false;
+          player.supportPlatformId = null;
+          player.coyoteMs = 0;
+          player.jumpBufferMs = 0;
+          this.emitCue('jump');
+        } else if (this.snapshot.progress.activePowers.doubleJump && player.airJumpsRemaining > 0) {
+          player.vy = -JUMP_SPEED;
+          player.onGround = false;
+          player.supportPlatformId = null;
+          player.airJumpsRemaining -= 1;
+          player.jumpBufferMs = 0;
+          this.emitCue('double-jump');
+        }
       }
 
       player.vy = Math.min(player.vy + stage.world.gravity * deltaSec, MAX_FALL_SPEED);
@@ -470,17 +624,18 @@ export class GameSession {
 
     let nextX = player.x + player.vx * deltaSec;
     let nextY = player.y;
+    const solidSurfaces = createSolidSurfaceList(stageRuntime);
 
     const horizontalRect: Rect = { x: nextX, y: player.y, width: player.width, height: player.height };
-    for (const platform of stageRuntime.platforms) {
-      if (player.onGround && platform.id === player.supportPlatformId) {
+    for (const surface of solidSurfaces) {
+      if (player.onGround && surface.id === player.supportPlatformId) {
         continue;
       }
-      if (intersectsRect(horizontalRect, platformRect(platform))) {
+      if (intersectsRect(horizontalRect, surfaceRect(surface))) {
         if (player.vx > 0) {
-          nextX = platform.x - player.width;
+          nextX = surface.x - player.width;
         } else if (player.vx < 0) {
-          nextX = platform.x + platform.width;
+          nextX = surface.x + surface.width;
         }
         player.vx = 0;
       }
@@ -489,47 +644,51 @@ export class GameSession {
     nextY += player.vy * deltaSec;
     player.onGround = false;
     player.supportPlatformId = null;
-    let ridingPlatform: PlatformState | null = null;
+    let ridingSurface: SolidSurface | null = null;
     const verticalRect: Rect = { x: nextX, y: nextY, width: player.width, height: player.height };
-    for (const platform of stageRuntime.platforms) {
-      const rect = platformRect(platform);
-      if (!intersectsRect(verticalRect, rect)) {
+    for (const surface of solidSurfaces) {
+      if (!intersectsRect(verticalRect, surfaceRect(surface))) {
         continue;
       }
 
       if (player.vy > 0) {
-        nextY = platform.y - player.height;
+        nextY = surface.y - player.height;
         player.onGround = true;
-        player.supportPlatformId = platform.id;
-        ridingPlatform = platform;
+        player.supportPlatformId = surface.id;
+        ridingSurface = surface;
       } else if (player.vy < 0) {
-        nextY = platform.y + platform.height;
+        nextY = surface.y + surface.height;
+        if (surface.kind === 'rewardBlock') {
+          this.activateRewardBlock(surface.rewardBlock);
+        }
       }
       player.vy = 0;
+      break;
     }
 
     player.x = Phaser.Math.Clamp(nextX, 0, stage.world.width - player.width);
     player.y = nextY;
 
-    if (ridingPlatform) {
+    if (ridingSurface) {
       if (!wasOnGround) {
         this.emitCue('land');
       }
 
-      if (ridingPlatform.kind === 'falling' && ridingPlatform.fall && !ridingPlatform.fall.triggered) {
-        ridingPlatform.fall.triggered = true;
-        ridingPlatform.fall.timerMs = ridingPlatform.fall.triggerDelayMs;
+      if (ridingSurface.kind === 'platform' && ridingSurface.platform.kind === 'falling' && ridingSurface.platform.fall && !ridingSurface.platform.fall.triggered) {
+        ridingSurface.platform.fall.triggered = true;
+        ridingSurface.platform.fall.timerMs = ridingSurface.platform.fall.triggerDelayMs;
         this.emitCue('collapse');
       }
 
       if (
-        ridingPlatform.kind === 'spring' &&
-        ridingPlatform.spring &&
-        ridingPlatform.spring.timerMs <= 0 &&
+        ridingSurface.kind === 'platform' &&
+        ridingSurface.platform.kind === 'spring' &&
+        ridingSurface.platform.spring &&
+        ridingSurface.platform.spring.timerMs <= 0 &&
         !input.jumpHeld
       ) {
-        ridingPlatform.spring.timerMs = ridingPlatform.spring.cooldownMs;
-        player.vy = -ridingPlatform.spring.boost;
+        ridingSurface.platform.spring.timerMs = ridingSurface.platform.spring.cooldownMs;
+        player.vy = -ridingSurface.platform.spring.boost;
         player.onGround = false;
         player.supportPlatformId = null;
         this.emitCue('spring');
@@ -544,6 +703,49 @@ export class GameSession {
     this.handleHazards();
     this.handleEnemyInteractions();
     this.handleExit();
+  }
+
+  private updateMessageTimer(deltaMs: number): void {
+    if (!this.snapshot.stageMessage || this.snapshot.stageMessageTimerMs <= 0) {
+      return;
+    }
+
+    this.snapshot.stageMessageTimerMs = Math.max(0, this.snapshot.stageMessageTimerMs - deltaMs);
+    if (this.snapshot.stageMessageTimerMs <= 0 && !this.snapshot.levelCompleted && !this.snapshot.player.dead) {
+      this.snapshot.stageMessage = '';
+    }
+  }
+
+  private updatePowerTimers(deltaMs: number): void {
+    const { progress } = this.snapshot;
+    if (progress.powerTimers.invincibleMs <= 0) {
+      progress.powerTimers.invincibleMs = 0;
+      progress.activePowers.invincible = false;
+      this.syncPlayerPresentationPower();
+      return;
+    }
+
+    const next = Math.max(0, progress.powerTimers.invincibleMs - deltaMs);
+    progress.powerTimers.invincibleMs = next;
+    progress.activePowers.invincible = next > 0;
+    if (next === 0) {
+      this.setStageMessage('Invincibility faded', 1400);
+    }
+    this.syncPlayerPresentationPower();
+  }
+
+  private updateRewardFeedback(deltaMs: number): void {
+    for (const block of this.snapshot.stageRuntime.rewardBlocks) {
+      block.hitFlashMs = Math.max(0, block.hitFlashMs - deltaMs);
+    }
+
+    for (const reveal of this.snapshot.stageRuntime.rewardReveals) {
+      reveal.timerMs = Math.max(0, reveal.timerMs - deltaMs);
+    }
+
+    this.snapshot.stageRuntime.rewardReveals = this.snapshot.stageRuntime.rewardReveals.filter(
+      (reveal) => reveal.timerMs > 0,
+    );
   }
 
   private updatePlatforms(deltaMs: number, deltaSec: number): void {
@@ -712,11 +914,16 @@ export class GameSession {
       }
 
       if (enemy.kind === 'turret' && enemy.turret) {
+        if (!this.isEnemyVisible(enemy)) {
+          continue;
+        }
+
         enemy.turret.timerMs -= deltaMs;
         if (enemy.turret.timerMs <= 0) {
           enemy.turret.timerMs = enemy.turret.intervalMs;
           stageRuntime.projectiles.push({
             id: `${enemy.id}-shot-${Math.random().toString(36).slice(2, 7)}`,
+            owner: 'enemy',
             x: enemy.direction === 1 ? enemy.x + enemy.width : enemy.x - 12,
             y: enemy.y + 10,
             vx: enemy.direction * 260,
@@ -792,6 +999,7 @@ export class GameSession {
 
   private updateProjectiles(deltaSec: number): void {
     const { player, stage, stageRuntime } = this.snapshot;
+    const solidSurfaces = createSolidSurfaceList(stageRuntime);
     for (const projectile of stageRuntime.projectiles) {
       if (!projectile.alive) {
         continue;
@@ -804,16 +1012,35 @@ export class GameSession {
       }
 
       const shotRect = projectileRect(projectile);
-      for (const platform of stageRuntime.platforms) {
-        if (intersectsRect(shotRect, platformRect(platform))) {
+      for (const surface of solidSurfaces) {
+        if (intersectsRect(shotRect, surfaceRect(surface))) {
           projectile.alive = false;
           break;
         }
       }
 
-      if (projectile.alive && intersectsRect(shotRect, playerRect(player))) {
+      if (!projectile.alive) {
+        continue;
+      }
+
+      if (projectile.owner === 'enemy') {
+        if (intersectsRect(shotRect, playerRect(player))) {
+          projectile.alive = false;
+          this.damagePlayer();
+        }
+        continue;
+      }
+
+      for (const enemy of stageRuntime.enemies) {
+        if (!enemy.alive || !intersectsRect(shotRect, enemyRect(enemy))) {
+          continue;
+        }
+
+        enemy.alive = false;
         projectile.alive = false;
-        this.damagePlayer();
+        this.setStageMessage('Enemy blasted', 1300);
+        this.emitCue('shoot-hit');
+        break;
       }
     }
 
@@ -830,27 +1057,25 @@ export class GameSession {
         }
         checkpoint.activated = true;
         this.snapshot.activeCheckpointId = checkpoint.id;
-        this.snapshot.stageMessage = 'Checkpoint activated';
+        this.setStageMessage('Checkpoint activated', 1500);
         this.emitCue('checkpoint');
       }
     }
   }
 
   private handleCollectibles(): void {
-    const { player, progress, stageRuntime } = this.snapshot;
+    const { player, stageRuntime } = this.snapshot;
     const rect = playerRect(player);
-    for (const crystal of stageRuntime.collectibles) {
+    for (const coin of stageRuntime.collectibles) {
       const itemRect: Rect = {
-        x: crystal.position.x - 10,
-        y: crystal.position.y - 10,
+        x: coin.position.x - 10,
+        y: coin.position.y - 10,
         width: 20,
         height: 20,
       };
-      if (!crystal.collected && intersectsRect(rect, itemRect)) {
-        crystal.collected = true;
-        progress.totalCrystals += 1;
-        this.snapshot.stageMessage = 'Crystal recovered';
-        this.emitCue('collect');
+      if (!coin.collected && intersectsRect(rect, itemRect)) {
+        coin.collected = true;
+        this.awardCoins(1, 'Coin recovered');
       }
     }
   }
@@ -884,7 +1109,7 @@ export class GameSession {
         player.vy = -STOMP_BOUNCE;
         player.onGround = false;
         player.supportPlatformId = null;
-        this.snapshot.stageMessage = 'Enemy stomped';
+        this.setStageMessage('Enemy stomped', 1200);
         this.emitCue('stomp');
       } else {
         this.damagePlayer();
@@ -893,8 +1118,8 @@ export class GameSession {
   }
 
   private handleExit(): void {
-    const { player, progress, stage, stageRuntime } = this.snapshot;
-    if (!stageRuntime.exitReached && intersectsRect(playerRect(player), stage.exit)) {
+    const { progress, stage, stageRuntime } = this.snapshot;
+    if (!stageRuntime.exitReached && intersectsRect(playerRect(this.snapshot.player), stage.exit)) {
       stageRuntime.exitReached = true;
       this.snapshot.levelCompleted = true;
       this.snapshot.levelJustCompleted = true;
@@ -902,14 +1127,14 @@ export class GameSession {
         progress.unlockedStageIndex,
         Math.min(this.snapshot.stageIndex + 1, stageDefinitions.length - 1),
       );
-      if (this.snapshot.stageIndex === 0 && !progress.unlockedPowers.dash) {
-        progress.unlockedPowers.dash = true;
-        this.snapshot.stageMessage = 'Portal restored - Air Dash awakened';
-        this.emitCue('unlock');
-      } else {
-        this.snapshot.stageMessage =
-          this.snapshot.stageIndex === stageDefinitions.length - 1 ? 'Sanctum restored' : 'Portal restored';
-      }
+      this.setStageMessage(
+        this.snapshot.stageIndex === stageDefinitions.length - 1
+          ? 'Sanctum restored'
+          : this.hasActivePowers()
+            ? 'Portal restored - powers retained'
+            : 'Portal restored',
+        2600,
+      );
       this.emitCue('exit');
     }
   }
@@ -922,7 +1147,7 @@ export class GameSession {
 
     if (segment.id !== this.snapshot.currentSegmentId) {
       this.snapshot.currentSegmentId = segment.id;
-      this.snapshot.stageMessage = `${segment.title}: ${segment.focus}`;
+      this.setStageMessage(`${segment.title}: ${segment.focus}`, 2400);
     }
   }
 
@@ -932,15 +1157,33 @@ export class GameSession {
       return;
     }
 
+    const hitShieldState = this.consumeHitShield();
+    if (hitShieldState !== 'none') {
+      player.invulnerableMs = INVULNERABLE_MS;
+      player.vy = -260;
+      player.vx = player.facing === 1 ? -180 : 180;
+      this.emitCue('hurt');
+      this.setStageMessage(
+        hitShieldState === 'mixed'
+          ? 'Power shield broke - invincibility held'
+          : hitShieldState === 'invincible'
+            ? 'Invincibility held'
+            : 'Power shield broke',
+        1800,
+      );
+      return;
+    }
+
     player.health -= 1;
     player.invulnerableMs = INVULNERABLE_MS;
     player.vy = -260;
     player.vx = player.facing === 1 ? -180 : 180;
+    this.clearActivePowers();
     this.emitCue('hurt');
     if (player.health <= 0) {
       this.killPlayer();
     } else {
-      this.snapshot.stageMessage = 'You were hit';
+      this.setStageMessage('You were hit', 1800);
     }
   }
 
@@ -950,26 +1193,226 @@ export class GameSession {
       return;
     }
 
+    this.clearActivePowers();
     player.dead = true;
     this.snapshot.respawnTimerMs = RESPAWN_DELAY_MS;
-    this.snapshot.stageMessage = 'Respawning...';
+    this.setStageMessage('Respawning...', RESPAWN_DELAY_MS);
   }
 
   private respawnPlayer(): void {
     const { progress, stageIndex } = this.snapshot;
     this.snapshot = this.createSnapshot(
       stageIndex,
-      {
-        unlockedStageIndex: progress.unlockedStageIndex,
-        totalCrystals: this.snapshot.stageStartCrystals,
-        unlockedPowers: { ...progress.unlockedPowers },
-      },
+      cloneProgress(progress),
       this.snapshot.activeCheckpointId,
+      this.captureCheckpointRestoreState(),
     );
   }
 
-  private createSnapshot(stageIndex: number, progress: SessionProgress, activeCheckpointId: string | null = null): SessionSnapshot {
+  private activateRewardBlock(block: RewardBlockState): void {
+    if (block.remainingHits <= 0) {
+      return;
+    }
+
+    block.hitFlashMs = REWARD_BLOCK_FLASH_MS;
+    this.emitCue('block');
+    if (block.reward.kind === 'coins') {
+      block.remainingHits -= 1;
+      block.used = block.remainingHits <= 0;
+      this.spawnRewardReveal(block, { kind: 'coins', amount: 1 });
+      this.awardCoins(1, block.remainingHits > 0 ? `Coin gained - ${block.remainingHits} left` : 'Coin gained');
+      return;
+    }
+
+    block.remainingHits = 0;
+    block.used = true;
+    this.spawnRewardReveal(block, block.reward);
+    this.grantPower(block.reward.power);
+  }
+
+  private grantPower(power: PowerType): void {
+    const { progress, player } = this.snapshot;
+    progress.activePowers[power] = true;
+    player.presentationPower = power;
+
+    switch (power) {
+      case 'doubleJump':
+        player.airJumpsRemaining = Math.max(player.airJumpsRemaining, 1);
+        this.setStageMessage('Power gained: Double Jump', 2000);
+        break;
+      case 'shooter':
+        this.setStageMessage('Power gained: Shooter', 2000);
+        break;
+      case 'invincible':
+        progress.powerTimers.invincibleMs = POWER_INVINCIBLE_MS;
+        this.setStageMessage('Power gained: Invincible for 10s', 2200);
+        break;
+      case 'dash':
+        this.setStageMessage('Power gained: Dash', 2000);
+        break;
+    }
+
+    this.emitCue('power');
+  }
+
+  private awardCoins(amount: number, message: string): void {
+    const { progress, stageRuntime, player } = this.snapshot;
+    progress.totalCoins += amount;
+    stageRuntime.collectedCoins = Math.min(stageRuntime.totalCoins, stageRuntime.collectedCoins + amount);
+    this.setStageMessage(message, 1500);
+    this.emitCue('collect');
+
+    if (
+      stageRuntime.totalCoins > 0 &&
+      stageRuntime.collectedCoins >= stageRuntime.totalCoins &&
+      !stageRuntime.allCoinsRecovered
+    ) {
+      stageRuntime.allCoinsRecovered = true;
+      player.health = player.maxHealth;
+      this.setStageMessage('All coins recovered - energy restored', 2200);
+      this.emitCue('heal');
+    }
+  }
+
+  private spawnRewardReveal(block: RewardBlockState, reward: RewardRevealState['reward']): void {
+    this.snapshot.stageRuntime.rewardReveals.push({
+      id: `${block.id}-reveal-${Math.random().toString(36).slice(2, 8)}`,
+      reward,
+      x: block.x + block.width / 2,
+      y: block.y - 14,
+      timerMs: REWARD_REVEAL_MS,
+      durationMs: REWARD_REVEAL_MS,
+    });
+  }
+
+  private clearActivePowers(): void {
+    this.clearPowers({ preserveInvincibility: false });
+  }
+
+  private consumeHitShield(): 'none' | 'non-invincible' | 'invincible' | 'mixed' {
+    const { activePowers, powerTimers } = this.snapshot.progress;
+    const invincibilityActive = powerTimers.invincibleMs > 0;
+    const hasNonInvinciblePowers = (Object.keys(activePowers) as PowerType[]).some(
+      (power) => power !== 'invincible' && activePowers[power],
+    );
+
+    if (!invincibilityActive && !hasNonInvinciblePowers) {
+      return 'none';
+    }
+
+    this.clearPowers({ preserveInvincibility: invincibilityActive });
+
+    if (invincibilityActive && hasNonInvinciblePowers) {
+      return 'mixed';
+    }
+
+    return invincibilityActive ? 'invincible' : 'non-invincible';
+  }
+
+  private clearPowers(options: { preserveInvincibility: boolean }): void {
+    const { activePowers, powerTimers } = this.snapshot.progress;
+    const { preserveInvincibility } = options;
+
+    for (const key of Object.keys(activePowers) as PowerType[]) {
+      if (preserveInvincibility && key === 'invincible') {
+        continue;
+      }
+      activePowers[key] = false;
+    }
+
+    if (preserveInvincibility) {
+      activePowers.invincible = powerTimers.invincibleMs > 0;
+    } else {
+      activePowers.invincible = false;
+      powerTimers.invincibleMs = 0;
+    }
+
+    this.snapshot.player.airJumpsRemaining = 0;
+    this.snapshot.player.dashTimerMs = 0;
+    this.snapshot.player.dashCooldownMs = 0;
+    this.snapshot.player.shootCooldownMs = 0;
+    this.syncPlayerPresentationPower();
+  }
+
+  private hasActivePowers(): boolean {
+    return (
+      Object.values(this.snapshot.progress.activePowers).some(Boolean) ||
+      this.snapshot.progress.powerTimers.invincibleMs > 0
+    );
+  }
+
+  private captureCheckpointRestoreState(): CheckpointRestoreState {
+    const { stageRuntime } = this.snapshot;
+
+    return {
+      collectedCollectibleIds: new Set(
+        stageRuntime.collectibles.filter((collectible) => collectible.collected).map((collectible) => collectible.id),
+      ),
+      coinRewardBlocks: new Map(
+        stageRuntime.rewardBlocks
+          .filter((rewardBlock) => rewardBlock.reward.kind === 'coins')
+          .map((rewardBlock) => [
+            rewardBlock.id,
+            {
+              used: rewardBlock.used,
+              remainingHits: rewardBlock.remainingHits,
+            },
+          ]),
+      ),
+      collectedCoins: stageRuntime.collectedCoins,
+      allCoinsRecovered: stageRuntime.allCoinsRecovered,
+    };
+  }
+
+  private findSupportSurface(id: string): SolidSurface | null {
+    return createSolidSurfaceList(this.snapshot.stageRuntime).find((surface) => surface.id === id) ?? null;
+  }
+
+  private syncPlayerPresentationPower(): void {
+    const { player, progress } = this.snapshot;
+    const current = player.presentationPower;
+    if (
+      current &&
+      (progress.activePowers[current] || (current === 'invincible' && progress.powerTimers.invincibleMs > 0))
+    ) {
+      return;
+    }
+
+    player.presentationPower =
+      PLAYER_PRESENTATION_ORDER.find(
+        (power) => progress.activePowers[power] || (power === 'invincible' && progress.powerTimers.invincibleMs > 0),
+      ) ?? null;
+  }
+
+  private isEnemyVisible(enemy: EnemyState): boolean {
+    if (!this.cameraViewBox) {
+      return true;
+    }
+
+    const viewBox =
+      enemy.kind === 'turret'
+        ? expandRect(this.cameraViewBox, TURRET_VIEW_LEAD_MARGIN, 0)
+        : this.cameraViewBox;
+    return intersectsRect(viewBox, enemyRect(enemy));
+  }
+
+  private setStageMessage(message: string, durationMs = 1600): void {
+    this.snapshot.stageMessage = message;
+    this.snapshot.stageMessageTimerMs = durationMs;
+  }
+
+  private createSnapshot(
+    stageIndex: number,
+    progress: SessionProgress,
+    activeCheckpointId: string | null = null,
+    checkpointRestore: CheckpointRestoreState | null = null,
+  ): SessionSnapshot {
     const stage = stageDefinitions[stageIndex];
+    const runSettings = progress.runSettings ?? createDefaultRunSettings();
+    const difficulty = DIFFICULTY_CONFIG[runSettings.difficulty];
+    const pressure = ENEMY_PRESSURE_CONFIG[runSettings.enemyPressure];
+    const speedMultiplier = difficulty.enemySpeedMultiplier * pressure.enemySpeedMultiplier;
+    const intervalMultiplier = difficulty.enemyIntervalMultiplier * pressure.enemyIntervalMultiplier;
     const respawnCheckpoint = activeCheckpointId
       ? stage.checkpoints.find((checkpoint) => checkpoint.id === activeCheckpointId) ?? null
       : null;
@@ -986,11 +1429,14 @@ export class GameSession {
       onGround: false,
       coyoteMs: 0,
       jumpBufferMs: 0,
-      health: 3,
-      maxHealth: 3,
+      health: difficulty.maxHealth,
+      maxHealth: difficulty.maxHealth,
       invulnerableMs: 0,
       dashTimerMs: 0,
       dashCooldownMs: 0,
+      shootCooldownMs: 0,
+      airJumpsRemaining: progress.activePowers.doubleJump ? 1 : 0,
+      presentationPower: null,
       supportPlatformId: null,
       dead: false,
     };
@@ -1024,8 +1470,9 @@ export class GameSession {
         : undefined,
     }));
 
-    const enemies = stage.enemies.map<EnemyState>((enemy) => {
-      const width = enemy.kind === 'turret' ? 28 : enemy.kind === 'flyer' ? 34 : 34;
+    const filteredEnemies = stage.enemies.filter((_, index) => pressure.keepEnemy(index));
+    const enemies = filteredEnemies.map<EnemyState>((enemy) => {
+      const width = enemy.kind === 'turret' ? 28 : 34;
       const height = enemy.kind === 'turret' ? 38 : enemy.kind === 'flyer' ? 24 : 30;
       const support = isGroundedEnemy(enemy)
         ? findStableSupportForSpan(platforms, enemy.position.x, enemy.position.x + width, enemy.position.y + height)
@@ -1062,16 +1509,17 @@ export class GameSession {
         patrol: enemy.patrol
           ? {
               ...enemy.patrol,
+              speed: enemy.patrol.speed * speedMultiplier,
               left: lane.laneLeft ?? enemy.patrol.left,
               right: lane.laneRight !== null ? lane.laneRight + width : enemy.patrol.right,
             }
           : undefined,
         hop: enemy.hop
           ? {
-              intervalMs: enemy.hop.intervalMs,
-              timerMs: enemy.hop.intervalMs,
+              intervalMs: enemy.hop.intervalMs * intervalMultiplier,
+              timerMs: enemy.hop.intervalMs * intervalMultiplier,
               impulse: enemy.hop.impulse,
-              speed: enemy.hop.speed,
+              speed: enemy.hop.speed * speedMultiplier,
               targetPlatformId: null,
               targetX: null,
               targetY: null,
@@ -1079,13 +1527,17 @@ export class GameSession {
           : undefined,
         turret: enemy.turret
           ? {
-              intervalMs: enemy.turret.intervalMs,
-              timerMs: enemy.turret.intervalMs,
+              intervalMs: enemy.turret.intervalMs * intervalMultiplier,
+              timerMs: enemy.turret.intervalMs * intervalMultiplier,
             }
           : undefined,
         charger: enemy.charger
           ? {
               ...enemy.charger,
+              patrolSpeed: enemy.charger.patrolSpeed * speedMultiplier,
+              chargeSpeed: enemy.charger.chargeSpeed * speedMultiplier,
+              windupMs: enemy.charger.windupMs * intervalMultiplier,
+              cooldownMs: enemy.charger.cooldownMs * intervalMultiplier,
               left: lane.laneLeft ?? enemy.charger.left,
               right: lane.laneRight !== null ? lane.laneRight + width : enemy.charger.right,
               timerMs: 0,
@@ -1095,6 +1547,7 @@ export class GameSession {
         flyer: enemy.flyer
           ? {
               ...enemy.flyer,
+              speed: enemy.flyer.speed * speedMultiplier,
               bobPhase: 0,
               originY: enemy.position.y,
             }
@@ -1102,22 +1555,41 @@ export class GameSession {
       };
     });
 
+    const powerInventory = {
+      ...createDefaultPowerInventory(),
+      ...progress.activePowers,
+      invincible: progress.powerTimers.invincibleMs > 0,
+    };
+    const powerTimers = {
+      ...createDefaultPowerTimers(),
+      ...progress.powerTimers,
+    };
+    const blockCoinTotal = stage.rewardBlocks.reduce(
+      (total, block) => total + (block.reward.kind === 'coins' ? block.reward.amount : 0),
+      0,
+    );
+
+    const normalizedProgress: SessionProgress = {
+      unlockedStageIndex: progress.unlockedStageIndex,
+      totalCoins: progress.totalCoins,
+      activePowers: powerInventory,
+      powerTimers,
+      runSettings,
+    };
+
     return {
       stageIndex,
       stage,
       currentSegmentId: stage.segments[0]?.id ?? 'stage',
       player,
-      progress: {
-        unlockedStageIndex: progress.unlockedStageIndex,
-        totalCrystals: progress.totalCrystals,
-        unlockedPowers: { ...progress.unlockedPowers },
-      },
+      progress: normalizedProgress,
       activeCheckpointId,
-      stageStartCrystals: progress.totalCrystals,
+      stageStartCoins: progress.totalCoins,
       levelCompleted: false,
       levelJustCompleted: false,
       gameCompleted: false,
       stageMessage: stage.hint,
+      stageMessageTimerMs: 2600,
       respawnTimerMs: 0,
       stageRuntime: {
         platforms,
@@ -1127,8 +1599,21 @@ export class GameSession {
         })),
         collectibles: stage.collectibles.map<CollectibleState>((collectible) => ({
           ...collectible,
-          collected: false,
+          collected: checkpointRestore?.collectedCollectibleIds.has(collectible.id) ?? false,
         })),
+        rewardBlocks: stage.rewardBlocks.map<RewardBlockState>((rewardBlock) => ({
+          ...rewardBlock,
+          used:
+            rewardBlock.reward.kind === 'coins'
+              ? (checkpointRestore?.coinRewardBlocks.get(rewardBlock.id)?.used ?? false)
+              : false,
+          remainingHits:
+            rewardBlock.reward.kind === 'coins'
+              ? (checkpointRestore?.coinRewardBlocks.get(rewardBlock.id)?.remainingHits ?? rewardBlock.reward.amount)
+              : 1,
+          hitFlashMs: 0,
+        })),
+        rewardReveals: [],
         hazards: stage.hazards.map<HazardState>((hazard) => ({ ...hazard })),
         enemies: (() => {
           const resolvedEnemies = [...enemies];
@@ -1140,6 +1625,9 @@ export class GameSession {
           return resolvedEnemies;
         })(),
         projectiles: [],
+        collectedCoins: checkpointRestore?.collectedCoins ?? 0,
+        totalCoins: stage.collectibles.length + blockCoinTotal,
+        allCoinsRecovered: checkpointRestore?.allCoinsRecovered ?? false,
         exitReached: false,
       },
     };
