@@ -1,5 +1,10 @@
 import Phaser from 'phaser';
-import { DIFFICULTY_LABELS, ENEMY_PRESSURE_LABELS } from '../../game/simulation/state';
+import {
+  DIFFICULTY_LABELS,
+  ENEMY_PRESSURE_LABELS,
+  getPowerHelpSummary,
+  getPowerLabel,
+} from '../../game/simulation/state';
 import { SceneBridge } from '../adapters/sceneBridge';
 
 type MenuMode = 'main';
@@ -13,20 +18,20 @@ const rootOptions: RootOptionId[] = ['primary', 'options', 'help'];
 const optionEntries: OptionsOptionId[] = ['difficulty', 'enemies', 'volume'];
 
 const HELP_LINES = [
-  'Controls: Move with Arrow keys or A / D. Jump with Up, W, or Space. Dash with Shift and fire shooter shots with F when that power is active.',
+  'Controls: Move with Arrow keys or A / D. Jump with Up, W, or Space. Trigger Booster Dash with Shift and fire Plasma Blaster shots with F when that system is active.',
   'Powers',
-  'Double Jump: Grants one extra mid-air jump after takeoff, which is useful for correcting long platform routes or recovering after a late jump.',
-  'Shooter: Fires forward projectiles that clear pressure in tight lanes without forcing direct contact with enemies.',
-  'Invincible: Protects health for 10 seconds and ignores hit loss while the timer remains active.',
-  'Dash: Bursts forward quickly, helps clear long gaps, and can be used to break through dangerous timing windows.',
-  'Damage Rules: A hit removes non-invincible powers before it costs a heart, so power pickups can absorb mistakes once before health drops.',
+  `${getPowerLabel('doubleJump')}: ${getPowerHelpSummary('doubleJump')}`,
+  `${getPowerLabel('shooter')}: ${getPowerHelpSummary('shooter')}`,
+  `${getPowerLabel('invincible')}: ${getPowerHelpSummary('invincible')}`,
+  `${getPowerLabel('dash')}: ${getPowerHelpSummary('dash')}`,
+  'Damage Rules: A hit strips non-Shield Field powers before it costs a heart, so a pickup can absorb one mistake before health drops.',
   'Enemies And Hazards',
   'Spikes: Deal contact damage immediately and usually guard ledges, pits, or short landing zones.',
-  'Turrets: Fire on a rhythm, so watch their telegraph and move after a shot instead of into the firing lane.',
-  'Walkers: Patrol horizontal platforms and pressure narrow footing with steady movement.',
-  'Hoppers: Leap into arcs that punish late jumps or slow approaches near ledges.',
+  'Turrets: Flash before firing, so use the telegraph and cross the lane after the shot leaves the barrel.',
+  'Walkers: Patrol horizontal footing and pressure narrow landing pads with steady movement.',
+  'Hoppers: Leap in arcs that punish late jumps or slow approaches near ledges.',
   'Chargers: Pause briefly before rushing forward, so bait the wind-up and then move through the opened lane.',
-  'Flyers: Sweep across the screen at fixed heights and can overlap platform routes if you move too early.',
+  'Flyers: Sweep across the screen at fixed heights and often defend the optional upper survey routes.',
   'Help Controls: When this panel is longer than the visible window, use Up or Down to scroll and use the mouse wheel to read the hidden sections.',
 ];
 
@@ -78,7 +83,7 @@ export class MenuScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xf5cf64, 0.22);
 
     const eyebrowText = this.add
-      .text(width / 2, 82, 'Crystal Run', {
+      .text(width / 2, 82, 'Orbital Survey', {
         fontFamily: 'Trebuchet MS',
         fontSize: '42px',
         color: '#f7f3d6',
@@ -331,7 +336,7 @@ export class MenuScene extends Phaser.Scene {
         volume: `Volume  ${Math.round(state.progress.runSettings.masterVolume * 100)}%`,
       };
 
-      eyebrowText.setText('Crystal Run');
+      eyebrowText.setText('Orbital Survey');
       titleText.setText(
         this.view === 'root'
           ? 'Main Menu'
@@ -341,10 +346,10 @@ export class MenuScene extends Phaser.Scene {
       );
       subtitleText.setText(
         this.view === 'root'
-          ? 'Start a run, configure settings, or review powers and enemy hazards before entering.'
+          ? 'Launch the astronaut survey, tune the run, or review power systems and alien hazards before drop-in.'
           : this.view === 'options'
             ? 'Choose the run settings that will be used when the next stage begins.'
-            : 'Shared quick reference for powers, enemies, and hazards.',
+            : 'Shared quick reference for astronaut powers, enemy hazards, and scrolling controls.',
       );
 
       this.visibleTexts = [];
@@ -529,7 +534,7 @@ export class MenuScene extends Phaser.Scene {
     const settings = bridge.getSession().getState().progress.runSettings;
     const texts =
       this.view === 'root'
-        ? ['Crystal Run', 'Start', 'Options', 'Help']
+        ? ['Orbital Survey', 'Start', 'Options', 'Help']
         : this.view === 'options'
           ? [
               'Options',

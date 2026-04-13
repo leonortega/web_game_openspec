@@ -1,7 +1,7 @@
 import { stageDefinitions } from '../../game/content/stages';
 import { defaultInputState, type InputState } from '../../game/input/actions';
 import { GameSession } from '../../game/simulation/GameSession';
-import { formatRunSettings, getActivePowerLabels } from '../../game/simulation/state';
+import { formatActivePowerSummary, formatHudCollectibleSummary, formatRunSettings } from '../../game/simulation/state';
 import { updateHud, type HudViewModel } from '../../ui/hud/hud';
 
 export class SceneBridge {
@@ -110,21 +110,17 @@ export class SceneBridge {
     const state = this.session.getState();
     const currentSegment =
       state.stage.segments.find((segment) => segment.id === state.currentSegmentId) ?? state.stage.segments[0];
-    const activePowerLabels = getActivePowerLabels(state.progress.activePowers, state.progress.powerTimers);
     return {
       stageName: state.stage.name,
       stageIndex: state.stageIndex,
       stageCount: stageDefinitions.length,
-      coins: `${state.stageRuntime.collectedCoins}/${state.stageRuntime.totalCoins} (${state.progress.totalCoins} total)`,
+      coins: formatHudCollectibleSummary(
+        state.stageRuntime.collectedCoins,
+        state.stageRuntime.totalCoins,
+        state.progress.totalCoins,
+      ),
       health: state.player.health,
-      powerLabel:
-        activePowerLabels.length > 0
-          ? `${activePowerLabels.join(', ')}${
-              state.progress.powerTimers.invincibleMs > 0
-                ? ` (${Math.ceil(state.progress.powerTimers.invincibleMs / 1000)}s)`
-                : ''
-            }`
-          : 'None',
+      powerLabel: formatActivePowerSummary(state.progress.activePowers, state.progress.powerTimers),
       runLabel: formatRunSettings(state.progress.runSettings),
       segmentLabel: currentSegment?.title ?? 'Stage',
       message: state.stageMessage,

@@ -1,13 +1,22 @@
 import Phaser from 'phaser';
 import {
+  getCollectibleRewardBlockLabel,
+  getCollectibleRewardRevealLabel,
   PLAYER_POWER_VARIANTS,
+  getPowerRevealLabel,
+  getPowerShortLabel,
+  isBrittleSurfaceBroken,
+  isBrittleSurfaceWarning,
+  isPlatformActive,
   type CheckpointState,
   type CollectibleState,
   type EnemyState,
+  type LauncherState,
   type PlatformState,
   type ProjectileState,
   type RewardBlockState,
   type RewardRevealState,
+  type TerrainSurfaceState,
 } from '../../game/simulation/state';
 import { createHud } from '../../ui/hud/hud';
 import { SceneBridge } from '../adapters/sceneBridge';
@@ -32,6 +41,12 @@ export class GameScene extends Phaser.Scene {
   private playerWingRight!: Phaser.GameObjects.Rectangle;
 
   private platformSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
+  private terrainSurfaceSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
+  private launcherSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
+  private gravityZoneSprites: Phaser.GameObjects.Rectangle[] = [];
 
   private enemySprites = new Map<string, Phaser.GameObjects.Sprite>();
 
@@ -79,6 +94,21 @@ export class GameScene extends Phaser.Scene {
     bg.fillCircle(220, 160, 180);
     bg.fillCircle(stage.world.width - 220, 120, 120);
 
+    for (const zone of state.stageRuntime.lowGravityZones) {
+      const overlay = this.add
+        .rectangle(
+          zone.x + zone.width / 2,
+          zone.y + zone.height / 2,
+          zone.width,
+          zone.height,
+          stage.palette.accent,
+          0.09,
+        )
+        .setStrokeStyle(2, stage.palette.accent, 0.28)
+        .setOrigin(0.5);
+      this.gravityZoneSprites.push(overlay);
+    }
+
     for (const platform of state.stageRuntime.platforms) {
       const sprite = this.add
         .rectangle(
@@ -89,7 +119,46 @@ export class GameScene extends Phaser.Scene {
           this.platformColor(platform),
         )
         .setOrigin(0.5);
+      sprite.setVisible(
+        isPlatformActive(
+          platform,
+          state.stageRuntime.revealedPlatformIds,
+          state.stageRuntime.temporaryBridges.filter((bridge) => bridge.active).map((bridge) => bridge.id),
+        ),
+      );
       this.platformSprites.set(platform.id, sprite);
+    }
+
+    for (const terrainSurface of state.stageRuntime.terrainSurfaces) {
+      const sprite = this.add
+        .rectangle(
+          terrainSurface.x + terrainSurface.width / 2,
+          terrainSurface.y + terrainSurface.height / 2,
+          terrainSurface.width,
+          terrainSurface.height,
+          this.terrainSurfaceColor(terrainSurface),
+          this.terrainSurfaceAlpha(terrainSurface),
+        )
+        .setOrigin(0.5)
+        .setDepth(2);
+      sprite.setStrokeStyle(1, 0xf7f3d6, terrainSurface.kind === 'stickySludge' ? 0.22 : 0.34);
+      this.terrainSurfaceSprites.set(terrainSurface.id, sprite);
+    }
+
+    for (const launcherEntry of state.stageRuntime.launchers) {
+      const sprite = this.add
+        .rectangle(
+          launcherEntry.x + launcherEntry.width / 2,
+          launcherEntry.y + launcherEntry.height / 2,
+          launcherEntry.width,
+          launcherEntry.height,
+          this.launcherColor(launcherEntry),
+          0.86,
+        )
+        .setOrigin(0.5)
+        .setDepth(3);
+      sprite.setStrokeStyle(2, 0xf7f3d6, 0.35);
+      this.launcherSprites.set(launcherEntry.id, sprite);
     }
 
     for (const hazard of state.stageRuntime.hazards) {
@@ -202,6 +271,9 @@ export class GameScene extends Phaser.Scene {
     this.setPauseOverlayVisible(false);
     this.hud.root.remove();
     this.platformSprites.clear();
+    this.terrainSurfaceSprites.clear();
+    this.launcherSprites.clear();
+    this.gravityZoneSprites = [];
     this.enemySprites.clear();
     this.checkpointSprites.clear();
     this.collectibleSprites.clear();
@@ -312,6 +384,14 @@ export class GameScene extends Phaser.Scene {
       this.syncPlatform(platform);
     }
 
+    for (const terrainSurface of state.stageRuntime.terrainSurfaces) {
+      this.syncTerrainSurface(terrainSurface);
+    }
+
+    for (const launcherEntry of state.stageRuntime.launchers) {
+      this.syncLauncher(launcherEntry);
+    }
+
     for (const checkpoint of state.stageRuntime.checkpoints) {
       this.syncCheckpoint(checkpoint);
     }
@@ -358,12 +438,50 @@ export class GameScene extends Phaser.Scene {
     pauseOverlayVisible: boolean;
     pauseText: string | null;
     hudVisible: boolean;
+    terrainSurfaceVisuals: {
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      visible: boolean;
+    }[];
+    launcherVisuals: {
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      visible: boolean;
+    }[];
   } {
     return {
       runPaused: this.bridge.isRunPaused(),
       pauseOverlayVisible: this.pauseOverlay.visible && this.pauseText.visible,
       pauseText: this.pauseText.visible ? this.pauseText.text : null,
       hudVisible: this.hud.root.style.visibility !== 'hidden',
+      terrainSurfaceVisuals: this.bridge
+        .getSession()
+        .getState()
+        .stageRuntime.terrainSurfaces.map((surface) => ({
+          id: surface.id,
+          x: surface.x,
+          y: surface.y,
+          width: surface.width,
+          height: surface.height,
+          visible: this.terrainSurfaceSprites.get(surface.id)?.visible ?? false,
+        })),
+      launcherVisuals: this.bridge
+        .getSession()
+        .getState()
+        .stageRuntime.launchers.map((launcherEntry) => ({
+          id: launcherEntry.id,
+          x: launcherEntry.x,
+          y: launcherEntry.y,
+          width: launcherEntry.width,
+          height: launcherEntry.height,
+          visible: this.launcherSprites.get(launcherEntry.id)?.visible ?? false,
+        })),
     };
   }
 
@@ -379,6 +497,17 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    const state = this.bridge.getSession().getState();
+    const visible = isPlatformActive(
+      platform,
+      state.stageRuntime.revealedPlatformIds,
+      state.stageRuntime.temporaryBridges.filter((bridge) => bridge.active).map((bridge) => bridge.id),
+    );
+    sprite.setVisible(visible);
+    if (!visible) {
+      return;
+    }
+
     sprite.setPosition(platform.x + platform.width / 2, platform.y + platform.height / 2);
     sprite.setFillStyle(this.platformColor(platform));
 
@@ -388,6 +517,32 @@ export class GameScene extends Phaser.Scene {
     } else {
       sprite.setAlpha(1);
     }
+  }
+
+  private syncLauncher(launcherEntry: LauncherState): void {
+    const sprite = this.launcherSprites.get(launcherEntry.id);
+    if (!sprite) {
+      return;
+    }
+
+    sprite
+      .setPosition(launcherEntry.x + launcherEntry.width / 2, launcherEntry.y + launcherEntry.height / 2)
+      .setSize(launcherEntry.width, launcherEntry.height)
+      .setFillStyle(this.launcherColor(launcherEntry), launcherEntry.timerMs > 0 ? 0.5 : 0.86)
+      .setVisible(true);
+  }
+
+  private syncTerrainSurface(surface: TerrainSurfaceState): void {
+    const sprite = this.terrainSurfaceSprites.get(surface.id);
+    if (!sprite) {
+      return;
+    }
+
+    sprite.setPosition(surface.x + surface.width / 2, surface.y + surface.height / 2);
+    sprite.setSize(surface.width, surface.height);
+    sprite.setVisible(true);
+    sprite.setFillStyle(this.terrainSurfaceColor(surface), this.terrainSurfaceAlpha(surface));
+    sprite.setStrokeStyle(1, 0xf7f3d6, surface.kind === 'stickySludge' ? 0.22 : 0.34);
   }
 
   private syncCheckpoint(checkpoint: CheckpointState): void {
@@ -486,6 +641,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private platformColor(platform: PlatformState): number {
+    if (platform.temporaryBridge) {
+      return 0x8ef2ff;
+    }
+
+    if (platform.reveal) {
+      return 0xb7dfff;
+    }
+
     switch (platform.kind) {
       case 'moving':
         return 0x8faec6;
@@ -496,6 +659,34 @@ export class GameScene extends Phaser.Scene {
       default:
         return this.bridge.getSession().getState().stage.palette.ground;
     }
+  }
+
+  private terrainSurfaceColor(surface: TerrainSurfaceState): number {
+    if (surface.kind === 'stickySludge') {
+      return 0x627f2d;
+    }
+
+    if (isBrittleSurfaceBroken(surface)) {
+      return 0x4a6170;
+    }
+
+    if (isBrittleSurfaceWarning(surface)) {
+      return 0xffd578;
+    }
+
+    return 0xc7f4ff;
+  }
+
+  private launcherColor(launcherEntry: LauncherState): number {
+    return launcherEntry.kind === 'bouncePod' ? 0x7df2b3 : 0xffc07a;
+  }
+
+  private terrainSurfaceAlpha(surface: TerrainSurfaceState): number {
+    if (surface.kind === 'stickySludge') {
+      return 0.78;
+    }
+
+    return isBrittleSurfaceBroken(surface) ? 0.34 : isBrittleSurfaceWarning(surface) ? 0.92 : 0.8;
   }
 
   private rewardBlockColor(rewardBlock: RewardBlockState): number {
@@ -517,40 +708,22 @@ export class GameScene extends Phaser.Scene {
 
   private rewardBlockLabel(rewardBlock: RewardBlockState): string {
     if (rewardBlock.reward.kind === 'coins') {
-      return rewardBlock.remainingHits > 0 ? `C${rewardBlock.remainingHits}` : '--';
+      return getCollectibleRewardBlockLabel(rewardBlock.remainingHits);
     }
 
     if (rewardBlock.used) {
       return '--';
     }
 
-    switch (rewardBlock.reward.power) {
-      case 'doubleJump':
-        return 'DJ';
-      case 'shooter':
-        return 'SH';
-      case 'invincible':
-        return 'IV';
-      case 'dash':
-        return 'DA';
-    }
+    return getPowerShortLabel(rewardBlock.reward.power);
   }
 
   private rewardRevealText(rewardReveal: RewardRevealState): string {
     if (rewardReveal.reward.kind === 'coins') {
-      return 'COIN';
+      return getCollectibleRewardRevealLabel();
     }
 
-    switch (rewardReveal.reward.power) {
-      case 'doubleJump':
-        return 'DOUBLE JUMP';
-      case 'shooter':
-        return 'SHOOTER';
-      case 'invincible':
-        return 'INVINCIBLE';
-      case 'dash':
-        return 'DASH';
-    }
+    return getPowerRevealLabel(rewardReveal.reward.power);
   }
 
   private rewardRevealColor(rewardReveal: RewardRevealState): string {
@@ -580,18 +753,18 @@ export class GameScene extends Phaser.Scene {
     switch (variantKey) {
       case 'doubleJump':
         this.playerHeadband
-          .setPosition(centerX, player.y + 8)
-          .setSize(18, 5)
+          .setPosition(centerX, player.y + 10)
+          .setSize(20, 6)
           .setFillStyle(variant.detailColor)
           .setVisible(true);
         this.playerWingLeft
-          .setPosition(player.x - 4, player.y + 18)
-          .setSize(8, 16)
+          .setPosition(player.x - 3, player.y + 21)
+          .setSize(9, 18)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         this.playerWingRight
-          .setPosition(player.x + player.width + 4, player.y + 18)
-          .setSize(8, 16)
+          .setPosition(player.x + player.width + 3, player.y + 21)
+          .setSize(9, 18)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         break;
@@ -633,8 +806,8 @@ export class GameScene extends Phaser.Scene {
         break;
       default:
         this.playerHeadband
-          .setPosition(centerX, player.y + 10)
-          .setSize(14, 4)
+          .setPosition(centerX, player.y + 11)
+          .setSize(18, 5)
           .setFillStyle(variant.detailColor)
           .setVisible(true);
         break;

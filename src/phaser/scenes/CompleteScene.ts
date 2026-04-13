@@ -1,6 +1,12 @@
 import Phaser from 'phaser';
 import { stageDefinitions } from '../../game/content/stages';
-import { formatRunSettings, getActivePowerLabels } from '../../game/simulation/state';
+import {
+  formatActivePowerSummary,
+  formatCheckpointStatus,
+  formatRunCollectibleSummary,
+  formatRunSettings,
+  formatStageCollectibleSummary,
+} from '../../game/simulation/state';
 import { SceneBridge } from '../adapters/sceneBridge';
 
 const AUTO_ADVANCE_MS = 2800;
@@ -19,7 +25,9 @@ export class CompleteScene extends Phaser.Scene {
     const finalStage = state.stageIndex >= stageDefinitions.length - 1;
     const { width, height } = this.scale;
     let transitioning = false;
-    const activePowers = getActivePowerLabels(state.progress.activePowers, state.progress.powerTimers);
+    const stagePresentation = state.stage.presentation;
+    const powerSummary = formatActivePowerSummary(state.progress.activePowers, state.progress.powerTimers);
+    const activeCheckpointCount = state.stageRuntime.checkpoints.filter((checkpoint) => checkpoint.activated).length;
 
     const goToMenu = () => {
       if (transitioning) {
@@ -47,9 +55,18 @@ export class CompleteScene extends Phaser.Scene {
       this.scene.start('stage-intro');
     };
 
-    this.add.rectangle(width / 2, height / 2, width, height, 0x091310, 0.92).setOrigin(0.5);
+    this.add.rectangle(width / 2, height / 2, width, height, state.stage.palette.skyBottom, 0.92).setOrigin(0.5);
     this.add
-      .text(width / 2, 170, finalStage ? 'Sanctum Cleansed' : 'Stage Cleared', {
+      .text(width / 2, 118, stagePresentation.sectorLabel, {
+        fontFamily: 'Trebuchet MS',
+        fontSize: '18px',
+        color: '#b9cab8',
+        letterSpacing: 3,
+      })
+      .setOrigin(0.5);
+
+    this.add
+      .text(width / 2, 170, finalStage ? 'Survey Complete' : stagePresentation.completionTitle, {
         fontFamily: 'Trebuchet MS',
         fontSize: '42px',
         color: '#f7f3d6',
@@ -58,14 +75,27 @@ export class CompleteScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
+      .text(width / 2, 218, `${state.stage.name}\n${stagePresentation.biomeLabel}`, {
+        fontFamily: 'Trebuchet MS',
+        fontSize: '20px',
+        color: '#d7f2ee',
+        align: 'center',
+        lineSpacing: 8,
+      })
+      .setOrigin(0.5);
+
+    this.add
       .text(
         width / 2,
-        250,
-        `Recovered coins: ${state.progress.totalCoins}\nStage coins: ${state.stageRuntime.collectedCoins}/${state.stageRuntime.totalCoins}\nPowers: ${activePowers.length > 0 ? activePowers.join(', ') : 'None'}\nRun: ${formatRunSettings(state.progress.runSettings)}`,
+        320,
+        `${formatRunCollectibleSummary(state.progress.totalCoins)}\n${formatStageCollectibleSummary(
+          state.stageRuntime.collectedCoins,
+          state.stageRuntime.totalCoins,
+        )}\n${formatCheckpointStatus(activeCheckpointCount, state.stageRuntime.checkpoints.length)}\nLoadout: ${powerSummary}\nRun: ${formatRunSettings(state.progress.runSettings)}`,
         {
           align: 'center',
           fontFamily: 'Trebuchet MS',
-          fontSize: '22px',
+          fontSize: '20px',
           color: '#f5cf64',
           lineSpacing: 10,
         },
@@ -75,10 +105,10 @@ export class CompleteScene extends Phaser.Scene {
     this.add
       .text(
         width / 2,
-        390,
+        462,
         finalStage
-          ? 'Final stage clear. Press M for menu or R to replay.'
-          : `Next stage opens automatically in ${Math.round(AUTO_ADVANCE_MS / 1000)} seconds.\nPress R to replay or M for menu.`,
+          ? 'All three survey sectors are cleared. Press M for menu or R to replay.'
+          : `Next survey sector opens automatically in ${Math.round(AUTO_ADVANCE_MS / 1000)} seconds.\nPress R to replay or M for menu.`,
         {
           align: 'center',
           fontFamily: 'Trebuchet MS',

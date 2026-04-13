@@ -97,4 +97,20 @@ describe('SceneBridge pause flow regression coverage', () => {
     bridge.forceStartStage(1);
     expect(bridge.isRunPaused()).toBe(false);
   });
+
+  it('uses astronaut-themed stage and power presentation in the HUD model', () => {
+    const bridge = new SceneBridge();
+    const state = getMutableState(bridge);
+
+    state.progress.activePowers.doubleJump = true;
+    state.progress.activePowers.invincible = true;
+    state.progress.powerTimers.invincibleMs = 5200;
+
+    const hud = bridge.getHudModel();
+
+    expect(hud.stageName).toBe('Verdant Impact Crater');
+    expect(hud.coins).toBe(`0/${state.stageRuntime.totalCoins} in sector (0 research samples total)`);
+    expect(hud.powerLabel).toBe('Thruster Burst, Shield Field (6s)');
+    expect(hud.segmentLabel).toBe('Landing Shelf');
+  });
 });

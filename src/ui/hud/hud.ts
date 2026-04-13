@@ -1,3 +1,5 @@
+import { COLLECTIBLE_PRESENTATION } from '../../game/simulation/state';
+
 type HudBindings = {
   root: HTMLDivElement;
   titleValue: HTMLSpanElement;
@@ -31,7 +33,7 @@ export const createHud = (mount: HTMLElement): HudBindings => {
         <span class="hud-value" data-role="title"></span>
       </div>
       <div class="hud-card">
-        <span class="hud-label">Coins</span>
+        <span class="hud-label">${COLLECTIBLE_PRESENTATION.hudLabel}</span>
         <span class="hud-value" data-role="coins"></span>
       </div>
       <div class="hud-card">

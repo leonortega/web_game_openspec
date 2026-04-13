@@ -111,6 +111,14 @@ export class SynthAudio {
       case 'spring':
         this.playTone(610, 80, 'square', 0.03);
         break;
+      case 'bounce-pod':
+        this.playTone(700, 95, 'triangle', 0.032);
+        this.playTone(940, 120, 'square', 0.024);
+        break;
+      case 'gas-vent':
+        this.playTone(380, 120, 'sine', 0.026);
+        this.playTone(520, 150, 'triangle', 0.02);
+        break;
       default:
         break;
     }

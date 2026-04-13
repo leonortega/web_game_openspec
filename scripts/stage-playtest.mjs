@@ -14,6 +14,9 @@ const CHANGE_RESULT_SCOPE = {
   'pause-menu-esc-continue-options-help': new Set(['Flow Checks']),
   'pause-menu-visibility-and-help-scroll': new Set(['Flow Checks']),
   'pause-overlay-and-help-panel-sizing': new Set(['Flow Checks']),
+  'scanner-switches-and-temporary-bridges': new Set(['Mechanic Checks']),
+  'biome-authored-launchers': new Set(['Mechanic Checks']),
+  'expedition-secret-routes-and-sample-caves': new Set(['Ember Rift Warrens', 'Secret Route Checks']),
 };
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,14 +59,41 @@ function analyzeReadability(stage) {
   const checkpointAnchors = [stage.playerSpawn.x, ...stage.checkpoints.map((checkpoint) => checkpoint.rect.x), stage.exit.x];
   const checkpointGaps = checkpointAnchors.slice(1).map((value, index) => value - checkpointAnchors[index]);
   const maxCheckpointGap = Math.max(...checkpointGaps);
+  const lateThreshold = stage.world.width * 0.68;
+  const elevatedRoutePlatforms = stage.platforms.filter((platform) => platform.x >= lateThreshold && platform.y <= 340).length;
+  const elevatedRouteRewards = [
+    ...stage.collectibles.filter((collectible) => collectible.position.x >= lateThreshold && collectible.position.y <= 360),
+    ...stage.rewardBlocks.filter((rewardBlock) => rewardBlock.x >= lateThreshold && rewardBlock.y <= 360),
+  ].length;
+  const mainRouteThreatXs = [
+    ...stage.hazards.filter((hazard) => hazard.rect.x >= lateThreshold && hazard.rect.y >= 340).map((hazard) => hazard.rect.x),
+    ...stage.enemies.filter((enemy) => enemy.position.x >= lateThreshold && enemy.position.y >= 340).map((enemy) => enemy.position.x),
+  ].sort((left, right) => left - right);
+  const optionalThreatCount = [
+    ...stage.hazards.filter((hazard) => hazard.rect.x >= lateThreshold && hazard.rect.y < 340),
+    ...stage.enemies.filter((enemy) => enemy.position.x >= lateThreshold && enemy.position.y < 340),
+  ].length;
+
+  let maxMainRouteThreatWindow = 0;
+  for (let index = 0; index < mainRouteThreatXs.length; index += 1) {
+    const windowStart = mainRouteThreatXs[index];
+    const threatCount = mainRouteThreatXs.filter((value) => value >= windowStart && value <= windowStart + 960).length;
+    maxMainRouteThreatWindow = Math.max(maxMainRouteThreatWindow, threatCount);
+  }
 
   return {
     segmentCount: stage.segments.length,
     collectibleZones: [...collectibleZones],
     maxCheckpointGap,
+    elevatedRoutePlatforms,
+    elevatedRouteRewards,
+    maxMainRouteThreatWindow,
+    optionalThreatCount,
     segmentPass: stage.segments.length >= 5,
     collectiblePass: collectibleZones.size >= 3,
     checkpointPass: maxCheckpointGap <= Math.max(2200, Math.round(stage.world.width * 0.3)),
+    routePass: elevatedRoutePlatforms >= 3 && elevatedRouteRewards >= 3,
+    encounterPass: maxMainRouteThreatWindow <= 5 && optionalThreatCount >= 2,
   };
 }
 
@@ -138,6 +168,19 @@ function hasCenterBiasedMargin(support, left, right) {
 
 function intersectsRect(a, b) {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+function expandRect(rect, padding) {
+  return {
+    x: rect.x - padding,
+    y: rect.y - padding,
+    width: rect.width + padding * 2,
+    height: rect.height + padding * 2,
+  };
+}
+
+function rectContainsPoint(rect, point) {
+  return point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
 }
 
 function analyzeSafety(stage) {
@@ -273,11 +316,25 @@ function mechanicReport(result) {
     collapseTriggered: result.collapseTriggered,
     collapseFell: result.collapseFell,
     springBoosted: result.springBoosted,
+    bouncePodLaunchWorked: result.bouncePodLaunchWorked,
+    gasVentLaunchWorked: result.gasVentLaunchWorked,
     hopperHighJump: result.hopperHighJump,
     fallingJumpResponsive: result.fallingJumpResponsive,
     chargerWindup: result.chargerWindup,
     chargerCharged: result.chargerCharged,
     flyerMoved: result.flyerMoved,
+    lowGravityApplied: result.lowGravityApplied,
+    revealRouteUnlocked: result.revealRouteUnlocked,
+    scannerBridgeActivated: result.scannerBridgeActivated,
+    scannerBridgeNoStayRefresh: result.scannerBridgeNoStayRefresh,
+    scannerBridgeReentryRefresh: result.scannerBridgeReentryRefresh,
+    scannerBridgeOccupiedExpiry: result.scannerBridgeOccupiedExpiry,
+    terrainSurfaceExtentsRendered: result.terrainSurfaceExtentsRendered,
+    brittleWarningTriggered: result.brittleWarningTriggered,
+    brittleEscapeJumpWorked: result.brittleEscapeJumpWorked,
+    brittleFreshAttemptReset: result.brittleFreshAttemptReset,
+    stickyGroundedTraversalReduced: result.stickyGroundedTraversalReduced,
+    stickyLowGravityJumpReduced: result.stickyLowGravityJumpReduced,
     powerVariantDistinct: result.powerVariantDistinct,
     turretVisibilityGated: result.turretVisibilityGated,
     passed:
@@ -288,11 +345,24 @@ function mechanicReport(result) {
       result.collapseTriggered &&
       result.collapseFell &&
       result.springBoosted &&
+      result.bouncePodLaunchWorked &&
+      result.gasVentLaunchWorked &&
       result.hopperHighJump &&
       result.fallingJumpResponsive &&
       result.chargerWindup &&
       result.chargerCharged &&
       result.flyerMoved &&
+      result.lowGravityApplied &&
+      result.revealRouteUnlocked &&
+      result.scannerBridgeActivated &&
+      result.scannerBridgeNoStayRefresh &&
+      result.scannerBridgeReentryRefresh &&
+      result.scannerBridgeOccupiedExpiry &&
+      result.terrainSurfaceExtentsRendered &&
+      result.brittleWarningTriggered &&
+      result.brittleEscapeJumpWorked &&
+      result.brittleFreshAttemptReset &&
+      result.stickyGroundedTraversalReduced &&
       result.powerVariantDistinct &&
       result.turretVisibilityGated,
   };
@@ -550,19 +620,68 @@ function staticLayoutCoverageReport() {
   };
 }
 
+function analyzeSecretRoutes(stage) {
+  const routes = stage.secretRoutes ?? [];
+  const routeReports = routes.map((route) => {
+    const rewardCollectibles = stage.collectibles.filter((collectible) => route.reward.collectibleIds.includes(collectible.id));
+    const rewardBlocks = stage.rewardBlocks.filter((rewardBlock) => route.reward.rewardBlockIds.includes(rewardBlock.id));
+    const rewardScore =
+      rewardCollectibles.length +
+      rewardBlocks.reduce(
+        (total, rewardBlock) => total + (rewardBlock.reward.kind === 'coins' ? rewardBlock.reward.amount : 3),
+        0,
+      );
+    const cueReadable = Boolean(findSupportForRect(stage, route.cue.rect));
+    const rewardInsidePocket =
+      rewardCollectibles.every((collectible) => rectContainsPoint(route.interior, collectible.position)) &&
+      rewardBlocks.every((rewardBlock) => intersectsRect(route.interior, rewardBlock));
+    const reconnectSupported = Boolean(findSupportForRect(stage, route.reconnect));
+    const mainPathSupported = Boolean(findSupportForRect(stage, route.mainPath));
+    const reconnectSafe =
+      !stage.hazards.some((hazard) => intersectsRect(expandRect(route.reconnect, 32), hazard.rect)) &&
+      !stage.enemies.some((enemy) => intersectsRect(expandRect(route.reconnect, 44), enemyRect(enemy)));
+
+    return {
+      id: route.id,
+      title: route.title,
+      cueReadable,
+      rewardScore,
+      rewardInsidePocket,
+      reconnectSupported,
+      mainPathSupported,
+      reconnectSafe,
+      downstreamReconnect: route.reconnect.x > route.entry.x + 120,
+      passed:
+        cueReadable &&
+        rewardScore >= 3 &&
+        rewardInsidePocket &&
+        reconnectSupported &&
+        mainPathSupported &&
+        reconnectSafe &&
+        route.reconnect.x > route.entry.x + 120,
+    };
+  });
+
+  return {
+    routeCount: routes.length,
+    routeReports,
+    passed: routes.length > 0 && routeReports.every((route) => route.passed),
+  };
+}
+
 function buildMarkdown(results) {
   const lines = [
     '# Stage Playtest Report',
     '',
     `Automated browser-assisted validation for \`${CHANGE_NAME}\`.`,
     '',
-    '| Stage | Target | Estimated | Segments | Max Checkpoint Gap | Collectible Zones | Respawn | Safety | Mechanics | Flow |',
-    '|---|---:|---:|---:|---:|---|---|---|---|---|',
+    '| Stage | Target | Estimated | Segments | Max Checkpoint Gap | Collectible Zones | Detours | Main Route Threats | Respawn | Safety | Mechanics | Flow |',
+    '|---|---:|---:|---:|---:|---|---|---:|---|---|---|---|',
   ];
 
   for (const result of results) {
     lines.push(
-      `| ${result.stageName} | ${result.targetDurationMinutes}m | ${result.estimatedMinutes}m | ${result.readability.segmentCount} | ${result.readability.maxCheckpointGap}px | ${result.readability.collectibleZones.join(', ')} | ${result.checkpoint.passed ? 'pass' : 'fail'} | ${result.safety.passed ? 'pass' : 'fail'} | ${result.mechanics.passed ? 'pass' : 'fail'} | ${result.flow.passed ? 'pass' : 'fail'} |`,
+      `| ${result.stageName} | ${result.targetDurationMinutes}m | ${result.estimatedMinutes}m | ${result.readability.segmentCount} | ${result.readability.maxCheckpointGap}px | ${result.readability.collectibleZones.join(', ')} | ${result.readability.routePass ? 'pass' : 'fail'} | ${result.readability.maxMainRouteThreatWindow} | ${result.checkpoint.passed ? 'pass' : 'fail'} | ${result.safety.passed ? 'pass' : 'fail'} | ${result.mechanics.passed ? 'pass' : 'fail'} | ${result.flow.passed ? 'pass' : 'fail'} |`,
     );
   }
 
@@ -739,6 +858,13 @@ async function collectFlowResults(page) {
   await page.waitForTimeout(120);
   await page.keyboard.press('ArrowUp');
   await page.waitForTimeout(120);
+  await page.evaluate(() => {
+    const bridge = window.__CRYSTAL_RUN_BRIDGE__;
+    const state = bridge.getSession().getState();
+    state.progress.activePowers.doubleJump = true;
+    state.progress.activePowers.invincible = true;
+    state.progress.powerTimers.invincibleMs = 4000;
+  });
   await page.keyboard.press('Enter');
 
   await waitForActiveScene(page, 'stage-intro');
@@ -751,8 +877,10 @@ async function collectFlowResults(page) {
       .map((child) => child.text);
     return {
       hasStageLabel: textValues.some((value) => value.includes('Stage 1')),
-      hasCoins: textValues.some((value) => value.includes('Coins:')),
-      hasPowers: textValues.some((value) => value.includes('Powers:')),
+      hasRunSamples: textValues.some((value) => value.includes('Run research samples:')),
+      hasSectorSamples: textValues.some((value) => value.includes('Sector research samples:')),
+      hasBeaconStatus: textValues.some((value) => value.includes('Survey beacons online:')),
+      hasLoadout: textValues.some((value) => value.includes('Loadout: Thruster Burst, Shield Field')),
       hasRun: textValues.some((value) => value.includes('Run:')),
     };
   });
@@ -806,10 +934,28 @@ async function collectFlowResults(page) {
     const bridge = window.__CRYSTAL_RUN_BRIDGE__;
     const game = window.__CRYSTAL_RUN_GAME__;
     bridge.forceStartStage(0);
+    bridge.getSession().getState().progress.activePowers.doubleJump = true;
+    bridge.getSession().getState().progress.activePowers.invincible = true;
+    bridge.getSession().getState().progress.powerTimers.invincibleMs = 4000;
     bridge.getSession().getState().progress.unlockedStageIndex = 2;
     game.scene.getScene('game').scene.start('complete');
   });
   await waitForActiveScene(page, 'complete');
+  const completeCheck = await page.evaluate(() => {
+    const game = window.__CRYSTAL_RUN_GAME__;
+    const complete = game.scene.getScene('complete');
+    const textValues = complete.children
+      .getChildren()
+      .filter((child) => typeof child.text === 'string')
+      .map((child) => child.text);
+    return {
+      hasRunSamples: textValues.some((value) => value.includes('Run research samples:')),
+      hasSectorSamples: textValues.some((value) => value.includes('Sector research samples:')),
+      hasBeaconStatus: textValues.some((value) => value.includes('Survey beacons online:')),
+      hasAstronautLoadout: textValues.some((value) => value.includes('Loadout: Thruster Burst, Shield Field')),
+      hasStageName: textValues.some((value) => value.includes('Verdant Impact Crater')),
+    };
+  });
   await waitForActiveScene(page, 'stage-intro', 12000);
   const autoAdvanceCheck = await page.evaluate(() => {
     const bridge = window.__CRYSTAL_RUN_BRIDGE__;
@@ -836,7 +982,7 @@ async function collectFlowResults(page) {
       Boolean(initialMenu) &&
       initialMenu.mode === 'main' &&
       initialMenu.view === 'root' &&
-      initialMenu.joined.includes('Crystal Run') &&
+      initialMenu.joined.includes('Orbital Survey') &&
       initialMenu.joined.includes('Start') &&
       initialMenu.joined.includes('Options') &&
       initialMenu.joined.includes('Help'),
@@ -864,6 +1010,8 @@ async function collectFlowResults(page) {
       mainHelpMenu.mode === 'main' &&
       mainHelpMenu.view === 'help' &&
       mainHelpMenu.joined.includes('Powers') &&
+      mainHelpMenu.joined.includes('Thruster Burst') &&
+      mainHelpMenu.joined.includes('Shield Field') &&
       mainHelpMenu.joined.includes('Hazards') &&
       Boolean(mainRootAfterHelp) &&
       mainRootAfterHelp.mode === 'main' &&
@@ -884,7 +1032,18 @@ async function collectFlowResults(page) {
       mainHelpAfterWheelScroll.helpScrollOffset > mainHelpAfterKeyboardScroll.helpScrollOffset,
     introVisible: true,
     introStatusVisible:
-      introCheck.hasStageLabel && introCheck.hasCoins && introCheck.hasPowers && introCheck.hasRun,
+      introCheck.hasStageLabel &&
+      introCheck.hasRunSamples &&
+      introCheck.hasSectorSamples &&
+      introCheck.hasBeaconStatus &&
+      introCheck.hasLoadout &&
+      introCheck.hasRun,
+    completeStatusVisible:
+      completeCheck.hasRunSamples &&
+      completeCheck.hasSectorSamples &&
+      completeCheck.hasBeaconStatus &&
+      completeCheck.hasAstronautLoadout &&
+      completeCheck.hasStageName,
     hudLayoutPassed:
       hudCheck.hasFourCards && hudCheck.hasCornerMeta && hudCheck.hasRunLine && hudCheck.hasSegmentLine,
     pauseOverlayVisible:
@@ -1081,6 +1240,54 @@ async function collectStageResults(page) {
 
     bridge.forceStartStage(0);
     resetToGameScene();
+    let bounceLauncherState = bridge.getSession().getState();
+    bounceLauncherState.stageRuntime.enemies = [];
+    bounceLauncherState.stageRuntime.hazards = [];
+    const bouncePod = bounceLauncherState.stageRuntime.launchers.find((launcher) => launcher.kind === 'bouncePod');
+    const bounceSupportPlatform = bounceLauncherState.stageRuntime.platforms.find(
+      (platform) => platform.id === bouncePod.supportPlatformId,
+    );
+    bounceLauncherState.player.x = bouncePod.x + Math.min(bouncePod.width - 12, 12) - bounceLauncherState.player.width / 2;
+    bounceLauncherState.player.y = bounceSupportPlatform.y - bounceLauncherState.player.height - 1;
+    bounceLauncherState.player.vx = 0;
+    bounceLauncherState.player.vy = 160;
+    bounceLauncherState.player.onGround = false;
+    bounceLauncherState.player.supportPlatformId = null;
+    bridge.consumeFrame(16);
+    const bounceLauncherResult = bridge.getSession().getState();
+    const bounceLauncherCues = bridge.drainCues();
+    const bouncePodLaunchWorked =
+      bounceLauncherCues.includes('bounce-pod') &&
+      Math.abs(bounceLauncherResult.player.vx) > 250 &&
+      bounceLauncherResult.player.vy < -900;
+
+    bridge.forceStartStage(2);
+    resetToGameScene();
+    let gasLauncherState = bridge.getSession().getState();
+    gasLauncherState.stageRuntime.enemies = [];
+    gasLauncherState.stageRuntime.hazards = [];
+    const gasVent = gasLauncherState.stageRuntime.launchers.find((launcher) => launcher.kind === 'gasVent');
+    const gasVentSupportPlatform = gasLauncherState.stageRuntime.platforms.find(
+      (platform) => platform.id === gasVent.supportPlatformId,
+    );
+    gasLauncherState.player.x = gasVent.x + Math.min(gasVent.width - 12, 12) - gasLauncherState.player.width / 2;
+    gasLauncherState.player.y = gasVentSupportPlatform.y - gasLauncherState.player.height - 1;
+    gasLauncherState.player.vx = 0;
+    gasLauncherState.player.vy = 160;
+    gasLauncherState.player.onGround = false;
+    gasLauncherState.player.supportPlatformId = null;
+    bridge.consumeFrame(16);
+    const gasLauncherResult = bridge.getSession().getState();
+    const gasLauncherCues = bridge.drainCues();
+    const gasVentLaunchWorked =
+      gasLauncherCues.includes('gas-vent') &&
+      gasLauncherResult.player.gravityScale < 1 &&
+      Math.abs(gasLauncherResult.player.vx) > 120 &&
+      gasLauncherResult.player.vy < -780 &&
+      gasLauncherResult.player.vy > -900;
+
+    bridge.forceStartStage(0);
+    resetToGameScene();
     let chargerProbeState = bridge.getSession().getState();
     const charger = chargerProbeState.stageRuntime.enemies.find((enemy) => enemy.kind === 'charger');
     chargerProbeState.player.x = charger.x + 40;
@@ -1171,6 +1378,222 @@ async function collectStageResults(page) {
       offscreenProjectileCount === 0 &&
       (leadMarginTurretCue || leadMarginProjectileCount > 0);
 
+    bridge.forceStartStage(2);
+    resetToGameScene();
+    let lowGravityProbeState = bridge.getSession().getState();
+    const lowGravityZone = lowGravityProbeState.stageRuntime.lowGravityZones[0];
+    const revealTrigger = lowGravityProbeState.stageRuntime.revealVolumes[0];
+    const hiddenPlatform = lowGravityProbeState.stageRuntime.platforms.find((platform) => platform.reveal);
+    const scannerTrigger = lowGravityProbeState.stageRuntime.scannerVolumes[0];
+    const temporaryBridgePlatform = lowGravityProbeState.stageRuntime.platforms.find((platform) => platform.temporaryBridge);
+    lowGravityProbeState.player.x = lowGravityZone.x + 40;
+    lowGravityProbeState.player.y = lowGravityZone.y + 48;
+    lowGravityProbeState.player.vx = 0;
+    lowGravityProbeState.player.vy = 0;
+    lowGravityProbeState.player.onGround = false;
+    lowGravityProbeState.player.supportPlatformId = null;
+    bridge.consumeFrame(16);
+    const lowGravityState = bridge.getSession().getState();
+    const lowGravityApplied =
+      lowGravityState.player.gravityScale < 1 &&
+      lowGravityState.player.vy < lowGravityState.stage.world.gravity * 0.016;
+    const hiddenInitiallyInactive = !lowGravityState.stageRuntime.revealedPlatformIds.includes(hiddenPlatform.reveal.id);
+
+    lowGravityState.player.x = revealTrigger.x + 16;
+    lowGravityState.player.y = revealTrigger.y + 16;
+    lowGravityState.player.vx = 0;
+    lowGravityState.player.vy = 0;
+    bridge.consumeFrame(16);
+    const revealState = bridge.getSession().getState();
+    const revealRouteUnlocked =
+      hiddenInitiallyInactive && revealState.stageRuntime.revealedPlatformIds.includes(hiddenPlatform.reveal.id);
+
+    const bridgeInitiallyInactive = !revealState.stageRuntime.temporaryBridges[0].active;
+    revealState.player.x = scannerTrigger.x + 16;
+    revealState.player.y = scannerTrigger.y + 16;
+    revealState.player.vx = 0;
+    revealState.player.vy = 0;
+    bridge.consumeFrame(16);
+    const scannerActivationState = bridge.getSession().getState();
+    const scannerBridgeActivated =
+      bridgeInitiallyInactive &&
+      scannerActivationState.stageRuntime.temporaryBridges[0].active &&
+      scannerActivationState.stageRuntime.temporaryBridges[0].remainingMs ===
+        scannerActivationState.stageRuntime.temporaryBridges[0].durationMs;
+
+    bridge.consumeFrame(16);
+    const scannerStayState = bridge.getSession().getState();
+    const scannerBridgeNoStayRefresh =
+      scannerStayState.stageRuntime.temporaryBridges[0].remainingMs <
+      scannerStayState.stageRuntime.temporaryBridges[0].durationMs;
+
+    scannerStayState.player.x = scannerTrigger.x - scannerStayState.player.width - 24;
+    scannerStayState.player.y = scannerTrigger.y + 16;
+    bridge.consumeFrame(16);
+
+    const scannerLeaveState = bridge.getSession().getState();
+    scannerLeaveState.player.x = scannerTrigger.x + scannerTrigger.width - 20;
+    scannerLeaveState.player.y = scannerTrigger.y + 16;
+    bridge.consumeFrame(16);
+
+    const scannerReentryState = bridge.getSession().getState();
+    const scannerBridgeReentryRefresh =
+      scannerReentryState.stageRuntime.temporaryBridges[0].remainingMs ===
+      scannerReentryState.stageRuntime.temporaryBridges[0].durationMs;
+
+    const liveBridge = scannerReentryState.stageRuntime.temporaryBridges[0];
+    liveBridge.remainingMs = 1;
+    scannerReentryState.player.x = temporaryBridgePlatform.x + 24;
+    scannerReentryState.player.y = temporaryBridgePlatform.y - scannerReentryState.player.height;
+    scannerReentryState.player.vx = 0;
+    scannerReentryState.player.vy = 0;
+    scannerReentryState.player.onGround = true;
+    scannerReentryState.player.supportPlatformId = liveBridge.id;
+    bridge.consumeFrame(16);
+
+    const occupiedExpiryState = bridge.getSession().getState();
+    const heldBridgeSupport =
+      occupiedExpiryState.stageRuntime.temporaryBridges[0].active &&
+      occupiedExpiryState.stageRuntime.temporaryBridges[0].pendingHide;
+
+    occupiedExpiryState.player.x = temporaryBridgePlatform.x + temporaryBridgePlatform.width + 36;
+    occupiedExpiryState.player.y = temporaryBridgePlatform.y - occupiedExpiryState.player.height;
+    occupiedExpiryState.player.onGround = true;
+    occupiedExpiryState.player.supportPlatformId = liveBridge.id;
+    bridge.consumeFrame(16);
+
+    const releasedExpiryState = bridge.getSession().getState();
+    const scannerBridgeOccupiedExpiry = heldBridgeSupport && !releasedExpiryState.stageRuntime.temporaryBridges[0].active;
+
+    bridge.forceStartStage(2);
+    resetToGameScene();
+    let surfaceProbeState = bridge.getSession().getState();
+    surfaceProbeState.stageRuntime.enemies = [];
+    const brittleSurface = surfaceProbeState.stageRuntime.terrainSurfaces.find((surface) => surface.kind === 'brittleCrystal');
+    const stickySurface = surfaceProbeState.stageRuntime.terrainSurfaces.find((surface) => surface.kind === 'stickySludge');
+    const brittleSupportPlatform = surfaceProbeState.stageRuntime.platforms.find((platform) => platform.id === brittleSurface.supportPlatformId);
+    const stickySupportPlatform = surfaceProbeState.stageRuntime.platforms.find((platform) => platform.id === stickySurface.supportPlatformId);
+    const normalSupportPlatform = surfaceProbeState.stageRuntime.platforms.find((platform) => platform.id === 'platform-8740-560');
+    const surfaceScene = game.scene.getScene('game');
+    surfaceScene.syncView();
+    const surfaceVisuals = surfaceScene.getDebugSnapshot().terrainSurfaceVisuals;
+    const brittleVisual = surfaceVisuals.find((surface) => surface.id === brittleSurface.id);
+    const stickyVisual = surfaceVisuals.find((surface) => surface.id === stickySurface.id);
+    const terrainSurfaceExtentsRendered =
+      Boolean(brittleVisual?.visible) &&
+      Boolean(stickyVisual?.visible) &&
+      brittleVisual.x === brittleSurface.x &&
+      brittleVisual.y === brittleSurface.y &&
+      brittleVisual.width === brittleSurface.width &&
+      brittleVisual.height === brittleSurface.height &&
+      stickyVisual.x === stickySurface.x &&
+      stickyVisual.y === stickySurface.y &&
+      stickyVisual.width === stickySurface.width &&
+      stickyVisual.height === stickySurface.height;
+
+    surfaceProbeState.player.x = brittleSurface.x + 28 - surfaceProbeState.player.width / 2;
+    surfaceProbeState.player.y = brittleSupportPlatform.y - surfaceProbeState.player.height;
+    surfaceProbeState.player.vx = 0;
+    surfaceProbeState.player.vy = 0;
+    surfaceProbeState.player.onGround = true;
+    surfaceProbeState.player.supportPlatformId = brittleSupportPlatform.id;
+    surfaceProbeState.player.supportTerrainSurfaceId = brittleSurface.id;
+    bridge.consumeFrame(16);
+    let brittleState = bridge.getSession().getState();
+    const brittleWarningTriggered =
+      brittleState.stageRuntime.terrainSurfaces.find((surface) => surface.id === brittleSurface.id).brittle.phase === 'warning';
+    brittleState.stageRuntime.terrainSurfaces.find((surface) => surface.id === brittleSurface.id).brittle.warningMs = 1;
+    bridge.setJumpHeld(true);
+    bridge.pressJump();
+    bridge.consumeFrame(16);
+    bridge.setJumpHeld(false);
+    brittleState = bridge.getSession().getState();
+    const brittleEscapeJumpWorked =
+      brittleState.player.vy < 0 &&
+      brittleState.stageRuntime.terrainSurfaces.find((surface) => surface.id === brittleSurface.id).brittle.phase === 'broken';
+
+    bridge.forceStartStage(2);
+    resetToGameScene();
+    surfaceProbeState = bridge.getSession().getState();
+    surfaceProbeState.stageRuntime.enemies = [];
+    surfaceProbeState.stageRuntime.terrainSurfaces = surfaceProbeState.stageRuntime.terrainSurfaces.filter(
+      (surface) => surface.id !== stickySurface.id,
+    );
+    const brittleFreshAttemptReset =
+      surfaceProbeState.stageRuntime.terrainSurfaces.find((surface) => surface.id === brittleSurface.id).brittle.phase === 'intact';
+
+    surfaceProbeState.player.x = stickySurface.x + 28 - surfaceProbeState.player.width / 2;
+    surfaceProbeState.player.y = stickySupportPlatform.y - surfaceProbeState.player.height;
+    surfaceProbeState.player.vx = 0;
+    surfaceProbeState.player.vy = 0;
+    surfaceProbeState.player.onGround = true;
+    surfaceProbeState.player.supportPlatformId = stickySupportPlatform.id;
+    surfaceProbeState.player.supportTerrainSurfaceId = null;
+    bridge.setRight(true);
+    for (let index = 0; index < 5; index += 1) {
+      bridge.consumeFrame(16);
+    }
+    const normalGroundSpeed = bridge.getSession().getState().player.vx;
+
+    bridge.forceStartStage(2);
+    resetToGameScene();
+    surfaceProbeState = bridge.getSession().getState();
+    surfaceProbeState.stageRuntime.enemies = [];
+    surfaceProbeState.player.x = stickySurface.x + 28 - surfaceProbeState.player.width / 2;
+    surfaceProbeState.player.y = stickySupportPlatform.y - surfaceProbeState.player.height;
+    surfaceProbeState.player.vx = 0;
+    surfaceProbeState.player.vy = 0;
+    surfaceProbeState.player.onGround = true;
+    surfaceProbeState.player.supportPlatformId = stickySupportPlatform.id;
+    surfaceProbeState.player.supportTerrainSurfaceId = stickySurface.id;
+    bridge.setRight(true);
+    for (let index = 0; index < 5; index += 1) {
+      bridge.consumeFrame(16);
+    }
+    const stickyGroundedSpeed = bridge.getSession().getState().player.vx;
+    bridge.setRight(false);
+    const stickyGroundedTraversalReduced = stickyGroundedSpeed < normalGroundSpeed;
+
+    bridge.forceStartStage(2);
+    resetToGameScene();
+    surfaceProbeState = bridge.getSession().getState();
+    surfaceProbeState.stageRuntime.enemies = [];
+    surfaceProbeState.stageRuntime.terrainSurfaces = surfaceProbeState.stageRuntime.terrainSurfaces.filter(
+      (surface) => surface.id !== stickySurface.id,
+    );
+    surfaceProbeState.player.x = stickySurface.x + 28 - surfaceProbeState.player.width / 2;
+    surfaceProbeState.player.y = stickySupportPlatform.y - surfaceProbeState.player.height;
+    surfaceProbeState.player.vx = 0;
+    surfaceProbeState.player.vy = 0;
+    surfaceProbeState.player.onGround = true;
+    surfaceProbeState.player.supportPlatformId = stickySupportPlatform.id;
+    surfaceProbeState.player.supportTerrainSurfaceId = null;
+    bridge.setJumpHeld(true);
+    bridge.pressJump();
+    bridge.consumeFrame(16);
+    const normalLowGravityJumpVy = bridge.getSession().getState().player.vy;
+
+    bridge.forceStartStage(2);
+    resetToGameScene();
+    surfaceProbeState = bridge.getSession().getState();
+    surfaceProbeState.stageRuntime.enemies = [];
+    surfaceProbeState.player.x = stickySurface.x + 28 - surfaceProbeState.player.width / 2;
+    surfaceProbeState.player.y = stickySupportPlatform.y - surfaceProbeState.player.height;
+    surfaceProbeState.player.vx = 0;
+    surfaceProbeState.player.vy = 0;
+    surfaceProbeState.player.onGround = true;
+    surfaceProbeState.player.supportPlatformId = stickySupportPlatform.id;
+    surfaceProbeState.player.supportTerrainSurfaceId = stickySurface.id;
+    bridge.setJumpHeld(true);
+    bridge.pressJump();
+    bridge.consumeFrame(16);
+    bridge.setJumpHeld(false);
+    const stickyLowGravityJumpState = bridge.getSession().getState();
+    const stickyLowGravityJumpReduced =
+      stickyLowGravityJumpState.player.gravityScale < 1 &&
+      stickyLowGravityJumpState.player.vy > -640 &&
+      stickyLowGravityJumpState.player.vy < 0;
+
     results.push({
       stageName: 'Mechanic Checks',
         targetDurationMinutes: 0,
@@ -1190,6 +1613,20 @@ async function collectStageResults(page) {
         respawnedX: 0,
         health: 3,
       },
+      readability: {
+        segmentCount: 0,
+        collectibleZones: [],
+        maxCheckpointGap: 0,
+        elevatedRoutePlatforms: 0,
+        elevatedRouteRewards: 0,
+        maxMainRouteThreatWindow: 0,
+        optionalThreatCount: 0,
+        segmentPass: true,
+        collectiblePass: true,
+        checkpointPass: true,
+        routePass: true,
+        encounterPass: true,
+      },
       mechanics: {
         dashUnlocked: dashState.progress.activePowers.dash,
         dashTriggered: dashCues.includes('dash') || dashState.player.x - dashStartX > 80,
@@ -1208,15 +1645,231 @@ async function collectStageResults(page) {
           fallingJumpState.player.vy < 0 &&
           fallingJumpState.player.supportPlatformId === null,
         springBoosted: springCues.includes('spring') || springMinVy < -700,
+        bouncePodLaunchWorked,
+        gasVentLaunchWorked,
         hopperHighJump: hopperImpulses.length > 0 && hopperImpulses.every((impulse) => impulse >= 820),
         chargerWindup: chargerSawWindup,
         chargerCharged: chargerSawCharge,
         flyerMoved:
           Math.abs(flyerAfter.x - flyerStart.x) > 8 || Math.abs(flyerAfter.y - flyerStart.y) > 4,
+        lowGravityApplied,
+        revealRouteUnlocked,
+        scannerBridgeActivated,
+        scannerBridgeNoStayRefresh,
+        scannerBridgeReentryRefresh,
+        scannerBridgeOccupiedExpiry,
+        terrainSurfaceExtentsRendered,
+        brittleWarningTriggered,
+        brittleEscapeJumpWorked,
+        brittleFreshAttemptReset,
+        stickyGroundedTraversalReduced,
+        stickyLowGravityJumpReduced,
         powerVariantDistinct,
         turretVisibilityGated,
       },
     });
+
+    bridge.forceStartStage(1);
+    resetToGameScene();
+    let secretRouteState = bridge.getSession().getState();
+    const secretRoute = secretRouteState.stage.secretRoutes?.[0] ?? null;
+    if (secretRoute) {
+      const intersectsRect = (a, b) =>
+        a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+      const expandRect = (rect, padding) => ({
+        x: rect.x - padding,
+        y: rect.y - padding,
+        width: rect.width + padding * 2,
+        height: rect.height + padding * 2,
+      });
+      const rectContainsPoint = (rect, point) =>
+        point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
+      const enemyRect = (enemy) => ({
+        x: enemy.position.x,
+        y: enemy.position.y,
+        width: enemy.kind === 'turret' ? 28 : 34,
+        height: enemy.kind === 'turret' ? 38 : enemy.kind === 'flyer' ? 24 : 30,
+      });
+      const findSupport = (rect) => {
+        const centerX = rect.x + rect.width / 2;
+        const bottom = rect.y + rect.height;
+        return (
+          secretRouteState.stageRuntime.platforms
+            .filter((platform) => centerX >= platform.x && centerX <= platform.x + platform.width && platform.y >= bottom)
+            .sort((left, right) => left.y - right.y)[0] ?? null
+        );
+      };
+
+      const cueSupport = findSupport(secretRoute.cue.rect);
+      secretRouteState.player.x = secretRoute.cue.rect.x + 24;
+      secretRouteState.player.y = (cueSupport?.y ?? secretRoute.cue.rect.y + secretRoute.cue.rect.height) - secretRouteState.player.height;
+      secretRouteState.player.vx = 0;
+      secretRouteState.player.vy = 0;
+      secretRouteState.player.onGround = true;
+      secretRouteState.player.supportPlatformId = cueSupport?.id ?? null;
+      bridge.consumeFrame(16);
+
+      let revealTriggered = true;
+      if (secretRoute.cue.revealVolumeIds?.length) {
+        const trigger = secretRouteState.stageRuntime.revealVolumes.find(
+          (volume) => volume.id === secretRoute.cue.revealVolumeIds[0],
+        );
+        secretRouteState.player.x = trigger.x + 16;
+        secretRouteState.player.y = trigger.y + 16;
+        secretRouteState.player.vx = 0;
+        secretRouteState.player.vy = 0;
+        secretRouteState.player.onGround = false;
+        secretRouteState.player.supportPlatformId = null;
+        bridge.consumeFrame(16);
+        const revealState = bridge.getSession().getState();
+        revealTriggered = secretRoute.cue.revealPlatformIds.every((platformId) =>
+          revealState.stageRuntime.revealedPlatformIds.includes(platformId),
+        );
+      }
+
+      bridge.forceStartStage(1);
+      resetToGameScene();
+      secretRouteState = bridge.getSession().getState();
+      const rewardCollectibleIds = [];
+      for (const collectibleId of secretRoute.reward.collectibleIds) {
+        const collectible = secretRouteState.stageRuntime.collectibles.find((entry) => entry.id === collectibleId);
+        if (!collectible) {
+          continue;
+        }
+
+        secretRouteState.player.x = collectible.position.x - secretRouteState.player.width / 2;
+        secretRouteState.player.y = collectible.position.y - secretRouteState.player.height / 2;
+        secretRouteState.player.vx = 0;
+        secretRouteState.player.vy = 0;
+        secretRouteState.player.onGround = false;
+        secretRouteState.player.supportPlatformId = null;
+        bridge.consumeFrame(16);
+        if (bridge.getSession().getState().stageRuntime.collectibles.find((entry) => entry.id === collectibleId)?.collected) {
+          rewardCollectibleIds.push(collectibleId);
+        }
+      }
+
+      bridge.forceStartStage(1);
+      resetToGameScene();
+      secretRouteState = bridge.getSession().getState();
+      const reconnectSupport = findSupport(secretRoute.reconnect);
+      secretRouteState.player.x = secretRoute.reconnect.x + 12;
+      secretRouteState.player.y = (reconnectSupport?.y ?? secretRoute.reconnect.y + secretRoute.reconnect.height) - secretRouteState.player.height;
+      secretRouteState.player.vx = 0;
+      secretRouteState.player.vy = 0;
+      secretRouteState.player.onGround = true;
+      secretRouteState.player.supportPlatformId = reconnectSupport?.id ?? null;
+      bridge.setRight(true);
+      for (let index = 0; index < 10; index += 1) {
+        bridge.consumeFrame(16);
+      }
+      const reconnectState = bridge.getSession().getState();
+      bridge.setRight(false);
+      const reconnectProgressed = !reconnectState.player.dead && reconnectState.player.x > secretRoute.reconnect.x + 18;
+
+      bridge.forceStartStage(1);
+      resetToGameScene();
+      secretRouteState = bridge.getSession().getState();
+      const mainPathSupport = findSupport(secretRoute.mainPath);
+      secretRouteState.player.x = secretRoute.mainPath.x + 12;
+      secretRouteState.player.y = (mainPathSupport?.y ?? secretRoute.mainPath.y + secretRoute.mainPath.height) - secretRouteState.player.height;
+      secretRouteState.player.vx = 0;
+      secretRouteState.player.vy = 0;
+      secretRouteState.player.onGround = true;
+      secretRouteState.player.supportPlatformId = mainPathSupport?.id ?? null;
+      bridge.setRight(true);
+      for (let index = 0; index < 10; index += 1) {
+        bridge.consumeFrame(16);
+      }
+      const skipState = bridge.getSession().getState();
+      bridge.setRight(false);
+      const skipMainRouteWorked = !skipState.player.dead && skipState.player.x > secretRoute.mainPath.x + 18;
+      const rewardCollectibles = skipState.stage.collectibles.filter((collectible) =>
+        secretRoute.reward.collectibleIds.includes(collectible.id),
+      );
+      const rewardBlocks = skipState.stage.rewardBlocks.filter((rewardBlock) =>
+        secretRoute.reward.rewardBlockIds.includes(rewardBlock.id),
+      );
+      const rewardScore =
+        rewardCollectibles.length +
+        rewardBlocks.reduce(
+          (total, rewardBlock) => total + (rewardBlock.reward.kind === 'coins' ? rewardBlock.reward.amount : 3),
+          0,
+        );
+      const cueReadable = Boolean(cueSupport);
+      const rewardInsidePocket =
+        rewardCollectibles.every((collectible) => rectContainsPoint(secretRoute.interior, collectible.position)) &&
+        rewardBlocks.every((rewardBlock) => intersectsRect(secretRoute.interior, rewardBlock));
+      const reconnectSupported = Boolean(reconnectSupport);
+      const mainPathSupported = Boolean(mainPathSupport);
+      const reconnectSafe =
+        !skipState.stage.hazards.some((hazard) => intersectsRect(expandRect(secretRoute.reconnect, 32), hazard.rect)) &&
+        !skipState.stage.enemies.some((enemy) => intersectsRect(expandRect(secretRoute.reconnect, 44), enemyRect(enemy)));
+      const primaryRouteReport = {
+        id: secretRoute.id,
+        title: secretRoute.title,
+        cueReadable,
+        rewardScore,
+        rewardInsidePocket,
+        reconnectSupported,
+        mainPathSupported,
+        reconnectSafe,
+        downstreamReconnect: secretRoute.reconnect.x > secretRoute.entry.x + 120,
+      };
+      primaryRouteReport.passed =
+        primaryRouteReport.cueReadable &&
+        primaryRouteReport.rewardScore >= 3 &&
+        primaryRouteReport.rewardInsidePocket &&
+        primaryRouteReport.reconnectSupported &&
+        primaryRouteReport.mainPathSupported &&
+        primaryRouteReport.reconnectSafe &&
+        primaryRouteReport.downstreamReconnect;
+      const secretRouteSummary = {
+        routeCount: 1,
+        routeReports: [primaryRouteReport],
+        passed: primaryRouteReport.passed,
+      };
+
+      results.push({
+        stageName: 'Secret Route Checks',
+        targetDurationMinutes: 0,
+        stage: JSON.parse(JSON.stringify(skipState.stage)),
+        checkpoint: {
+          activatedId: 'secret-route',
+          checkpointX: 0,
+          respawnedX: 0,
+          health: skipState.player.health,
+        },
+        readability: {
+          segmentCount: 0,
+          collectibleZones: [],
+          maxCheckpointGap: 0,
+          elevatedRoutePlatforms: 0,
+          elevatedRouteRewards: 0,
+          maxMainRouteThreatWindow: 0,
+          optionalThreatCount: 0,
+          segmentPass: true,
+          collectiblePass: true,
+          checkpointPass: true,
+          routePass: true,
+          encounterPass: true,
+        },
+        mechanics: { passed: true },
+        secretRoutes: {
+          ...secretRouteSummary,
+          revealTriggered,
+          rewardCollectibleIds,
+          reconnectProgressed,
+          skipMainRouteWorked,
+          passed:
+            secretRouteSummary.passed &&
+            revealTriggered &&
+            rewardCollectibleIds.length >= 2 &&
+            reconnectProgressed &&
+            skipMainRouteWorked,
+        },
+      });
+    }
 
     bridge.forceStartStage(0);
     resetToGameScene();
@@ -1529,6 +2182,20 @@ async function collectStageResults(page) {
         respawnedX: 0,
         health: 3,
       },
+      readability: {
+        segmentCount: 0,
+        collectibleZones: [],
+        maxCheckpointGap: 0,
+        elevatedRoutePlatforms: 0,
+        elevatedRouteRewards: 0,
+        maxMainRouteThreatWindow: 0,
+        optionalThreatCount: 0,
+        segmentPass: true,
+        collectiblePass: true,
+        checkpointPass: true,
+        routePass: true,
+        encounterPass: true,
+      },
       blocks: {
         coinHitStates: [
           firstCoinSnapshot,
@@ -1593,6 +2260,14 @@ async function main() {
     await waitForServer(`http://127.0.0.1:${PORT}`);
     const browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    page.on('pageerror', (error) => {
+      console.error(`browser page error: ${error.message}`);
+    });
+    page.on('console', (message) => {
+      if (message.type() === 'error') {
+        console.error(`browser console error: ${message.text()}`);
+      }
+    });
     await page.goto(BASE_URL, { waitUntil: 'networkidle' });
 
     const flowChecks = await collectFlowResults(page);
@@ -1611,9 +2286,23 @@ async function main() {
         notes.push(mechanics.collapseFell ? 'falling platform timing passed' : 'falling platform timing failed');
         notes.push(mechanics.fallingJumpResponsive ? 'falling platform jump passed' : 'falling platform jump failed');
         notes.push(mechanics.springBoosted ? 'spring launch passed' : 'spring launch failed');
+        notes.push(mechanics.bouncePodLaunchWorked ? 'bounce pod route passed' : 'bounce pod route failed');
+        notes.push(mechanics.gasVentLaunchWorked ? 'gas vent route passed' : 'gas vent route failed');
         notes.push(mechanics.hopperHighJump ? 'hopper jump height passed' : 'hopper jump height failed');
         notes.push(mechanics.chargerCharged ? 'charger state transition passed' : 'charger state transition failed');
         notes.push(mechanics.flyerMoved ? 'flyer patrol passed' : 'flyer patrol failed');
+        notes.push(mechanics.lowGravityApplied ? 'low-gravity pocket passed' : 'low-gravity pocket failed');
+        notes.push(mechanics.revealRouteUnlocked ? 'reveal platform route passed' : 'reveal platform route failed');
+        notes.push(mechanics.scannerBridgeActivated ? 'scanner bridge activation passed' : 'scanner bridge activation failed');
+        notes.push(mechanics.scannerBridgeNoStayRefresh ? 'scanner bridge stay-inside refresh guard passed' : 'scanner bridge stay-inside refresh guard failed');
+        notes.push(mechanics.scannerBridgeReentryRefresh ? 'scanner bridge re-entry refresh passed' : 'scanner bridge re-entry refresh failed');
+        notes.push(mechanics.scannerBridgeOccupiedExpiry ? 'scanner bridge occupied expiry passed' : 'scanner bridge occupied expiry failed');
+        notes.push(mechanics.terrainSurfaceExtentsRendered ? 'terrain surface extents render in the live scene' : 'terrain surface extents drift from the live scene');
+        notes.push(mechanics.brittleWarningTriggered ? 'brittle floor warning passed' : 'brittle floor warning failed');
+        notes.push(mechanics.brittleEscapeJumpWorked ? 'brittle escape jump passed' : 'brittle escape jump failed');
+        notes.push(mechanics.brittleFreshAttemptReset ? 'brittle fresh-attempt reset passed' : 'brittle fresh-attempt reset failed');
+        notes.push(mechanics.stickyGroundedTraversalReduced ? 'sticky grounded traversal penalty passed' : 'sticky grounded traversal penalty failed');
+        notes.push(mechanics.stickyLowGravityJumpReduced ? 'sticky low-gravity jump sequencing passed' : 'sticky low-gravity jump sequencing failed');
         notes.push(
           mechanics.powerVariantDistinct ? 'power variants are visually distinct' : 'power variants are not visually distinct',
         );
@@ -1627,9 +2316,15 @@ async function main() {
             segmentCount: 0,
             collectibleZones: [],
             maxCheckpointGap: 0,
+            elevatedRoutePlatforms: 0,
+            elevatedRouteRewards: 0,
+            maxMainRouteThreatWindow: 0,
+            optionalThreatCount: 0,
             segmentPass: true,
             collectiblePass: true,
             checkpointPass: true,
+            routePass: true,
+            encounterPass: true,
           },
           checkpoint: { passed: true },
           safety: { passed: true },
@@ -1673,15 +2368,64 @@ async function main() {
             segmentCount: 0,
             collectibleZones: [],
             maxCheckpointGap: 0,
+            elevatedRoutePlatforms: 0,
+            elevatedRouteRewards: 0,
+            maxMainRouteThreatWindow: 0,
+            optionalThreatCount: 0,
             segmentPass: true,
             collectiblePass: true,
             checkpointPass: true,
+            routePass: true,
+            encounterPass: true,
           },
           checkpoint: { passed: true },
           safety: { passed: true },
           mechanics: { passed: true },
           blocks,
           flow: { passed: true },
+          notes,
+        };
+      }
+
+      if (result.stageName === 'Secret Route Checks') {
+        const notes = [];
+        const secretRoutes = result.secretRoutes;
+        const primaryRoute = secretRoutes.routeReports[0];
+        notes.push(secretRoutes.routeCount > 0 ? `${secretRoutes.routeCount} secret route authored` : 'no secret routes authored');
+        notes.push(primaryRoute?.cueReadable ? 'discovery cue reads from the main route' : 'discovery cue is not readable');
+        notes.push(secretRoutes.revealTriggered ? 'hidden bridge reveal probe passed' : 'hidden bridge reveal probe failed');
+        notes.push(
+          secretRoutes.rewardCollectibleIds.length >= 2
+            ? `optional sample payoff reached ${secretRoutes.rewardCollectibleIds.length} collectible rewards`
+            : 'optional sample payoff was not collected reliably',
+        );
+        notes.push(primaryRoute?.reconnectSafe ? 'downstream reconnection remained safe' : 'downstream reconnection felt unsafe');
+        notes.push(secretRoutes.reconnectProgressed ? 'reconnection probe advanced downstream' : 'reconnection probe stalled');
+        notes.push(secretRoutes.skipMainRouteWorked ? 'main route skip probe stayed completable' : 'main route skip probe stalled');
+
+        return {
+          stageName: result.stageName,
+          targetDurationMinutes: 0,
+          estimatedMinutes: 0,
+          readability: {
+            segmentCount: 0,
+            collectibleZones: [],
+            maxCheckpointGap: 0,
+            elevatedRoutePlatforms: 0,
+            elevatedRouteRewards: 0,
+            maxMainRouteThreatWindow: 0,
+            optionalThreatCount: 0,
+            segmentPass: true,
+            collectiblePass: true,
+            checkpointPass: true,
+            routePass: true,
+            encounterPass: true,
+          },
+          checkpoint: { passed: true },
+          safety: { passed: true },
+          mechanics: { passed: true },
+          flow: { passed: true },
+          secretRoutes,
           notes,
         };
       }
@@ -1717,6 +2461,16 @@ async function main() {
           ? `collectibles span ${readability.collectibleZones.join(', ')} segments`
           : 'collectibles do not cover early/mid/late pacing zones',
       );
+      notes.push(
+        readability.routePass
+          ? `${readability.elevatedRoutePlatforms} elevated route anchors and ${readability.elevatedRouteRewards} elevated rewards support optional detours`
+          : `optional route coverage is thin (${readability.elevatedRoutePlatforms} anchors, ${readability.elevatedRouteRewards} rewards)`,
+      );
+      notes.push(
+        readability.encounterPass
+          ? `main-route late windows peak at ${readability.maxMainRouteThreatWindow} threats while ${readability.optionalThreatCount} optional threats stay off the critical path`
+          : `late-route threat density is too high (${readability.maxMainRouteThreatWindow}) or optional pressure is missing (${readability.optionalThreatCount})`,
+      );
       notes.push(checkpoint.passed ? 'late checkpoint respawn passed' : 'late checkpoint respawn failed');
       notes.push(
         safetyScan.checkpointPass && safetyScan.hazardPass && safetyScan.enemyPass
@@ -1747,7 +2501,20 @@ async function main() {
       stageName: 'Flow Checks',
       targetDurationMinutes: 0,
       estimatedMinutes: 0,
-      readability: { segmentCount: 0, collectibleZones: [], maxCheckpointGap: 0, segmentPass: true, collectiblePass: true, checkpointPass: true },
+      readability: {
+        segmentCount: 0,
+        collectibleZones: [],
+        maxCheckpointGap: 0,
+        elevatedRoutePlatforms: 0,
+        elevatedRouteRewards: 0,
+        maxMainRouteThreatWindow: 0,
+        optionalThreatCount: 0,
+        segmentPass: true,
+        collectiblePass: true,
+        checkpointPass: true,
+        routePass: true,
+        encounterPass: true,
+      },
       checkpoint: { passed: true },
       safety: { passed: true },
       mechanics: { passed: true },
@@ -1764,6 +2531,7 @@ async function main() {
         mainHelpKeyboardScrollWorked: flowChecks.mainHelpKeyboardScrollWorked,
         mainHelpWheelScrollWorked: flowChecks.mainHelpWheelScrollWorked,
         introStatusVisible: flowChecks.introStatusVisible,
+        completeStatusVisible: flowChecks.completeStatusVisible,
         hudLayoutPassed: flowChecks.hudLayoutPassed,
         pauseOverlayVisible: flowChecks.pauseOverlayVisible,
         pauseMenuSceneRemoved: flowChecks.pauseMenuSceneRemoved,
@@ -1785,6 +2553,7 @@ async function main() {
           flowChecks.mainHelpWheelScrollWorked &&
           flowChecks.introVisible &&
           flowChecks.introStatusVisible &&
+          flowChecks.completeStatusVisible &&
           flowChecks.hudLayoutPassed &&
           flowChecks.pauseOverlayVisible &&
           flowChecks.pauseMenuSceneRemoved &&
@@ -1807,6 +2576,7 @@ async function main() {
         flowChecks.mainHelpWheelScrollWorked ? 'main help wheel scroll passed' : 'main help wheel scroll failed',
         flowChecks.introVisible ? 'stage intro scene appeared' : 'stage intro scene missing',
         flowChecks.introStatusVisible ? 'intro status summary passed' : 'intro status summary failed',
+        flowChecks.completeStatusVisible ? 'results summary uses astronaut naming' : 'results summary uses stale naming',
         flowChecks.hudLayoutPassed ? 'hud layout passed' : 'hud layout failed',
         flowChecks.pauseOverlayVisible ? 'pause overlay visibility passed' : 'pause overlay visibility failed',
         flowChecks.pauseMenuSceneRemoved ? 'pause menu scene no longer launched' : 'pause menu scene still launched',
@@ -1823,7 +2593,20 @@ async function main() {
       stageName: 'Reward Lock Coverage',
       targetDurationMinutes: 0,
       estimatedMinutes: 0,
-      readability: { segmentCount: 0, collectibleZones: [], maxCheckpointGap: 0, segmentPass: true, collectiblePass: true, checkpointPass: true },
+      readability: {
+        segmentCount: 0,
+        collectibleZones: [],
+        maxCheckpointGap: 0,
+        elevatedRoutePlatforms: 0,
+        elevatedRouteRewards: 0,
+        maxMainRouteThreatWindow: 0,
+        optionalThreatCount: 0,
+        segmentPass: true,
+        collectiblePass: true,
+        checkpointPass: true,
+        routePass: true,
+        encounterPass: true,
+      },
       checkpoint: { passed: true },
       safety: { passed: true },
       mechanics: { passed: true },
@@ -1849,9 +2632,15 @@ async function main() {
         segmentCount: 0,
         collectibleZones: [],
         maxCheckpointGap: 0,
+        elevatedRoutePlatforms: 0,
+        elevatedRouteRewards: 0,
+        maxMainRouteThreatWindow: 0,
+        optionalThreatCount: 0,
         segmentPass: true,
         collectiblePass: true,
         checkpointPass: true,
+        routePass: true,
+        encounterPass: true,
       },
       checkpoint: { passed: true },
       safety: { passed: true },
@@ -1874,12 +2663,15 @@ async function main() {
         !result.readability.segmentPass ||
         !result.readability.checkpointPass ||
         !result.readability.collectiblePass ||
+        !result.readability.routePass ||
+        !result.readability.encounterPass ||
         !result.checkpoint.passed ||
         !result.safety.passed ||
         result.blockSpacing?.passed === false ||
         result.blocks?.passed === false ||
         result.rewardLockCoverage?.passed === false ||
         result.staticLayoutCoverage?.passed === false ||
+        result.secretRoutes?.passed === false ||
         !result.mechanics.passed ||
         !result.flow.passed,
     );

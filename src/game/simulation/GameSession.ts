@@ -2,26 +2,47 @@ import Phaser from 'phaser';
 import { stageDefinitions, type StageDefinition } from '../content/stages';
 import type { InputState } from '../input/actions';
 import {
+  BRITTLE_WARNING_MS,
+  SLUDGE_GROUND_ACCEL_MULTIPLIER,
+  SLUDGE_JUMP_MULTIPLIER,
+  SLUDGE_MAX_SPEED_MULTIPLIER,
   createDefaultPowerInventory,
   createDefaultPowerTimers,
   createDefaultRunSettings,
   createDefaultSessionProgress,
+  getAllCollectiblesRecoveredMessage,
+  getCheckpointActivatedMessage,
+  getCollectibleRecoveredMessage,
+  getCollectibleRewardMessage,
+  getPowerGainMessage,
   type CheckpointState,
   type CollectibleState,
   type DifficultySetting,
   type EnemyPressureSetting,
   type EnemyState,
   type HazardState,
+  type LauncherState,
+  type LowGravityZoneState,
   type PlatformState,
   type PlayerState,
   type PowerType,
   type ProjectileState,
+  type ScannerVolumeState,
+  type TerrainSurfaceKind,
+  type TerrainSurfaceState,
+  type TemporaryBridgeState,
+  type RevealVolumeState,
   type Rect,
   type RewardBlockState,
   type RewardRevealState,
   type RunSettings,
   type SessionProgress,
   type StageRuntime,
+  createInactiveScannerVolumeState,
+  createInactiveTemporaryBridgeState,
+  isPlatformActive,
+  isTerrainSurfaceSupportActive,
+  normalizeRevealedPlatformIds,
 } from './state';
 
 const PLAYER_WIDTH = 26;
@@ -44,6 +65,7 @@ const PLAYER_PROJECTILE_SPEED = 520;
 const POWER_INVINCIBLE_MS = 10_000;
 const REWARD_REVEAL_MS = 1000;
 const REWARD_BLOCK_FLASH_MS = 180;
+const LAUNCHER_DIRECTION_EPSILON = 0.0001;
 const TURRET_VIEW_LEAD_MARGIN = 96;
 const CHARGER_TRIGGER_RANGE = 220;
 const ENEMY_SPACING_BUFFER = 28;
@@ -412,8 +434,15 @@ const cloneProgress = (progress: SessionProgress): SessionProgress => ({
   runSettings: { ...progress.runSettings },
 });
 
+const getActiveTemporaryBridgeIds = (temporaryBridges: readonly TemporaryBridgeState[]): string[] =>
+  temporaryBridges.filter((bridge) => bridge.active).map((bridge) => bridge.id);
+
 const createSolidSurfaceList = (runtime: StageRuntime): SolidSurface[] => [
-  ...runtime.platforms.map<SolidSurface>((platform) => ({
+  ...runtime.platforms
+    .filter((platform) =>
+      isPlatformActive(platform, runtime.revealedPlatformIds, getActiveTemporaryBridgeIds(runtime.temporaryBridges)),
+    )
+    .map<SolidSurface>((platform) => ({
     id: platform.id,
     kind: 'platform',
     x: platform.x,
@@ -444,12 +473,99 @@ const surfaceRect = (surface: SolidSurface): Rect => ({
   height: surface.height,
 });
 
+const pointInRect = (point: { x: number; y: number }, rect: Rect): boolean =>
+  point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
+
+const TERRAIN_SURFACE_TOP_EPSILON = 8;
+
+const LAUNCHER_CONFIG: Record<LauncherState['kind'], { impulse: number; cooldownMs: number; cue: string }> = {
+  bouncePod: { impulse: 980, cooldownMs: 260, cue: 'bounce-pod' },
+  gasVent: { impulse: 820, cooldownMs: 520, cue: 'gas-vent' },
+};
+
+const terrainSurfaceSupportPoint = (
+  playerWidth: number,
+  playerHeight: number,
+  x: number,
+  y: number,
+): { x: number; y: number } => ({
+  x: x + playerWidth / 2,
+  y: y + playerHeight,
+});
+
+const normalizeLauncherDirection = (direction: { x: number; y: number } | undefined): { x: number; y: number } => {
+  if (!direction) {
+    return { x: 0, y: -1 };
+  }
+
+  const magnitude = Math.hypot(direction.x, direction.y);
+  if (magnitude <= LAUNCHER_DIRECTION_EPSILON) {
+    return { x: 0, y: -1 };
+  }
+
+  return {
+    x: direction.x / magnitude,
+    y: direction.y / magnitude,
+  };
+};
+
+const activePlatforms = (
+  platforms: PlatformState[],
+  revealedPlatformIds: readonly string[],
+  activeTemporaryBridgeIds: readonly string[],
+): PlatformState[] => platforms.filter((platform) => isPlatformActive(platform, revealedPlatformIds, activeTemporaryBridgeIds));
+
+const findPlayerLowGravityZone = (
+  player: PlayerState,
+  zones: LowGravityZoneState[],
+): LowGravityZoneState | null => {
+  const center = {
+    x: player.x + player.width / 2,
+    y: player.y + player.height / 2,
+  };
+
+  return zones.find((zone) => pointInRect(center, zone)) ?? null;
+};
+
+const findTerrainSurfaceSupportPlatform = (
+  platforms: PlatformState[],
+  surface: Pick<TerrainSurfaceState, 'x' | 'y' | 'width'>,
+): PlatformState | null =>
+  platforms.find(
+    (platform) =>
+      platform.kind === 'static' &&
+      !platform.reveal &&
+      !platform.temporaryBridge &&
+      surface.x >= platform.x &&
+      surface.x + surface.width <= platform.x + platform.width &&
+      Math.abs(surface.y - platform.y) <= 1,
+  ) ?? null;
+
+const findLauncherSupportPlatform = (
+  platforms: PlatformState[],
+  launcher: Pick<LauncherState, 'x' | 'y' | 'width'>,
+): PlatformState | null =>
+  platforms.find(
+    (platform) =>
+      platform.kind === 'static' &&
+      !platform.reveal &&
+      !platform.temporaryBridge &&
+      launcher.x >= platform.x &&
+      launcher.x + launcher.width <= platform.x + platform.width &&
+      Math.abs(launcher.y - platform.y) <= 1,
+  ) ?? null;
+
+const getJumpSpeedForTerrainKind = (surfaceKind: TerrainSurfaceKind | null): number =>
+  surfaceKind === 'stickySludge' ? JUMP_SPEED * SLUDGE_JUMP_MULTIPLIER : JUMP_SPEED;
+
 export class GameSession {
   private snapshot: SessionSnapshot;
 
   private cues: string[] = [];
 
   private cameraViewBox: Rect | null = null;
+
+  private checkpointRevealIds: string[] = [];
 
   constructor() {
     this.snapshot = this.createSnapshot(0, createDefaultSessionProgress());
@@ -466,16 +582,19 @@ export class GameSession {
   }
 
   restartStage(): void {
+    this.checkpointRevealIds = [];
     this.snapshot = this.createSnapshot(this.snapshot.stageIndex, cloneProgress(this.snapshot.progress));
   }
 
   startStage(index: number): void {
     const clamped = Math.max(0, Math.min(index, this.snapshot.progress.unlockedStageIndex));
+    this.checkpointRevealIds = [];
     this.snapshot = this.createSnapshot(clamped, cloneProgress(this.snapshot.progress));
   }
 
   forceStartStage(index: number): void {
     const clamped = Math.max(0, Math.min(index, stageDefinitions.length - 1));
+    this.checkpointRevealIds = [];
     this.snapshot = this.createSnapshot(clamped, cloneProgress(this.snapshot.progress));
   }
 
@@ -517,6 +636,7 @@ export class GameSession {
     this.updatePowerTimers(deltaMs);
     this.updateRewardFeedback(deltaMs);
     this.syncPlayerPresentationPower();
+    this.updatePlayerGravityState();
 
     if (player.dead) {
       this.snapshot.respawnTimerMs -= deltaMs;
@@ -526,9 +646,19 @@ export class GameSession {
       return;
     }
 
+    this.updateTemporaryBridges(deltaMs);
     this.updatePlatforms(deltaMs, deltaSec);
+    this.updateTerrainSurfaces(deltaMs);
 
     const supportSurface = player.supportPlatformId ? this.findSupportSurface(player.supportPlatformId) : null;
+    const supportTerrainSurface =
+      supportSurface?.kind === 'platform'
+        ? this.findSupportingTerrainSurface(supportSurface.platform.id, player.x, player.y)
+        : null;
+    if (player.onGround) {
+      player.coyoteTerrainSurfaceKind = supportTerrainSurface?.kind ?? null;
+      player.supportTerrainSurfaceId = supportTerrainSurface?.id ?? null;
+    }
     if (supportSurface && player.onGround) {
       const stillSupported =
         Math.abs(player.y + player.height - supportSurface.y) <= 8 &&
@@ -541,6 +671,7 @@ export class GameSession {
       } else {
         player.onGround = false;
         player.supportPlatformId = null;
+        player.supportTerrainSurfaceId = null;
       }
     }
 
@@ -581,45 +712,61 @@ export class GameSession {
     }
 
     if (player.dashTimerMs <= 0) {
-      const accel = player.onGround ? GROUND_ACCEL : AIR_ACCEL;
+      const groundedOnSticky = player.onGround && supportTerrainSurface?.kind === 'stickySludge';
+      const groundAccel = groundedOnSticky ? GROUND_ACCEL * SLUDGE_GROUND_ACCEL_MULTIPLIER : GROUND_ACCEL;
+      const groundMaxSpeed = groundedOnSticky ? MAX_MOVE_SPEED * SLUDGE_MAX_SPEED_MULTIPLIER : MAX_MOVE_SPEED;
+      const accel = player.onGround ? groundAccel : AIR_ACCEL;
       if (direction !== 0) {
-        player.vx = Phaser.Math.Clamp(player.vx + direction * accel * deltaSec, -MAX_MOVE_SPEED, MAX_MOVE_SPEED);
+        player.vx = Phaser.Math.Clamp(
+          player.vx + direction * accel * deltaSec,
+          player.onGround ? -groundMaxSpeed : -MAX_MOVE_SPEED,
+          player.onGround ? groundMaxSpeed : MAX_MOVE_SPEED,
+        );
       } else if (player.onGround) {
-        const drag = Math.min(Math.abs(player.vx), GROUND_ACCEL * deltaSec);
+        const drag = Math.min(Math.abs(player.vx), groundAccel * deltaSec);
         player.vx -= Math.sign(player.vx) * drag;
       }
 
       if (player.onGround) {
         player.coyoteMs = COYOTE_TIME_MS;
         player.airJumpsRemaining = this.snapshot.progress.activePowers.doubleJump ? 1 : 0;
+        player.coyoteTerrainSurfaceKind = supportTerrainSurface?.kind ?? null;
       } else {
         player.coyoteMs = Math.max(0, player.coyoteMs - deltaMs);
+        if (player.coyoteMs <= 0) {
+          player.coyoteTerrainSurfaceKind = null;
+        }
       }
 
       player.jumpBufferMs = input.jumpPressed ? JUMP_BUFFER_MS : Math.max(0, player.jumpBufferMs - deltaMs);
       if (player.jumpBufferMs > 0) {
         if (player.coyoteMs > 0) {
-          player.vy = -JUMP_SPEED;
+          player.vy = -getJumpSpeedForTerrainKind(player.coyoteTerrainSurfaceKind);
           player.onGround = false;
           player.supportPlatformId = null;
+          player.supportTerrainSurfaceId = null;
           player.coyoteMs = 0;
+          player.coyoteTerrainSurfaceKind = null;
           player.jumpBufferMs = 0;
           this.emitCue('jump');
         } else if (this.snapshot.progress.activePowers.doubleJump && player.airJumpsRemaining > 0) {
           player.vy = -JUMP_SPEED;
           player.onGround = false;
           player.supportPlatformId = null;
+          player.supportTerrainSurfaceId = null;
           player.airJumpsRemaining -= 1;
           player.jumpBufferMs = 0;
           this.emitCue('double-jump');
         }
       }
 
-      player.vy = Math.min(player.vy + stage.world.gravity * deltaSec, MAX_FALL_SPEED);
+      player.vy = Math.min(player.vy + stage.world.gravity * player.gravityScale * deltaSec, MAX_FALL_SPEED);
     } else {
       player.vx = player.facing * DASH_SPEED;
       player.vy = 0;
       player.onGround = false;
+      player.lowGravityZoneId = null;
+      player.gravityScale = 1;
     }
 
     let nextX = player.x + player.vx * deltaSec;
@@ -644,6 +791,7 @@ export class GameSession {
     nextY += player.vy * deltaSec;
     player.onGround = false;
     player.supportPlatformId = null;
+    player.supportTerrainSurfaceId = null;
     let ridingSurface: SolidSurface | null = null;
     const verticalRect: Rect = { x: nextX, y: nextY, width: player.width, height: player.height };
     for (const surface of solidSurfaces) {
@@ -652,9 +800,17 @@ export class GameSession {
       }
 
       if (player.vy > 0) {
+        const terrainSurface =
+          surface.kind === 'platform'
+            ? this.findSupportingTerrainSurface(surface.id, nextX, surface.y - player.height)
+            : null;
+        if (terrainSurface && !isTerrainSurfaceSupportActive(terrainSurface)) {
+          continue;
+        }
         nextY = surface.y - player.height;
         player.onGround = true;
         player.supportPlatformId = surface.id;
+        player.supportTerrainSurfaceId = terrainSurface?.id ?? null;
         ridingSurface = surface;
       } else if (player.vy < 0) {
         nextY = surface.y + surface.height;
@@ -668,6 +824,25 @@ export class GameSession {
 
     player.x = Phaser.Math.Clamp(nextX, 0, stage.world.width - player.width);
     player.y = nextY;
+    this.handleScannerVolumes();
+    this.handleRevealVolumes();
+    this.finalizeTemporaryBridgeExpiry();
+    this.updatePlayerGravityState();
+    const landedTerrainSurface =
+      player.onGround && player.supportPlatformId
+        ? this.findSupportingTerrainSurface(player.supportPlatformId, player.x, player.y)
+        : null;
+    const contactedLauncher = player.onGround && player.supportPlatformId
+      ? this.findSupportingLauncher(player.supportPlatformId, player.x, player.y)
+      : player.dashTimerMs > 0
+        ? this.findLauncherContactAtPosition(player.x, player.y)
+        : null;
+    player.supportTerrainSurfaceId = landedTerrainSurface?.id ?? null;
+    player.coyoteTerrainSurfaceKind = player.onGround
+      ? landedTerrainSurface?.kind ?? null
+      : player.coyoteTerrainSurfaceKind;
+    this.armBrittleSurface(landedTerrainSurface);
+    this.finalizeTerrainSurfaceExpiry();
 
     if (ridingSurface) {
       if (!wasOnGround) {
@@ -692,6 +867,29 @@ export class GameSession {
         player.onGround = false;
         player.supportPlatformId = null;
         this.emitCue('spring');
+      }
+    }
+
+    if (!contactedLauncher) {
+      player.launcherContactId = null;
+    } else {
+      const isFreshLauncherContact = player.launcherContactId !== contactedLauncher.id;
+      player.launcherContactId = contactedLauncher.id;
+
+      if (
+        isFreshLauncherContact &&
+        contactedLauncher.timerMs <= 0 &&
+        player.dashTimerMs <= 0 &&
+        !input.jumpHeld &&
+        player.jumpBufferMs <= 0
+      ) {
+        contactedLauncher.timerMs = contactedLauncher.cooldownMs;
+        player.vx = contactedLauncher.direction.x * contactedLauncher.impulse;
+        player.vy = contactedLauncher.direction.y * contactedLauncher.impulse;
+        player.onGround = false;
+        player.supportPlatformId = null;
+        player.supportTerrainSurfaceId = null;
+        this.emitCue(LAUNCHER_CONFIG[contactedLauncher.kind].cue);
       }
     }
 
@@ -797,10 +995,124 @@ export class GameSession {
         platform.y += platform.vy * deltaSec;
       }
     }
+
+    for (const launcherEntry of this.snapshot.stageRuntime.launchers) {
+      launcherEntry.timerMs = Math.max(0, launcherEntry.timerMs - deltaMs);
+    }
+  }
+
+  private updateTemporaryBridges(deltaMs: number): void {
+    const { player, stageRuntime } = this.snapshot;
+
+    for (const bridge of stageRuntime.temporaryBridges) {
+      if (!bridge.active) {
+        continue;
+      }
+
+      if (bridge.remainingMs > 0) {
+        bridge.remainingMs = Math.max(0, bridge.remainingMs - deltaMs);
+      }
+
+      if (bridge.remainingMs > 0) {
+        continue;
+      }
+
+      if (player.onGround && player.supportPlatformId === bridge.id) {
+        bridge.pendingHide = true;
+        continue;
+      }
+
+      bridge.active = false;
+      bridge.pendingHide = false;
+    }
+  }
+
+  private updateTerrainSurfaces(deltaMs: number): void {
+    const { player, stageRuntime } = this.snapshot;
+
+    for (const surface of stageRuntime.terrainSurfaces) {
+      if (surface.kind !== 'brittleCrystal' || !surface.brittle) {
+        continue;
+      }
+
+      if (surface.brittle.phase === 'warning') {
+        surface.brittle.warningMs = Math.max(0, surface.brittle.warningMs - deltaMs);
+        if (surface.brittle.warningMs > 0) {
+          continue;
+        }
+
+        surface.brittle.phase = player.onGround && player.supportTerrainSurfaceId === surface.id ? 'expired' : 'broken';
+      }
+
+      if (surface.brittle.phase === 'expired' && (!player.onGround || player.supportTerrainSurfaceId !== surface.id)) {
+        surface.brittle.phase = 'broken';
+      }
+    }
+  }
+
+  private finalizeTemporaryBridgeExpiry(): void {
+    const { player, stageRuntime } = this.snapshot;
+
+    for (const bridge of stageRuntime.temporaryBridges) {
+      if (!bridge.pendingHide) {
+        continue;
+      }
+
+      if (player.onGround && player.supportPlatformId === bridge.id) {
+        continue;
+      }
+
+      bridge.active = false;
+      bridge.pendingHide = false;
+      bridge.remainingMs = 0;
+    }
+  }
+
+  private updatePlayerGravityState(): void {
+    if (this.snapshot.player.dashTimerMs > 0) {
+      this.snapshot.player.lowGravityZoneId = null;
+      this.snapshot.player.gravityScale = 1;
+      return;
+    }
+
+    const zone = findPlayerLowGravityZone(this.snapshot.player, this.snapshot.stageRuntime.lowGravityZones);
+    this.snapshot.player.lowGravityZoneId = zone?.id ?? null;
+    this.snapshot.player.gravityScale = zone?.gravityScale ?? 1;
+  }
+
+  private armBrittleSurface(surface: TerrainSurfaceState | null): void {
+    if (!surface || surface.kind !== 'brittleCrystal' || !surface.brittle) {
+      return;
+    }
+
+    if (surface.brittle.phase !== 'intact') {
+      return;
+    }
+
+    surface.brittle.phase = 'warning';
+    surface.brittle.warningMs = BRITTLE_WARNING_MS;
+  }
+
+  private finalizeTerrainSurfaceExpiry(): void {
+    const supportedSurfaceId = this.snapshot.player.onGround ? this.snapshot.player.supportTerrainSurfaceId : null;
+    for (const surface of this.snapshot.stageRuntime.terrainSurfaces) {
+      if (surface.kind !== 'brittleCrystal' || !surface.brittle) {
+        continue;
+      }
+
+      if (surface.brittle.phase === 'expired' && supportedSurfaceId !== surface.id) {
+        surface.brittle.phase = 'broken';
+      }
+    }
   }
 
   private updateEnemies(deltaMs: number, deltaSec: number): void {
     const { player, stage, stageRuntime } = this.snapshot;
+    const traversablePlatforms = activePlatforms(
+      stageRuntime.platforms,
+      stageRuntime.revealedPlatformIds,
+      getActiveTemporaryBridgeIds(stageRuntime.temporaryBridges),
+    );
     for (const enemy of stageRuntime.enemies) {
       if (!enemy.alive) {
         continue;
@@ -834,10 +1146,10 @@ export class GameSession {
           enemy.vy = 0;
           hop.timerMs -= deltaMs;
           if (hop.timerMs <= 0) {
-            let target = findReachableHopTarget(enemy, stageRuntime.platforms, stage.world.gravity);
+            let target = findReachableHopTarget(enemy, traversablePlatforms, stage.world.gravity);
             if (!target) {
               enemy.direction = enemy.direction === 1 ? -1 : 1;
-              target = findReachableHopTarget(enemy, stageRuntime.platforms, stage.world.gravity);
+              target = findReachableHopTarget(enemy, traversablePlatforms, stage.world.gravity);
             }
 
             if (target) {
@@ -864,9 +1176,9 @@ export class GameSession {
           enemy.y += enemy.vy * deltaSec;
 
           const targetPlatform = hop.targetPlatformId
-            ? stageRuntime.platforms.find((platform) => platform.id === hop.targetPlatformId) ?? null
+            ? traversablePlatforms.find((platform) => platform.id === hop.targetPlatformId) ?? null
             : null;
-          const platformsToCheck = targetPlatform ? [targetPlatform] : stageRuntime.platforms.filter(isStableEnemySupport);
+          const platformsToCheck = targetPlatform ? [targetPlatform] : traversablePlatforms.filter(isStableEnemySupport);
           for (const platform of platformsToCheck) {
             const landingZone = getPlatformTopRect(platform);
             const rect = enemyRect(enemy);
@@ -896,7 +1208,7 @@ export class GameSession {
 
           if (hop.targetY !== null && enemy.y > hop.targetY + HOP_VERTICAL_REACH) {
             const rescuePlatform = hop.targetPlatformId
-              ? stageRuntime.platforms.find((platform) => platform.id === hop.targetPlatformId) ?? null
+              ? traversablePlatforms.find((platform) => platform.id === hop.targetPlatformId) ?? null
               : null;
             if (rescuePlatform) {
               enemy.y = rescuePlatform.y - enemy.height;
@@ -1057,9 +1369,70 @@ export class GameSession {
         }
         checkpoint.activated = true;
         this.snapshot.activeCheckpointId = checkpoint.id;
-        this.setStageMessage('Checkpoint activated', 1500);
+        this.checkpointRevealIds = [...stageRuntime.revealedPlatformIds];
+        this.setStageMessage(getCheckpointActivatedMessage(), 1500);
         this.emitCue('checkpoint');
       }
+    }
+  }
+
+  private handleRevealVolumes(): void {
+    const { player, stageRuntime } = this.snapshot;
+    const rect = playerRect(player);
+    const revealedIds = new Set(stageRuntime.revealedPlatformIds);
+    let changed = false;
+
+    for (const volume of stageRuntime.revealVolumes) {
+      if (!intersectsRect(rect, volume)) {
+        continue;
+      }
+
+      for (const revealId of volume.revealPlatformIds) {
+        if (!revealedIds.has(revealId)) {
+          revealedIds.add(revealId);
+          changed = true;
+        }
+      }
+    }
+
+    if (!changed) {
+      return;
+    }
+
+    stageRuntime.revealedPlatformIds = normalizeRevealedPlatformIds(revealedIds);
+    this.setStageMessage('Hidden route revealed', 1400);
+  }
+
+  private handleScannerVolumes(): void {
+    const { player, stageRuntime } = this.snapshot;
+    const rect = playerRect(player);
+    let changed = false;
+
+    for (const volume of stageRuntime.scannerVolumes) {
+      const inside = intersectsRect(rect, volume);
+      const entered = inside && !volume.playerInside;
+      volume.playerInside = inside;
+
+      if (!entered) {
+        continue;
+      }
+
+      volume.activated = true;
+      for (const bridgeId of volume.temporaryBridgeIds) {
+        const bridge = stageRuntime.temporaryBridges.find((item) => item.id === bridgeId);
+        if (!bridge) {
+          continue;
+        }
+
+        bridge.active = true;
+        bridge.pendingHide = false;
+        bridge.remainingMs = bridge.durationMs;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.setStageMessage('Temporary bridge online', 1300);
     }
   }
 
@@ -1075,7 +1448,7 @@ export class GameSession {
       };
       if (!coin.collected && intersectsRect(rect, itemRect)) {
         coin.collected = true;
-        this.awardCoins(1, 'Coin recovered');
+        this.awardCoins(1, getCollectibleRecoveredMessage());
       }
     }
   }
@@ -1206,6 +1579,7 @@ export class GameSession {
       cloneProgress(progress),
       this.snapshot.activeCheckpointId,
       this.captureCheckpointRestoreState(),
+      this.snapshot.activeCheckpointId ? this.checkpointRevealIds : [],
     );
   }
 
@@ -1220,7 +1594,7 @@ export class GameSession {
       block.remainingHits -= 1;
       block.used = block.remainingHits <= 0;
       this.spawnRewardReveal(block, { kind: 'coins', amount: 1 });
-      this.awardCoins(1, block.remainingHits > 0 ? `Coin gained - ${block.remainingHits} left` : 'Coin gained');
+      this.awardCoins(1, getCollectibleRewardMessage(block.remainingHits));
       return;
     }
 
@@ -1238,17 +1612,17 @@ export class GameSession {
     switch (power) {
       case 'doubleJump':
         player.airJumpsRemaining = Math.max(player.airJumpsRemaining, 1);
-        this.setStageMessage('Power gained: Double Jump', 2000);
+        this.setStageMessage(getPowerGainMessage(power), 2000);
         break;
       case 'shooter':
-        this.setStageMessage('Power gained: Shooter', 2000);
+        this.setStageMessage(getPowerGainMessage(power), 2000);
         break;
       case 'invincible':
         progress.powerTimers.invincibleMs = POWER_INVINCIBLE_MS;
-        this.setStageMessage('Power gained: Invincible for 10s', 2200);
+        this.setStageMessage(getPowerGainMessage(power), 2200);
         break;
       case 'dash':
-        this.setStageMessage('Power gained: Dash', 2000);
+        this.setStageMessage(getPowerGainMessage(power), 2000);
         break;
     }
 
@@ -1269,7 +1643,7 @@ export class GameSession {
     ) {
       stageRuntime.allCoinsRecovered = true;
       player.health = player.maxHealth;
-      this.setStageMessage('All coins recovered - energy restored', 2200);
+      this.setStageMessage(getAllCollectiblesRecoveredMessage(), 2200);
       this.emitCue('heal');
     }
   }
@@ -1368,6 +1742,47 @@ export class GameSession {
     return createSolidSurfaceList(this.snapshot.stageRuntime).find((surface) => surface.id === id) ?? null;
   }
 
+  private findSupportingTerrainSurface(platformId: string, playerX: number, playerY: number): TerrainSurfaceState | null {
+    const supportPoint = terrainSurfaceSupportPoint(PLAYER_WIDTH, PLAYER_HEIGHT, playerX, playerY);
+    return (
+      this.snapshot.stageRuntime.terrainSurfaces.find(
+        (surface) =>
+          surface.supportPlatformId === platformId &&
+          supportPoint.x >= surface.x &&
+          supportPoint.x <= surface.x + surface.width &&
+          supportPoint.y >= surface.y - TERRAIN_SURFACE_TOP_EPSILON &&
+          supportPoint.y <= surface.y + surface.height + TERRAIN_SURFACE_TOP_EPSILON,
+      ) ?? null
+    );
+  }
+
+  private findSupportingLauncher(platformId: string, playerX: number, playerY: number): LauncherState | null {
+    const supportPoint = terrainSurfaceSupportPoint(PLAYER_WIDTH, PLAYER_HEIGHT, playerX, playerY);
+    return (
+      this.snapshot.stageRuntime.launchers.find(
+        (launcherEntry) =>
+          launcherEntry.supportPlatformId === platformId &&
+          supportPoint.x >= launcherEntry.x &&
+          supportPoint.x <= launcherEntry.x + launcherEntry.width &&
+          supportPoint.y >= launcherEntry.y - TERRAIN_SURFACE_TOP_EPSILON &&
+          supportPoint.y <= launcherEntry.y + launcherEntry.height + TERRAIN_SURFACE_TOP_EPSILON,
+      ) ?? null
+    );
+  }
+
+  private findLauncherContactAtPosition(playerX: number, playerY: number): LauncherState | null {
+    const supportPoint = terrainSurfaceSupportPoint(PLAYER_WIDTH, PLAYER_HEIGHT, playerX, playerY);
+    return (
+      this.snapshot.stageRuntime.launchers.find(
+        (launcherEntry) =>
+          supportPoint.x >= launcherEntry.x &&
+          supportPoint.x <= launcherEntry.x + launcherEntry.width &&
+          supportPoint.y >= launcherEntry.y - TERRAIN_SURFACE_TOP_EPSILON &&
+          supportPoint.y <= launcherEntry.y + launcherEntry.height + TERRAIN_SURFACE_TOP_EPSILON,
+      ) ?? null
+    );
+  }
+
   private syncPlayerPresentationPower(): void {
     const { player, progress } = this.snapshot;
     const current = player.presentationPower;
@@ -1406,6 +1821,7 @@ export class GameSession {
     progress: SessionProgress,
     activeCheckpointId: string | null = null,
     checkpointRestore: CheckpointRestoreState | null = null,
+    revealedPlatformIds: string[] = [],
   ): SessionSnapshot {
     const stage = stageDefinitions[stageIndex];
     const runSettings = progress.runSettings ?? createDefaultRunSettings();
@@ -1438,6 +1854,11 @@ export class GameSession {
       airJumpsRemaining: progress.activePowers.doubleJump ? 1 : 0,
       presentationPower: null,
       supportPlatformId: null,
+      supportTerrainSurfaceId: null,
+      coyoteTerrainSurfaceKind: null,
+      launcherContactId: null,
+      lowGravityZoneId: null,
+      gravityScale: 1,
       dead: false,
     };
 
@@ -1468,14 +1889,30 @@ export class GameSession {
             timerMs: 0,
           }
         : undefined,
+      reveal: platform.reveal ? { ...platform.reveal } : undefined,
+      temporaryBridge: platform.temporaryBridge ? { ...platform.temporaryBridge } : undefined,
     }));
+
+    const activeRevealIds = normalizeRevealedPlatformIds(revealedPlatformIds);
+      const temporaryBridges = platforms
+        .filter((platform): platform is PlatformState & { temporaryBridge: NonNullable<PlatformState['temporaryBridge']> } =>
+          Boolean(platform.temporaryBridge),
+        )
+        .map<TemporaryBridgeState>((platform) =>
+          createInactiveTemporaryBridgeState({
+            id: platform.id,
+            scannerId: platform.temporaryBridge.scannerId,
+            durationMs: platform.temporaryBridge.durationMs,
+          }),
+        );
+      const traversablePlatforms = activePlatforms(platforms, activeRevealIds, getActiveTemporaryBridgeIds(temporaryBridges));
 
     const filteredEnemies = stage.enemies.filter((_, index) => pressure.keepEnemy(index));
     const enemies = filteredEnemies.map<EnemyState>((enemy) => {
       const width = enemy.kind === 'turret' ? 28 : 34;
       const height = enemy.kind === 'turret' ? 38 : enemy.kind === 'flyer' ? 24 : 30;
       const support = isGroundedEnemy(enemy)
-        ? findStableSupportForSpan(platforms, enemy.position.x, enemy.position.x + width, enemy.position.y + height)
+        ? findStableSupportForSpan(traversablePlatforms, enemy.position.x, enemy.position.x + width, enemy.position.y + height)
         : null;
       const supportY = support ? support.y - height : null;
       const lane =
@@ -1593,6 +2030,50 @@ export class GameSession {
       respawnTimerMs: 0,
       stageRuntime: {
         platforms,
+        terrainSurfaces: stage.terrainSurfaces.map<TerrainSurfaceState>((surface) => {
+          const supportPlatform = findTerrainSurfaceSupportPlatform(platforms, surface);
+          if (!supportPlatform) {
+            throw new Error(`Terrain surface is missing platform support at runtime: ${surface.id}`);
+          }
+
+          return {
+            ...surface,
+            supportPlatformId: supportPlatform.id,
+            brittle:
+              surface.kind === 'brittleCrystal'
+                ? {
+                    phase: 'intact',
+                    warningMs: BRITTLE_WARNING_MS,
+                  }
+                : undefined,
+          };
+        }),
+        launchers: stage.launchers.map<LauncherState>((launcherEntry) => {
+          const supportPlatform = findLauncherSupportPlatform(platforms, launcherEntry);
+          if (!supportPlatform) {
+            throw new Error(`Launcher is missing platform support at runtime: ${launcherEntry.id}`);
+          }
+
+          const config = LAUNCHER_CONFIG[launcherEntry.kind];
+          return {
+            ...launcherEntry,
+            supportPlatformId: supportPlatform.id,
+            direction: normalizeLauncherDirection(launcherEntry.direction),
+            impulse: config.impulse,
+            cooldownMs: config.cooldownMs,
+            timerMs: 0,
+          };
+        }),
+        lowGravityZones: stage.lowGravityZones.map<LowGravityZoneState>((zone) => ({ ...zone })),
+        revealVolumes: stage.revealVolumes.map<RevealVolumeState>((volume) => ({
+          ...volume,
+          revealPlatformIds: [...volume.revealPlatformIds],
+        })),
+        scannerVolumes: stage.scannerVolumes.map<ScannerVolumeState>((volume) =>
+          createInactiveScannerVolumeState(volume),
+        ),
+        temporaryBridges,
+        revealedPlatformIds: activeRevealIds,
         checkpoints: stage.checkpoints.map<CheckpointState>((checkpoint) => ({
           ...checkpoint,
           activated: checkpoint.id === activeCheckpointId,

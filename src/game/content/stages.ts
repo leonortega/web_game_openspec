@@ -1,11 +1,14 @@
 import type {
   EnemyKind,
   HazardKind,
+  LauncherKind,
   PlatformKind,
   Rect,
   RewardDefinition,
+  TerrainSurfaceKind,
   Vector2,
 } from '../simulation/state';
+import { LAUNCHER_KINDS } from '../simulation/state';
 
 export type PlatformDefinition = Rect & {
   id: string;
@@ -13,6 +16,34 @@ export type PlatformDefinition = Rect & {
   move?: { axis: 'x' | 'y'; range: number; speed: number };
   fall?: { triggerDelayMs: number };
   spring?: { boost: number; cooldownMs: number };
+  reveal?: { id: string };
+  temporaryBridge?: { scannerId: string; durationMs: number };
+};
+
+export type LowGravityZoneDefinition = Rect & {
+  id: string;
+  gravityScale: number;
+};
+
+export type RevealVolumeDefinition = Rect & {
+  id: string;
+  revealPlatformIds: string[];
+};
+
+export type ScannerVolumeDefinition = Rect & {
+  id: string;
+  temporaryBridgeIds: string[];
+};
+
+export type TerrainSurfaceDefinition = Rect & {
+  id: string;
+  kind: TerrainSurfaceKind;
+};
+
+export type LauncherDefinition = Rect & {
+  id: string;
+  kind: LauncherKind;
+  direction?: Vector2;
 };
 
 export type EnemyDefinition = {
@@ -31,9 +62,48 @@ export type RewardBlockDefinition = Rect & {
   reward: RewardDefinition;
 };
 
+export type SecretRouteCueDefinition = {
+  description: string;
+  rect: Rect;
+  revealVolumeIds?: string[];
+  revealPlatformIds?: string[];
+  scannerVolumeIds?: string[];
+  temporaryBridgeIds?: string[];
+  lowGravityZoneIds?: string[];
+  launcherIds?: string[];
+  terrainSurfaceIds?: string[];
+};
+
+export type SecretRouteRewardDefinition = {
+  collectibleIds: string[];
+  rewardBlockIds: string[];
+  note: string;
+};
+
+export type SecretRouteDefinition = {
+  id: string;
+  title: string;
+  areaKind: 'abandonedMicroArea' | 'sampleCave';
+  mechanics: ('optionalDetour' | 'revealPlatform' | 'scannerBridge' | 'lowGravity' | 'launcher' | 'terrainSurface')[];
+  cue: SecretRouteCueDefinition;
+  entry: Rect;
+  interior: Rect;
+  reconnect: Rect;
+  mainPath: Rect;
+  reward: SecretRouteRewardDefinition;
+};
+
 export type StageDefinition = {
   id: string;
   name: string;
+  presentation: {
+    sectorLabel: string;
+    biomeLabel: string;
+    paletteCue: string;
+    introLine: string;
+    completionTitle: string;
+    panelColor: number;
+  };
   targetDurationMinutes: number;
   segments: {
     id: string;
@@ -55,9 +125,15 @@ export type StageDefinition = {
   };
   playerSpawn: Vector2;
   platforms: PlatformDefinition[];
+  terrainSurfaces: TerrainSurfaceDefinition[];
+  launchers: LauncherDefinition[];
+  lowGravityZones: LowGravityZoneDefinition[];
+  revealVolumes: RevealVolumeDefinition[];
+  scannerVolumes: ScannerVolumeDefinition[];
   checkpoints: { id: string; rect: Rect }[];
   collectibles: { id: string; position: Vector2 }[];
   rewardBlocks: RewardBlockDefinition[];
+  secretRoutes: SecretRouteDefinition[];
   hazards: { id: string; kind: HazardKind; rect: Rect }[];
   enemies: EnemyDefinition[];
   exit: Rect;
@@ -111,6 +187,123 @@ const spring = (x: number, y: number, width: number, height = 32, boost = 860): 
   spring: { boost, cooldownMs: 350 },
 });
 
+const revealPlatform = (
+  id: string,
+  revealId: string,
+  x: number,
+  y: number,
+  width: number,
+  height = 24,
+): PlatformDefinition => ({
+  id,
+  kind: 'static',
+  x,
+  y,
+  width,
+  height,
+  reveal: { id: revealId },
+});
+
+const temporaryBridgePlatform = (
+  id: string,
+  scannerId: string,
+  x: number,
+  y: number,
+  width: number,
+  height = 24,
+  durationMs = 2200,
+): PlatformDefinition => ({
+  id,
+  kind: 'static',
+  x,
+  y,
+  width,
+  height,
+  temporaryBridge: { scannerId, durationMs },
+});
+
+const lowGravityZone = (
+  id: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  gravityScale: number,
+): LowGravityZoneDefinition => ({
+  id,
+  x,
+  y,
+  width,
+  height,
+  gravityScale,
+});
+
+const revealVolume = (
+  id: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  revealPlatformIds: string[],
+): RevealVolumeDefinition => ({
+  id,
+  x,
+  y,
+  width,
+  height,
+  revealPlatformIds,
+});
+
+const scannerVolume = (
+  id: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  temporaryBridgeIds: string[],
+): ScannerVolumeDefinition => ({
+  id,
+  x,
+  y,
+  width,
+  height,
+  temporaryBridgeIds,
+});
+
+const terrainSurface = (
+  id: string,
+  kind: TerrainSurfaceKind,
+  x: number,
+  y: number,
+  width: number,
+  height = 12,
+): TerrainSurfaceDefinition => ({
+  id,
+  kind,
+  x,
+  y,
+  width,
+  height,
+});
+
+const launcher = (
+  id: string,
+  kind: LauncherKind,
+  x: number,
+  y: number,
+  width: number,
+  height = 14,
+  direction?: Vector2,
+): LauncherDefinition => ({
+  id,
+  kind,
+  x,
+  y,
+  width,
+  height,
+  direction,
+});
+
 const rewardBlock = (
   id: string,
   x: number,
@@ -133,15 +326,40 @@ const IMMEDIATE_ROUTE_ENEMY_KINDS: EnemyDefinition['kind'][] = ['walker', 'hoppe
 const POWER_PICKUP_ESCAPE_DISTANCE = 150;
 const POWER_PICKUP_SUPPORT_GAP = 56;
 const POWER_PICKUP_SUPPORT_HEIGHT_TOLERANCE = 96;
+const SECRET_ROUTE_MIN_REWARD_SCORE = 3;
+
+const expandRect = (rect: Rect, padding: number): Rect => ({
+  x: rect.x - padding,
+  y: rect.y - padding,
+  width: rect.width + padding * 2,
+  height: rect.height + padding * 2,
+});
+
+const isRectWithinWorld = (stage: StageDefinition, rect: Rect): boolean =>
+  rect.width > 0 &&
+  rect.height > 0 &&
+  rect.x >= 0 &&
+  rect.y >= 0 &&
+  rect.x + rect.width <= stage.world.width &&
+  rect.y + rect.height <= stage.world.height;
+
+const rectContainsPoint = (rect: Rect, point: Vector2): boolean =>
+  point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
 
 type StageExtension = {
   targetDurationMinutes: number;
   worldWidth: number;
   segments: StageDefinition['segments'];
   platforms: PlatformDefinition[];
+  terrainSurfaces?: TerrainSurfaceDefinition[];
+  launchers?: LauncherDefinition[];
+  lowGravityZones?: LowGravityZoneDefinition[];
+  revealVolumes?: RevealVolumeDefinition[];
+  scannerVolumes?: ScannerVolumeDefinition[];
   checkpoints: StageDefinition['checkpoints'];
   collectibles: StageDefinition['collectibles'];
   rewardBlocks: RewardBlockDefinition[];
+  secretRoutes?: SecretRouteDefinition[];
   hazards: StageDefinition['hazards'];
   enemies: EnemyDefinition[];
   exit: Rect;
@@ -218,6 +436,109 @@ const enemyRect = (enemy: EnemyDefinition): Rect => ({
 
 const intersectsRect = (a: Rect, b: Rect): boolean =>
   a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+
+const overlapWidth = (leftStart: number, leftEnd: number, rightStart: number, rightEnd: number): number =>
+  Math.max(0, Math.min(leftEnd, rightEnd) - Math.max(leftStart, rightStart));
+
+const findTraversableSupport = (stage: StageDefinition, rect: Rect): PlatformDefinition | null => {
+  const rectBottom = rect.y + rect.height;
+  return (
+    stage.platforms.find((platform) => {
+      const overlap = overlapWidth(rect.x, rect.x + rect.width, platform.x, platform.x + platform.width);
+      return overlap >= Math.min(rect.width * 0.55, platform.width) && Math.abs(rectBottom - platform.y) <= 24;
+    }) ?? null
+  );
+};
+
+const secretRouteRewardScore = (stage: StageDefinition, reward: SecretRouteRewardDefinition): number => {
+  const collectibleScore = reward.collectibleIds.length;
+  const blockScore = reward.rewardBlockIds.reduce((total, rewardBlockId) => {
+    const rewardBlockEntry = stage.rewardBlocks.find((rewardBlock) => rewardBlock.id === rewardBlockId);
+    if (!rewardBlockEntry) {
+      return total;
+    }
+
+    return total + (rewardBlockEntry.reward.kind === 'coins' ? rewardBlockEntry.reward.amount : 3);
+  }, 0);
+
+  return collectibleScore + blockScore;
+};
+
+const routeUsesReadableMechanic = (stage: StageDefinition, route: SecretRouteDefinition): boolean => {
+  const routeBounds = expandRect(route.interior, 160);
+  return route.mechanics.some((mechanic) => {
+    switch (mechanic) {
+      case 'optionalDetour':
+        return route.entry.y + route.entry.height < route.mainPath.y + route.mainPath.height - 24 || route.entry.x < route.reconnect.x - 120;
+      case 'revealPlatform':
+        return (
+          (route.cue.revealVolumeIds?.every((volumeId) =>
+            stage.revealVolumes.some((volume) => volume.id === volumeId && intersectsRect(routeBounds, volume)),
+          ) ?? false) &&
+          (route.cue.revealPlatformIds?.every((platformId) =>
+            stage.platforms.some(
+              (platform) =>
+                Boolean(platform.reveal) &&
+                (platform.id === platformId || platform.reveal?.id === platformId) &&
+                intersectsRect(routeBounds, platform),
+            ),
+          ) ?? false)
+        );
+      case 'scannerBridge':
+        return (
+          (route.cue.scannerVolumeIds?.every((volumeId) =>
+            stage.scannerVolumes.some((volume) => volume.id === volumeId && intersectsRect(routeBounds, volume)),
+          ) ?? false) &&
+          (route.cue.temporaryBridgeIds?.every((platformId) =>
+            stage.platforms.some(
+              (platform) =>
+                platform.id === platformId && Boolean(platform.temporaryBridge) && intersectsRect(routeBounds, platform),
+            ),
+          ) ?? false)
+        );
+      case 'lowGravity':
+        return (
+          route.cue.lowGravityZoneIds?.every((zoneId) =>
+            stage.lowGravityZones.some((zone) => zone.id === zoneId && intersectsRect(routeBounds, zone)),
+          ) ?? false
+        );
+      case 'launcher':
+        return (
+          route.cue.launcherIds?.every((launcherId) =>
+            stage.launchers.some((launcherEntry) => launcherEntry.id === launcherId && intersectsRect(routeBounds, launcherEntry)),
+          ) ?? false
+        );
+      case 'terrainSurface':
+        return (
+          route.cue.terrainSurfaceIds?.every((surfaceId) =>
+            stage.terrainSurfaces.some((surface) => surface.id === surfaceId && intersectsRect(routeBounds, surface)),
+          ) ?? false
+        );
+      default:
+        return false;
+    }
+  });
+};
+
+const LAUNCHER_MAX_DIRECTION_RADIANS = (25 * Math.PI) / 180;
+
+const hasValidLauncherDirection = (direction?: Vector2): boolean => {
+  if (!direction) {
+    return true;
+  }
+
+  const magnitude = Math.hypot(direction.x, direction.y);
+  if (magnitude <= 0.0001) {
+    return false;
+  }
+
+  const normalizedY = direction.y / magnitude;
+  if (normalizedY >= 0) {
+    return false;
+  }
+
+  return Math.acos(Math.min(1, Math.max(-1, -normalizedY))) <= LAUNCHER_MAX_DIRECTION_RADIANS + 0.0001;
+};
 
 const isImmediateContinuationSupport = (
   blockSupport: PlatformDefinition,
@@ -367,6 +688,315 @@ const validateStaticElementCollisions = (stage: StageDefinition): StageDefinitio
   return stage;
 };
 
+const validateSecretRoutes = (stage: StageDefinition): StageDefinition => {
+  const secretRouteIds = stage.secretRoutes.map((route) => route.id);
+  if (new Set(secretRouteIds).size !== secretRouteIds.length) {
+    throw new Error('Secret route ids must be unique.');
+  }
+
+  for (const route of stage.secretRoutes) {
+    if (!route.title.trim()) {
+      throw new Error(`Secret route must include a title: ${route.id}`);
+    }
+
+    if (route.mechanics.length === 0) {
+      throw new Error(`Secret route must declare at least one supported traversal mechanic: ${route.id}`);
+    }
+
+    if (!route.cue.description.trim()) {
+      throw new Error(`Secret route must include a readable discovery cue description: ${route.id}`);
+    }
+
+    for (const rect of [route.cue.rect, route.entry, route.interior, route.reconnect, route.mainPath]) {
+      if (!isRectWithinWorld(stage, rect)) {
+        throw new Error(`Secret route spans must stay within the authored stage bounds: ${route.id}`);
+      }
+    }
+
+    if (!findTraversableSupport(stage, route.cue.rect)) {
+      throw new Error(`Secret route discovery cue must sit over a traversable main-route perch: ${route.id}`);
+    }
+
+    if (!findTraversableSupport(stage, route.reconnect) || !findTraversableSupport(stage, route.mainPath)) {
+      throw new Error(`Secret route must reconnect onto supported downstream terrain: ${route.id}`);
+    }
+
+    if (route.reconnect.x <= route.entry.x + 120) {
+      throw new Error(`Secret route reconnect must sit downstream of the hidden entry: ${route.id}`);
+    }
+
+    if (route.mainPath.x > route.reconnect.x + route.reconnect.width + 240) {
+      throw new Error(`Secret route main-path span must align with the downstream reconnection: ${route.id}`);
+    }
+
+    if (!routeUsesReadableMechanic(stage, route)) {
+      throw new Error(`Secret route must use nearby authored traversal cues from supported mechanics: ${route.id}`);
+    }
+
+    const missingCollectibles = route.reward.collectibleIds.filter(
+      (collectibleId) => !stage.collectibles.some((collectible) => collectible.id === collectibleId),
+    );
+    const missingRewardBlocks = route.reward.rewardBlockIds.filter(
+      (rewardBlockId) => !stage.rewardBlocks.some((rewardBlock) => rewardBlock.id === rewardBlockId),
+    );
+    if (missingCollectibles.length > 0 || missingRewardBlocks.length > 0) {
+      throw new Error(
+        `Secret route reward references must resolve to authored collectibles and reward blocks: ${route.id}`,
+      );
+    }
+
+    const rewardCollectiblesInside = route.reward.collectibleIds.every((collectibleId) => {
+      const collectible = stage.collectibles.find((entry) => entry.id === collectibleId);
+      return Boolean(collectible && rectContainsPoint(route.interior, collectible.position));
+    });
+    const rewardBlocksInside = route.reward.rewardBlockIds.every((rewardBlockId) => {
+      const rewardBlockEntry = stage.rewardBlocks.find((entry) => entry.id === rewardBlockId);
+      return Boolean(rewardBlockEntry && intersectsRect(route.interior, rewardBlockEntry));
+    });
+    if (!rewardCollectiblesInside || !rewardBlocksInside) {
+      throw new Error(`Secret route rewards must sit inside the authored micro-area or sample cave: ${route.id}`);
+    }
+
+    if (!route.reward.note.trim() || secretRouteRewardScore(stage, route.reward) < SECRET_ROUTE_MIN_REWARD_SCORE) {
+      throw new Error(`Secret route must provide meaningful optional reward value: ${route.id}`);
+    }
+
+    const reconnectDangerZone = expandRect(route.reconnect, 44);
+    const reconnectThreats = [
+      ...stage.hazards.filter((hazard) => intersectsRect(reconnectDangerZone, hazard.rect)).map((hazard) => hazard.id),
+      ...stage.enemies.filter((enemy) => intersectsRect(reconnectDangerZone, enemyRect(enemy))).map((enemy) => enemy.id),
+    ];
+    if (reconnectThreats.length > 0 || intersectsRect(reconnectDangerZone, stage.exit)) {
+      throw new Error(`Secret route reconnect must be safely downstream without immediate traps or exit overlap: ${route.id}`);
+    }
+  }
+
+  return stage;
+};
+
+const validateStageCatalogSecretRoutes = (stages: StageDefinition[]): StageDefinition[] => {
+  const secretRouteCount = stages.reduce((total, stage) => total + stage.secretRoutes.length, 0);
+  if (secretRouteCount <= 0) {
+    throw new Error('At least one stage must define a reconnecting secret route.');
+  }
+
+  return stages;
+};
+
+const validateTraversalMechanics = (stage: StageDefinition): StageDefinition => {
+  const revealIds = stage.platforms.flatMap((platform) => (platform.reveal ? [platform.reveal.id] : []));
+  const uniqueRevealIds = new Set(revealIds);
+  const temporaryBridgeIds = stage.platforms.flatMap((platform) => (platform.temporaryBridge ? [platform.id] : []));
+  const uniqueTemporaryBridgeIds = new Set(temporaryBridgeIds);
+  const scannerIds = stage.scannerVolumes.map((volume) => volume.id);
+  const uniqueScannerIds = new Set(scannerIds);
+  const terrainSurfaceIds = stage.terrainSurfaces.map((surface) => surface.id);
+  const uniqueTerrainSurfaceIds = new Set(terrainSurfaceIds);
+  const launcherIds = stage.launchers.map((launcherEntry) => launcherEntry.id);
+  const uniqueLauncherIds = new Set(launcherIds);
+
+  const findSupportingPlatformForSurface = (surface: TerrainSurfaceDefinition): PlatformDefinition | null =>
+    stage.platforms.find(
+      (platform) =>
+        platform.kind === 'static' &&
+        !platform.reveal &&
+        !platform.temporaryBridge &&
+        surface.x >= platform.x &&
+        surface.x + surface.width <= platform.x + platform.width &&
+        Math.abs(surface.y - platform.y) <= 1 &&
+        surface.height > 0 &&
+        surface.height <= Math.min(platform.height, 16),
+    ) ?? null;
+
+  const findSupportingPlatformForLauncher = (launcherEntry: LauncherDefinition): PlatformDefinition | null =>
+    stage.platforms.find(
+      (platform) =>
+        platform.kind === 'static' &&
+        !platform.reveal &&
+        !platform.temporaryBridge &&
+        launcherEntry.x >= platform.x &&
+        launcherEntry.x + launcherEntry.width <= platform.x + platform.width &&
+        Math.abs(launcherEntry.y - platform.y) <= 1 &&
+        launcherEntry.height > 0 &&
+        launcherEntry.height <= Math.min(platform.height, 20),
+    ) ?? null;
+
+  if (uniqueRevealIds.size !== revealIds.length) {
+    throw new Error('Reveal platform ids must be unique.');
+  }
+
+  if (uniqueTemporaryBridgeIds.size !== temporaryBridgeIds.length) {
+    throw new Error('Temporary bridge platform ids must be unique.');
+  }
+
+  if (uniqueScannerIds.size !== scannerIds.length) {
+    throw new Error('Scanner volume ids must be unique.');
+  }
+
+  if (uniqueTerrainSurfaceIds.size !== terrainSurfaceIds.length) {
+    throw new Error('Terrain surface ids must be unique.');
+  }
+
+  if (uniqueLauncherIds.size !== launcherIds.length) {
+    throw new Error('Launcher ids must be unique.');
+  }
+
+  const missingRevealLinks = stage.revealVolumes.flatMap((volume) =>
+    volume.revealPlatformIds.filter((revealId) => !uniqueRevealIds.has(revealId)).map((revealId) => `${volume.id}->${revealId}`),
+  );
+  if (missingRevealLinks.length > 0) {
+    throw new Error(`Reveal volumes reference unknown reveal platforms: ${missingRevealLinks.join(', ')}`);
+  }
+
+  const invalidLowGravityZones = stage.lowGravityZones.filter(
+    (zone) => zone.gravityScale <= 0 || zone.gravityScale >= 1,
+  );
+  if (invalidLowGravityZones.length > 0) {
+    throw new Error(
+      `Low-gravity zones must use a gravityScale between 0 and 1: ${invalidLowGravityZones.map((zone) => zone.id).join(', ')}`,
+    );
+  }
+
+  const invalidTemporaryBridgePlatforms = stage.platforms.filter(
+    (platform) =>
+      platform.temporaryBridge &&
+      (platform.kind !== 'static' || platform.temporaryBridge.durationMs <= 0 || Boolean(platform.reveal)),
+  );
+  if (invalidTemporaryBridgePlatforms.length > 0) {
+    throw new Error(
+      `Temporary bridges must be static, timer-backed platforms without reveal links: ${invalidTemporaryBridgePlatforms
+        .map((platform) => platform.id)
+        .join(', ')}`,
+    );
+  }
+
+  const missingScannerReferences = stage.platforms
+    .filter((platform) => platform.temporaryBridge)
+    .flatMap((platform) =>
+      uniqueScannerIds.has(platform.temporaryBridge!.scannerId)
+        ? []
+        : [`${platform.id}->${platform.temporaryBridge!.scannerId}`],
+    );
+  if (missingScannerReferences.length > 0) {
+    throw new Error(`Temporary bridges reference unknown scanner volumes: ${missingScannerReferences.join(', ')}`);
+  }
+
+  const missingTemporaryBridgeLinks = stage.scannerVolumes.flatMap((volume) =>
+    volume.temporaryBridgeIds.filter((bridgeId) => !uniqueTemporaryBridgeIds.has(bridgeId)).map((bridgeId) => `${volume.id}->${bridgeId}`),
+  );
+  if (missingTemporaryBridgeLinks.length > 0) {
+    throw new Error(`Scanner volumes reference unknown temporary bridges: ${missingTemporaryBridgeLinks.join(', ')}`);
+  }
+
+  const invalidTerrainSurfaces = stage.terrainSurfaces.filter(
+    (surface) =>
+      surface.width <= 0 ||
+      surface.height <= 0 ||
+      surface.x < 0 ||
+      surface.y < 0 ||
+      surface.x + surface.width > stage.world.width ||
+      surface.y + surface.height > stage.world.height,
+  );
+  if (invalidTerrainSurfaces.length > 0) {
+    throw new Error(
+      `Terrain surfaces must use positive bounded rectangles: ${invalidTerrainSurfaces.map((surface) => surface.id).join(', ')}`,
+    );
+  }
+
+  const unsupportedTerrainSurfaces = stage.terrainSurfaces.filter(
+    (surface) => surface.kind !== 'brittleCrystal' && surface.kind !== 'stickySludge',
+  );
+  if (unsupportedTerrainSurfaces.length > 0) {
+    throw new Error(
+      `Terrain surfaces must use a supported kind: ${unsupportedTerrainSurfaces.map((surface) => surface.id).join(', ')}`,
+    );
+  }
+
+  const unsupportedSurfaceAlignment = stage.terrainSurfaces.filter((surface) => !findSupportingPlatformForSurface(surface));
+  if (unsupportedSurfaceAlignment.length > 0) {
+    throw new Error(
+      `Terrain surfaces must align to solid static platform support: ${unsupportedSurfaceAlignment
+        .map((surface) => surface.id)
+        .join(', ')}`,
+    );
+  }
+
+  const invalidLaunchers = stage.launchers.filter(
+    (launcherEntry) =>
+      launcherEntry.width <= 0 ||
+      launcherEntry.height <= 0 ||
+      launcherEntry.x < 0 ||
+      launcherEntry.y < 0 ||
+      launcherEntry.x + launcherEntry.width > stage.world.width ||
+      launcherEntry.y + launcherEntry.height > stage.world.height,
+  );
+  if (invalidLaunchers.length > 0) {
+    throw new Error(
+      `Launchers must use positive bounded rectangles: ${invalidLaunchers.map((launcherEntry) => launcherEntry.id).join(', ')}`,
+    );
+  }
+
+  const unsupportedLaunchers = stage.launchers.filter((launcherEntry) => !LAUNCHER_KINDS.includes(launcherEntry.kind));
+  if (unsupportedLaunchers.length > 0) {
+    throw new Error(
+      `Launchers must use a supported kind: ${unsupportedLaunchers.map((launcherEntry) => launcherEntry.id).join(', ')}`,
+    );
+  }
+
+  const invalidLauncherDirections = stage.launchers.filter((launcherEntry) => !hasValidLauncherDirection(launcherEntry.direction));
+  if (invalidLauncherDirections.length > 0) {
+    throw new Error(
+      `Launchers must use an upward-biased direction within 25 degrees of vertical: ${invalidLauncherDirections.map((launcherEntry) => launcherEntry.id).join(', ')}`,
+    );
+  }
+
+  const unsupportedLauncherAlignment = stage.launchers.filter((launcherEntry) => !findSupportingPlatformForLauncher(launcherEntry));
+  if (unsupportedLauncherAlignment.length > 0) {
+    throw new Error(
+      `Launchers must align to solid static platform support: ${unsupportedLauncherAlignment.map((launcherEntry) => launcherEntry.id).join(', ')}`,
+    );
+  }
+
+  const ambiguousLauncherContacts: string[] = [];
+  for (let index = 0; index < stage.launchers.length; index += 1) {
+    for (let nextIndex = index + 1; nextIndex < stage.launchers.length; nextIndex += 1) {
+      const current = stage.launchers[index];
+      const next = stage.launchers[nextIndex];
+      if (intersectsRect(current, next)) {
+        ambiguousLauncherContacts.push(`${current.id}<->${next.id}`);
+      }
+    }
+
+    const current = stage.launchers[index];
+    for (const platform of stage.platforms) {
+      if (platform.kind === 'spring' && intersectsRect(current, platform)) {
+        ambiguousLauncherContacts.push(`${current.id}<->${platform.id}`);
+      }
+    }
+  }
+
+  if (ambiguousLauncherContacts.length > 0) {
+    throw new Error(`Launchers cannot overlap another launcher or spring contact area: ${ambiguousLauncherContacts.join(', ')}`);
+  }
+
+  const overlappingTerrainSurfaces: string[] = [];
+  for (let index = 0; index < stage.terrainSurfaces.length; index += 1) {
+    for (let nextIndex = index + 1; nextIndex < stage.terrainSurfaces.length; nextIndex += 1) {
+      const current = stage.terrainSurfaces[index];
+      const next = stage.terrainSurfaces[nextIndex];
+      if (intersectsRect(current, next)) {
+        overlappingTerrainSurfaces.push(`${current.id}<->${next.id}`);
+      }
+    }
+  }
+
+  if (overlappingTerrainSurfaces.length > 0) {
+    throw new Error(`Terrain surfaces cannot overlap or conflict: ${overlappingTerrainSurfaces.join(', ')}`);
+  }
+
+  return stage;
+};
+
 const applyStageExtension = (stage: StageDefinition, extension: StageExtension): StageDefinition => {
   const platforms = [...stage.platforms, ...extension.platforms];
   return {
@@ -378,9 +1008,15 @@ const applyStageExtension = (stage: StageDefinition, extension: StageExtension):
       width: extension.worldWidth,
     },
     platforms,
+    terrainSurfaces: [...stage.terrainSurfaces, ...(extension.terrainSurfaces ?? [])],
+    launchers: [...stage.launchers, ...(extension.launchers ?? [])],
+    lowGravityZones: [...stage.lowGravityZones, ...(extension.lowGravityZones ?? [])],
+    revealVolumes: [...stage.revealVolumes, ...(extension.revealVolumes ?? [])],
+    scannerVolumes: [...stage.scannerVolumes, ...(extension.scannerVolumes ?? [])],
     checkpoints: [...stage.checkpoints, ...extension.checkpoints],
     collectibles: [...stage.collectibles, ...extension.collectibles],
     rewardBlocks: normalizeRewardBlocks(platforms, [...stage.rewardBlocks, ...extension.rewardBlocks]),
+    secretRoutes: [...stage.secretRoutes, ...(extension.secretRoutes ?? [])],
     hazards: [...stage.hazards, ...extension.hazards],
     enemies: [...stage.enemies, ...extension.enemies],
     exit: extension.exit,
@@ -391,20 +1027,28 @@ const applyStageExtension = (stage: StageDefinition, extension: StageExtension):
 const baseStageDefinitions: StageDefinition[] = [
   {
     id: 'forest-ruins',
-    name: 'Forest Ruins',
+    name: 'Verdant Impact Crater',
+    presentation: {
+      sectorLabel: 'Survey Sector A1',
+      biomeLabel: 'Biolume crater basin',
+      paletteCue: 'Mint canopy haze, comet-stone shadows, and signal-amber ruins.',
+      introLine: 'Sweep the crater floor, vault the canopy relays, and reconnect the survey beacon above the impact ridge.',
+      completionTitle: 'Sector Beacon Secured',
+      panelColor: 0x12231f,
+    },
     targetDurationMinutes: 10,
     segments: [
-      { id: 'approach', title: 'Outer Approach', startX: 0, endX: 1500, focus: 'warm-up traversal' },
-      { id: 'shrine', title: 'Broken Shrine', startX: 1500, endX: 3100, focus: 'hazard ladders' },
-      { id: 'aqueduct', title: 'Old Aqueduct', startX: 3100, endX: 4700, focus: 'checkpoint recovery' },
-      { id: 'gauntlet', title: 'Thorn Gauntlet', startX: 4700, endX: 6500, focus: 'enemy pressure' },
-      { id: 'spire', title: 'Gate Spire', startX: 6500, endX: 8100, focus: 'final ascent' },
+      { id: 'approach', title: 'Landing Shelf', startX: 0, endX: 1500, focus: 'survey warm-up' },
+      { id: 'shrine', title: 'Spore Relay', startX: 1500, endX: 3100, focus: 'hazard ladders' },
+      { id: 'aqueduct', title: 'Crater Channel', startX: 3100, endX: 4700, focus: 'recovery lane' },
+      { id: 'gauntlet', title: 'Canopy Spine', startX: 4700, endX: 6500, focus: 'readable pressure bands' },
+      { id: 'spire', title: 'Beacon Gate', startX: 6500, endX: 8100, focus: 'final ascent' },
     ],
     palette: {
-      skyTop: 0x284b4f,
-      skyBottom: 0x101f1d,
-      accent: 0xf5cf64,
-      ground: 0x4e7351,
+      skyTop: 0x1f544c,
+      skyBottom: 0x091816,
+      accent: 0x9cf6d3,
+      ground: 0x447a68,
     },
     world: { width: 8100, height: 720, gravity: 1800 },
     playerSpawn: { x: 110, y: 520 },
@@ -438,6 +1082,11 @@ const baseStageDefinitions: StageDefinition[] = [
       ground(7460, 470, 200),
       ground(7750, 540, 220),
     ],
+    terrainSurfaces: [],
+    launchers: [launcher('forest-bounce-pod-route', 'bouncePod', 6990, 460, 110, 14, { x: 0.32, y: -1 })],
+    lowGravityZones: [],
+    revealVolumes: [],
+    scannerVolumes: [],
     checkpoints: [
       { id: 'cp-1', rect: { x: 1420, y: 460, width: 24, height: 80 } },
       { id: 'cp-2', rect: { x: 3090, y: 510, width: 24, height: 80 } },
@@ -459,6 +1108,7 @@ const baseStageDefinitions: StageDefinition[] = [
       rewardBlock('forest-coin-2', 3435, 410, { kind: 'coins', amount: 2 }),
       rewardBlock('forest-dash', 6700, 465, { kind: 'power', power: 'dash' }),
     ],
+    secretRoutes: [],
     hazards: [
       { id: 'spikes-1', kind: 'spikes', rect: { x: 175, y: 604, width: 70, height: 16 } },
       { id: 'spikes-2', kind: 'spikes', rect: { x: 2520, y: 434, width: 40, height: 16 } },
@@ -512,8 +1162,8 @@ const baseStageDefinitions: StageDefinition[] = [
       {
         id: 'charger-1',
         kind: 'charger',
-        position: { x: 6980, y: 430 },
-        charger: { left: 6940, right: 7120, patrolSpeed: 65, chargeSpeed: 280, windupMs: 500, cooldownMs: 900 },
+        position: { x: 7240, y: 370 },
+        charger: { left: 7200, right: 7340, patrolSpeed: 65, chargeSpeed: 280, windupMs: 500, cooldownMs: 900 },
       },
       {
         id: 'hopper-3',
@@ -523,24 +1173,32 @@ const baseStageDefinitions: StageDefinition[] = [
       },
     ],
     exit: { x: 7990, y: 460, width: 40, height: 80 },
-    hint: 'Five segments, four checkpoints. Push through the outer ruins to the gate spire.',
+    hint: 'Five crater sectors guide the critical path from the landing shelf to the beacon gate, with canopy routes branching overhead.',
   },
   {
     id: 'amber-cavern',
-    name: 'Amber Cavern',
+    name: 'Ember Rift Warrens',
+    presentation: {
+      sectorLabel: 'Survey Sector B4',
+      biomeLabel: 'Molten resin trench',
+      paletteCue: 'Copper vents, ember fog, and cooled basalt liftworks.',
+      introLine: 'Descend through the resin lifts, cross the furnace terraces, and reach the reactor vault at the far lip of the trench.',
+      completionTitle: 'Reactor Vault Reached',
+      panelColor: 0x25170f,
+    },
     targetDurationMinutes: 10,
     segments: [
-      { id: 'mouth', title: 'Cavern Mouth', startX: 0, endX: 1450, focus: 'intro hazards' },
-      { id: 'lifts', title: 'Ore Lifts', startX: 1450, endX: 3050, focus: 'vertical traversal' },
-      { id: 'forge', title: 'Forge Tunnels', startX: 3050, endX: 4700, focus: 'hazard timing' },
-      { id: 'barracks', title: 'Stone Barracks', startX: 4700, endX: 6400, focus: 'mixed encounters' },
-      { id: 'heart', title: 'Amber Heart', startX: 6400, endX: 8200, focus: 'turret gauntlet' },
+      { id: 'mouth', title: 'Rift Mouth', startX: 0, endX: 1450, focus: 'intro hazards' },
+      { id: 'lifts', title: 'Resin Lifts', startX: 1450, endX: 3050, focus: 'vertical traversal' },
+      { id: 'forge', title: 'Furnace Conduit', startX: 3050, endX: 4700, focus: 'hazard timing' },
+      { id: 'barracks', title: 'Basalt Barracks', startX: 4700, endX: 6400, focus: 'mixed encounters' },
+      { id: 'heart', title: 'Core Prism', startX: 6400, endX: 8200, focus: 'turret lanes' },
     ],
     palette: {
-      skyTop: 0x492f26,
-      skyBottom: 0x120d0a,
-      accent: 0xffac4a,
-      ground: 0x755a3a,
+      skyTop: 0x5a311e,
+      skyBottom: 0x180c08,
+      accent: 0xffb768,
+      ground: 0x8a5c33,
     },
     world: { width: 8200, height: 720, gravity: 1850 },
     playerSpawn: { x: 90, y: 560 },
@@ -575,6 +1233,11 @@ const baseStageDefinitions: StageDefinition[] = [
       ground(7700, 420, 180),
       ground(7960, 500, 180),
     ],
+    terrainSurfaces: [],
+    launchers: [],
+    lowGravityZones: [],
+    revealVolumes: [],
+    scannerVolumes: [],
     checkpoints: [
       { id: 'cp-1', rect: { x: 1310, y: 330, width: 24, height: 80 } },
       { id: 'cp-2', rect: { x: 3510, y: 500, width: 24, height: 80 } },
@@ -596,6 +1259,7 @@ const baseStageDefinitions: StageDefinition[] = [
       rewardBlock('amber-shooter', 2425, 360, { kind: 'power', power: 'shooter' }),
       rewardBlock('amber-coin-2', 4670, 395, { kind: 'coins', amount: 3 }),
     ],
+    secretRoutes: [],
     hazards: [
       { id: 'spikes-1', kind: 'spikes', rect: { x: 180, y: 604, width: 60, height: 16 } },
       { id: 'spikes-forge-1', kind: 'spikes', rect: { x: 2695, y: 334, width: 72, height: 16 } },
@@ -667,24 +1331,32 @@ const baseStageDefinitions: StageDefinition[] = [
       },
     ],
     exit: { x: 8090, y: 420, width: 44, height: 80 },
-    hint: 'Long-form cavern run. Checkpoints divide the ore lifts, forge, barracks, and heart chamber.',
+    hint: 'Five trench sectors break the route into readable lift, furnace, and vault pushes while optional vents open overhead.',
   },
   {
     id: 'sky-sanctum',
-    name: 'Sky Sanctum',
+    name: 'Halo Spire Array',
+    presentation: {
+      sectorLabel: 'Survey Sector C7',
+      biomeLabel: 'Ion halo spires',
+      paletteCue: 'Aurora glass, pale ion light, and fractured station crowns.',
+      introLine: 'Climb the ion stairs, cross the halo lanes, and dock at the crown array above the storm band.',
+      completionTitle: 'Array Dock Locked',
+      panelColor: 0x122238,
+    },
     targetDurationMinutes: 11,
     segments: [
-      { id: 'stairs', title: 'Cloud Stairs', startX: 0, endX: 1550, focus: 'opening precision' },
-      { id: 'gallery', title: 'Wind Gallery', startX: 1550, endX: 3300, focus: 'recovery and ascent' },
-      { id: 'bridges', title: 'Shattered Bridges', startX: 3300, endX: 5000, focus: 'gap pressure' },
-      { id: 'orbits', title: 'Orbital Bastion', startX: 5000, endX: 6800, focus: 'turret lanes' },
-      { id: 'summit', title: 'Sanctum Summit', startX: 6800, endX: 8800, focus: 'endurance finale' },
+      { id: 'stairs', title: 'Ion Stair', startX: 0, endX: 1550, focus: 'opening precision' },
+      { id: 'gallery', title: 'Solar Gallery', startX: 1550, endX: 3300, focus: 'recovery and ascent' },
+      { id: 'bridges', title: 'Shard Bridges', startX: 3300, endX: 5000, focus: 'gap pressure' },
+      { id: 'orbits', title: 'Halo Lanes', startX: 5000, endX: 6800, focus: 'turret lanes' },
+      { id: 'summit', title: 'Crown Dock', startX: 6800, endX: 8800, focus: 'endurance finale' },
     ],
     palette: {
-      skyTop: 0x476f93,
-      skyBottom: 0x111827,
-      accent: 0xc4f1ff,
-      ground: 0x8ca6bf,
+      skyTop: 0x2b5f86,
+      skyBottom: 0x09111f,
+      accent: 0x9ee8ff,
+      ground: 0x7daccb,
     },
     world: { width: 8800, height: 720, gravity: 1780 },
     playerSpawn: { x: 90, y: 570 },
@@ -722,6 +1394,11 @@ const baseStageDefinitions: StageDefinition[] = [
       ground(8180, 500, 190),
       ground(8460, 590, 220),
     ],
+    terrainSurfaces: [],
+    launchers: [],
+    lowGravityZones: [],
+    revealVolumes: [],
+    scannerVolumes: [],
     checkpoints: [
       { id: 'cp-1', rect: { x: 1240, y: 420, width: 24, height: 80 } },
       { id: 'cp-2', rect: { x: 3380, y: 470, width: 24, height: 80 } },
@@ -744,6 +1421,7 @@ const baseStageDefinitions: StageDefinition[] = [
       rewardBlock('sky-coin-1', 3450, 500, { kind: 'coins', amount: 2 }),
       rewardBlock('sky-coin-2', 6950, 490, { kind: 'coins', amount: 3 }),
     ],
+    secretRoutes: [],
     hazards: [
       { id: 'spikes-3', kind: 'spikes', rect: { x: 475, y: 544, width: 60, height: 16 } },
       { id: 'spikes-4', kind: 'spikes', rect: { x: 2071, y: 414, width: 68, height: 16 } },
@@ -820,7 +1498,7 @@ const baseStageDefinitions: StageDefinition[] = [
       },
     ],
     exit: { x: 8600, y: 510, width: 48, height: 80 },
-    hint: 'The sanctum now unfolds across five long ascent segments with repeated recovery points.',
+    hint: 'Five sky sectors alternate recovery ledges and ion-lane pressure while optional halo rails sit above the main climb.',
   },
 ];
 
@@ -828,20 +1506,26 @@ const forestRuinsExtension: StageExtension = {
   targetDurationMinutes: 20,
   worldWidth: 12050,
   segments: [
-    { id: 'vault', title: 'Sunken Vault', startX: 8100, endX: 9280, focus: 'reset jumps and late hazards' },
-    { id: 'canopy', title: 'Thorn Canopy', startX: 9280, endX: 10640, focus: 'mixed enemy pressure' },
-    { id: 'citadel', title: 'Citadel Rise', startX: 10640, endX: 12050, focus: 'extended final ascent' },
+    { id: 'vault', title: 'Meteor Sink', startX: 8100, endX: 9280, focus: 'reset jumps and split routes' },
+    { id: 'canopy', title: 'Relay Canopy', startX: 9280, endX: 10640, focus: 'branch pressure and rewards' },
+    { id: 'citadel', title: 'Observatory Rise', startX: 10640, endX: 12050, focus: 'extended final ascent' },
   ],
   platforms: [
     ground(8060, 590, 220),
     ground(8350, 520, 180),
+    ground(8480, 340, 150),
     moving(8610, 450, 170, 32, 'x', 110, 86),
+    ground(8730, 280, 150),
     ground(8860, 530, 200),
+    moving(8990, 250, 140, 32, 'x', 90, 76),
     falling(9140, 470, 170),
+    ground(9240, 320, 160),
     ground(9390, 400, 180),
     ground(9650, 470, 190),
     ground(9920, 540, 210),
+    ground(10010, 320, 160),
     spring(10210, 610, 200, 32, 920),
+    ground(10310, 260, 150),
     ground(10510, 520, 180),
     ground(10770, 450, 180),
     ground(11030, 380, 180),
@@ -850,23 +1534,30 @@ const forestRuinsExtension: StageExtension = {
   ],
   checkpoints: [
     { id: 'cp-5', rect: { x: 9960, y: 460, width: 24, height: 80 } },
-    { id: 'cp-6', rect: { x: 11080, y: 300, width: 24, height: 80 } },
+    { id: 'cp-6', rect: { x: 11460, y: 370, width: 24, height: 80 } },
   ],
   collectibles: [
     { id: 'crystal-8', position: { x: 8420, y: 470 } },
+    { id: 'crystal-8b', position: { x: 8520, y: 300 } },
     { id: 'crystal-9', position: { x: 8660, y: 390 } },
+    { id: 'crystal-9b', position: { x: 8770, y: 240 } },
     { id: 'crystal-10', position: { x: 9170, y: 420 } },
+    { id: 'crystal-10b', position: { x: 9030, y: 210 } },
     { id: 'crystal-11', position: { x: 9440, y: 350 } },
+    { id: 'crystal-11b', position: { x: 9260, y: 280 } },
     { id: 'crystal-12', position: { x: 10020, y: 490 } },
     { id: 'crystal-13', position: { x: 10260, y: 540 } },
+    { id: 'crystal-13b', position: { x: 10060, y: 280 } },
     { id: 'crystal-14', position: { x: 10820, y: 400 } },
     { id: 'crystal-15', position: { x: 11410, y: 320 } },
     { id: 'crystal-16', position: { x: 11720, y: 470 } },
   ],
   rewardBlocks: [
     rewardBlock('forest-coin-3', 8930, 470, { kind: 'coins', amount: 3 }),
+    rewardBlock('forest-coin-branch', 9245, 250, { kind: 'coins', amount: 3 }),
     rewardBlock('forest-shooter', 9685, 420, { kind: 'power', power: 'shooter' }),
     rewardBlock('forest-coin-4', 10190, 470, { kind: 'coins', amount: 2 }),
+    rewardBlock('forest-coin-5', 10030, 250, { kind: 'coins', amount: 2 }),
     rewardBlock('forest-invincible', 11320, 380, { kind: 'power', power: 'invincible' }),
   ],
   hazards: [
@@ -888,59 +1579,72 @@ const forestRuinsExtension: StageExtension = {
       hop: { intervalMs: 1180, impulse: 900, speed: 130 },
     },
     {
+      id: 'flyer-2',
+      kind: 'flyer',
+      position: { x: 9040, y: 210 },
+      flyer: { left: 8920, right: 9280, speed: 112, bobAmp: 22, bobSpeed: 4.8 },
+    },
+    {
       id: 'turret-2',
       kind: 'turret',
       position: { x: 9466, y: 362 },
       turret: { intervalMs: 1700 },
     },
     {
-      id: 'flyer-2',
-      kind: 'flyer',
-      position: { x: 10020, y: 350 },
-      flyer: { left: 9930, right: 10440, speed: 110, bobAmp: 24, bobSpeed: 4.8 },
-    },
-    {
       id: 'turret-3',
       kind: 'turret',
-      position: { x: 10586, y: 482 },
-      turret: { intervalMs: 1600 },
+      position: { x: 10390, y: 222 },
+      turret: { intervalMs: 1580 },
+    },
+    {
+      id: 'walker-5',
+      kind: 'walker',
+      position: { x: 10520, y: 490 },
+      patrol: { left: 10510, right: 10640, speed: 108 },
     },
     {
       id: 'charger-2',
       kind: 'charger',
-      position: { x: 10820, y: 420 },
-      charger: { left: 10770, right: 10950, patrolSpeed: 72, chargeSpeed: 300, windupMs: 520, cooldownMs: 900 },
+      position: { x: 11055, y: 350 },
+      charger: { left: 11030, right: 11190, patrolSpeed: 72, chargeSpeed: 300, windupMs: 520, cooldownMs: 900 },
     },
     {
-      id: 'walker-5',
+      id: 'walker-6',
       kind: 'walker',
       position: { x: 11605, y: 500 },
       patrol: { left: 11590, right: 11780, speed: 120 },
     },
   ],
   exit: { x: 11890, y: 450, width: 40, height: 80 },
-  hint: 'Eight authored segments now carry the forest run through the vault, canopy, and citadel rise.',
+  hint: 'Eight crater sectors now span the meteor sink, relay canopy, and observatory rise, with optional canopy pockets feeding back into the survey line.',
 };
 
 const amberCavernExtension: StageExtension = {
   targetDurationMinutes: 20,
   worldWidth: 12250,
   segments: [
-    { id: 'fissure', title: 'Deep Fissure', startX: 8200, endX: 9440, focus: 'vertical recovery beats' },
-    { id: 'ramparts', title: 'Molten Ramparts', startX: 9440, endX: 10880, focus: 'mixed hazard pressure' },
-    { id: 'vault', title: 'Vault Approach', startX: 10880, endX: 12250, focus: 'final forge gauntlet' },
+    { id: 'fissure', title: 'Glass Fissure', startX: 8200, endX: 9440, focus: 'vertical recovery beats' },
+    { id: 'ramparts', title: 'Ember Ramparts', startX: 9440, endX: 10880, focus: 'split-route hazard pressure' },
+    { id: 'vault', title: 'Reactor Vault', startX: 10880, endX: 12250, focus: 'final forge gauntlet' },
   ],
   platforms: [
     ground(8160, 520, 200),
     ground(8420, 450, 180),
+    ground(8450, 290, 150),
     ground(8680, 380, 180),
+    ground(8710, 235, 140),
+    revealPlatform('amber-secret-cave-bridge', 'amber-secret-cave-reveal', 8855, 250, 110),
     moving(8940, 430, 180, 32, 'y', 110, 72),
+    moving(8970, 190, 140, 32, 'x', 90, 70),
     ground(9200, 340, 180),
+    ground(9220, 260, 160),
     ground(9460, 420, 200),
     falling(9730, 500, 180),
     ground(9990, 570, 220),
     ground(10290, 500, 180),
+    ground(10410, 260, 150),
     spring(10550, 430, 190, 32, 930),
+    ground(10700, 210, 140),
     ground(10830, 350, 180),
     ground(11090, 420, 190),
     ground(11370, 500, 220),
@@ -951,23 +1655,57 @@ const amberCavernExtension: StageExtension = {
     { id: 'cp-5', rect: { x: 9220, y: 260, width: 24, height: 80 } },
     { id: 'cp-6', rect: { x: 11710, y: 480, width: 24, height: 80 } },
   ],
+  revealVolumes: [revealVolume('amber-secret-cave-trigger', 8400, 240, 240, 220, ['amber-secret-cave-reveal'])],
   collectibles: [
     { id: 'amber-9', position: { x: 8210, y: 470 } },
+    { id: 'amber-9b', position: { x: 8490, y: 250 } },
     { id: 'amber-10', position: { x: 8460, y: 390 } },
+    { id: 'amber-10b', position: { x: 8740, y: 195 } },
     { id: 'amber-11', position: { x: 8730, y: 320 } },
+    { id: 'amber-11b', position: { x: 9010, y: 150 } },
+    { id: 'amber-secret-sample-1', position: { x: 8940, y: 205 } },
     { id: 'amber-12', position: { x: 8990, y: 380 } },
+    { id: 'amber-12b', position: { x: 9250, y: 220 } },
+    { id: 'amber-secret-sample-2', position: { x: 9160, y: 175 } },
     { id: 'amber-13', position: { x: 9500, y: 370 } },
     { id: 'amber-14', position: { x: 10040, y: 520 } },
+    { id: 'amber-14b', position: { x: 10450, y: 220 } },
     { id: 'amber-15', position: { x: 10610, y: 360 } },
+    { id: 'amber-15b', position: { x: 10740, y: 170 } },
     { id: 'amber-16', position: { x: 10870, y: 300 } },
     { id: 'amber-17', position: { x: 11430, y: 450 } },
     { id: 'amber-18', position: { x: 12000, y: 420 } },
   ],
   rewardBlocks: [
     rewardBlock('amber-coin-3', 8450, 390, { kind: 'coins', amount: 3 }),
+    rewardBlock('amber-coin-branch', 9230, 210, { kind: 'coins', amount: 3 }),
     rewardBlock('amber-invincible', 10320, 430, { kind: 'power', power: 'invincible' }),
+    rewardBlock('amber-coin-5', 10720, 150, { kind: 'coins', amount: 2 }),
     rewardBlock('amber-coin-4', 10860, 310, { kind: 'coins', amount: 2 }),
     rewardBlock('amber-dash', 11780, 420, { kind: 'power', power: 'dash' }),
+  ],
+  secretRoutes: [
+    {
+      id: 'amber-hidden-sample-cave',
+      title: 'Collapsed Sample Gallery',
+      areaKind: 'sampleCave',
+      mechanics: ['revealPlatform', 'optionalDetour'],
+      cue: {
+        description: 'A cracked resin ledge and sample glint above the trench reveal a hidden bridge into the abandoned cave pocket.',
+        rect: { x: 8420, y: 418, width: 180, height: 32 },
+        revealVolumeIds: ['amber-secret-cave-trigger'],
+        revealPlatformIds: ['amber-secret-cave-reveal'],
+      },
+      entry: { x: 8710, y: 171, width: 140, height: 64 },
+      interior: { x: 8855, y: 126, width: 545, height: 214 },
+      reconnect: { x: 9460, y: 356, width: 180, height: 64 },
+      mainPath: { x: 8940, y: 366, width: 180, height: 64 },
+      reward: {
+        collectibleIds: ['amber-secret-sample-1', 'amber-secret-sample-2', 'amber-11b', 'amber-12b'],
+        rewardBlockIds: ['amber-coin-branch'],
+        note: 'The optional sample cave pays out a research cluster and cache before dropping back onto the trench route.',
+      },
+    },
   ],
   hazards: [
     { id: 'amber-spikes-4', kind: 'spikes', rect: { x: 8220, y: 504, width: 60, height: 16 } },
@@ -988,9 +1726,15 @@ const amberCavernExtension: StageExtension = {
       hop: { intervalMs: 1220, impulse: 900, speed: 125 },
     },
     {
+      id: 'flyer-2',
+      kind: 'flyer',
+      position: { x: 9010, y: 150 },
+      flyer: { left: 8890, right: 9250, speed: 112, bobAmp: 20, bobSpeed: 4.7 },
+    },
+    {
       id: 'turret-4',
       kind: 'turret',
-      position: { x: 9546, y: 382 },
+      position: { x: 10036, y: 532 },
       turret: { intervalMs: 1600 },
     },
     {
@@ -1000,16 +1744,16 @@ const amberCavernExtension: StageExtension = {
       hop: { intervalMs: 1180, impulse: 920, speed: 130 },
     },
     {
-      id: 'flyer-2',
-      kind: 'flyer',
-      position: { x: 10630, y: 300 },
-      flyer: { left: 10490, right: 10990, speed: 110, bobAmp: 26, bobSpeed: 4.8 },
+      id: 'turret-5',
+      kind: 'turret',
+      position: { x: 10440, y: 222 },
+      turret: { intervalMs: 1500 },
     },
     {
       id: 'charger-2',
       kind: 'charger',
-      position: { x: 11100, y: 390 },
-      charger: { left: 11090, right: 11260, patrolSpeed: 72, chargeSpeed: 310, windupMs: 520, cooldownMs: 920 },
+      position: { x: 11120, y: 390 },
+      charger: { left: 11090, right: 11280, patrolSpeed: 72, chargeSpeed: 310, windupMs: 520, cooldownMs: 920 },
     },
     {
       id: 'walker-5',
@@ -1019,7 +1763,7 @@ const amberCavernExtension: StageExtension = {
     },
   ],
   exit: { x: 12160, y: 390, width: 44, height: 80 },
-  hint: 'The cavern now extends through the fissure, ramparts, and vault approach with new recovery beats.',
+  hint: 'The trench now runs through the glass fissure, ember ramparts, and reactor vault, with a hidden sample gallery reconnecting above the main line.',
 };
 
 const skySanctumExtension: StageExtension = {
@@ -1027,49 +1771,80 @@ const skySanctumExtension: StageExtension = {
   worldWidth: 13240,
   segments: [
     { id: 'belfry', title: 'Storm Belfry', startX: 8800, endX: 10120, focus: 'mid-air recovery' },
-    { id: 'halo', title: 'Halo Ramp', startX: 10120, endX: 11640, focus: 'turret lanes and resets' },
+    { id: 'halo', title: 'Halo Causeway', startX: 10120, endX: 11640, focus: 'turret lanes and resets' },
     { id: 'crown', title: 'Crown Approach', startX: 11640, endX: 13240, focus: 'endurance finale' },
   ],
   platforms: [
     ground(8740, 560, 210),
     ground(9010, 490, 180),
+    ground(9040, 300, 150),
     moving(9270, 420, 180, 32, 'x', 130, 88),
+    ground(9310, 240, 140),
     ground(9540, 340, 180),
+    moving(9580, 200, 140, 32, 'x', 100, 78),
     ground(9800, 410, 190),
+    ground(9840, 270, 150),
     falling(10080, 480, 180),
     ground(10340, 550, 210),
     ground(10640, 480, 180),
     moving(10900, 400, 180, 32, 'y', 110, 84),
+    ground(10970, 250, 150),
+    revealPlatform('sky-reveal-bridge-1', 'sky-hidden-bridge-1', 11150, 250, 120),
     ground(11160, 320, 180),
+    ground(11240, 190, 140),
+    revealPlatform('sky-reveal-bridge-2', 'sky-hidden-bridge-2', 11390, 220, 110),
     ground(11420, 390, 180),
     spring(11680, 460, 200, 32, 950),
     ground(11970, 380, 180),
     ground(12230, 320, 180),
+    ground(12280, 230, 150),
+    temporaryBridgePlatform('sky-temporary-bridge-1', 'sky-halo-scanner', 12450, 230, 120, 24, 2600),
+    ground(12620, 230, 140),
     ground(12490, 400, 180),
     ground(12750, 500, 220),
     ground(13040, 430, 180),
   ],
+  terrainSurfaces: [
+    terrainSurface('sky-sludge-route', 'stickySludge', 9010, 490, 140),
+    terrainSurface('sky-brittle-route', 'brittleCrystal', 10420, 550, 110),
+  ],
+  launchers: [launcher('sky-gas-vent-route', 'gasVent', 9050, 490, 96, 14, { x: 0.18, y: -1 })],
+  lowGravityZones: [lowGravityZone('sky-low-gravity-pocket', 8960, 120, 1180, 430, 0.42)],
+  revealVolumes: [
+    revealVolume('sky-hidden-bridge-trigger', 10920, 170, 220, 190, ['sky-hidden-bridge-1', 'sky-hidden-bridge-2']),
+  ],
+  scannerVolumes: [scannerVolume('sky-halo-scanner', 12190, 150, 210, 190, ['sky-temporary-bridge-1'])],
   checkpoints: [
     { id: 'cp-5', rect: { x: 10670, y: 400, width: 24, height: 80 } },
-    { id: 'cp-6', rect: { x: 12340, y: 240, width: 24, height: 80 } },
+    { id: 'cp-6', rect: { x: 13180, y: 350, width: 24, height: 80 } },
   ],
   collectibles: [
     { id: 'sky-10', position: { x: 8780, y: 510 } },
+    { id: 'sky-10b', position: { x: 9070, y: 260 } },
     { id: 'sky-11', position: { x: 9050, y: 440 } },
+    { id: 'sky-11b', position: { x: 9340, y: 200 } },
     { id: 'sky-12', position: { x: 9340, y: 360 } },
+    { id: 'sky-12b', position: { x: 9600, y: 160 } },
     { id: 'sky-13', position: { x: 9580, y: 280 } },
+    { id: 'sky-13b', position: { x: 9870, y: 230 } },
     { id: 'sky-14', position: { x: 10120, y: 430 } },
     { id: 'sky-15', position: { x: 10390, y: 500 } },
+    { id: 'sky-15b', position: { x: 11030, y: 210 } },
     { id: 'sky-16', position: { x: 10750, y: 430 } },
     { id: 'sky-17', position: { x: 11210, y: 260 } },
+    { id: 'sky-17b', position: { x: 11280, y: 150 } },
     { id: 'sky-18', position: { x: 11750, y: 410 } },
     { id: 'sky-19', position: { x: 12410, y: 270 } },
+    { id: 'sky-19b', position: { x: 12330, y: 190 } },
+    { id: 'sky-19c', position: { x: 12670, y: 180 } },
     { id: 'sky-20', position: { x: 12900, y: 450 } },
   ],
   rewardBlocks: [
     rewardBlock('sky-dash-2', 9400, 380, { kind: 'power', power: 'dash' }),
+    rewardBlock('sky-coin-branch', 9850, 220, { kind: 'coins', amount: 3 }),
     rewardBlock('sky-coin-3', 10750, 430, { kind: 'coins', amount: 3 }),
-    rewardBlock('sky-coin-4', 12260, 260, { kind: 'coins', amount: 2 }),
+    rewardBlock('sky-coin-5', 11260, 140, { kind: 'coins', amount: 2 }),
+    rewardBlock('sky-temp-bridge-cache', 12650, 130, { kind: 'coins', amount: 2 }),
     rewardBlock('sky-shooter', 13060, 350, { kind: 'power', power: 'shooter' }),
   ],
   hazards: [
@@ -1082,38 +1857,20 @@ const skySanctumExtension: StageExtension = {
     {
       id: 'walker-4',
       kind: 'walker',
-      position: { x: 9020, y: 460 },
-      patrol: { left: 9010, right: 9170, speed: 108 },
+      position: { x: 9820, y: 380 },
+      patrol: { left: 9810, right: 9960, speed: 108 },
     },
     {
       id: 'flyer-2',
       kind: 'flyer',
-      position: { x: 9360, y: 300 },
-      flyer: { left: 9260, right: 9660, speed: 112, bobAmp: 26, bobSpeed: 5.1 },
-    },
-    {
-      id: 'turret-5',
-      kind: 'turret',
-      position: { x: 9881, y: 372 },
-      turret: { intervalMs: 1450 },
+      position: { x: 9410, y: 160 },
+      flyer: { left: 9300, right: 9670, speed: 112, bobAmp: 24, bobSpeed: 5.1 },
     },
     {
       id: 'hopper-3',
       kind: 'hopper',
       position: { x: 10350, y: 520 },
       hop: { intervalMs: 1180, impulse: 940, speed: 136 },
-    },
-    {
-      id: 'turret-6',
-      kind: 'turret',
-      position: { x: 11236, y: 282 },
-      turret: { intervalMs: 1400 },
-    },
-    {
-      id: 'charger-2',
-      kind: 'charger',
-      position: { x: 11980, y: 350 },
-      charger: { left: 11970, right: 12150, patrolSpeed: 74, chargeSpeed: 320, windupMs: 500, cooldownMs: 900 },
     },
     {
       id: 'flyer-3',
@@ -1129,23 +1886,26 @@ const skySanctumExtension: StageExtension = {
     },
   ],
   exit: { x: 13120, y: 350, width: 48, height: 80 },
-  hint: 'The sanctum now climbs through the belfry, halo ramp, and crown approach with authored recovery beats.',
+  hint: 'The array now climbs through the belfry, halo causeway, and crown approach with optional halo rails reconnecting above the storm band.',
 };
 
-export const stageDefinitions: StageDefinition[] = baseStageDefinitions.map((stage) => {
-  switch (stage.id) {
-    case 'forest-ruins':
-      return validateStaticElementCollisions(validateRewardBlocks(applyStageExtension(stage, forestRuinsExtension)));
-    case 'amber-cavern':
-      return validateStaticElementCollisions(validateRewardBlocks(applyStageExtension(stage, amberCavernExtension)));
-    case 'sky-sanctum':
-      return validateStaticElementCollisions(validateRewardBlocks(applyStageExtension(stage, skySanctumExtension)));
-    default:
-      return validateStaticElementCollisions(
-        validateRewardBlocks({
+export const validateStageDefinition = (stage: StageDefinition): StageDefinition =>
+  validateSecretRoutes(validateTraversalMechanics(validateStaticElementCollisions(validateRewardBlocks(stage))));
+
+export const stageDefinitions: StageDefinition[] = validateStageCatalogSecretRoutes(
+  baseStageDefinitions.map((stage) => {
+    switch (stage.id) {
+      case 'forest-ruins':
+        return validateStageDefinition(applyStageExtension(stage, forestRuinsExtension));
+      case 'amber-cavern':
+        return validateStageDefinition(applyStageExtension(stage, amberCavernExtension));
+      case 'sky-sanctum':
+        return validateStageDefinition(applyStageExtension(stage, skySanctumExtension));
+      default:
+        return validateStageDefinition({
           ...stage,
           rewardBlocks: normalizeRewardBlocks(stage.platforms, stage.rewardBlocks),
-        }),
-      );
-  }
-});
+        });
+    }
+  }),
+);
