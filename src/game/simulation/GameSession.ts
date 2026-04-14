@@ -1,6 +1,6 @@
-import Phaser from 'phaser';
 import { stageDefinitions, type StageDefinition } from '../content/stages';
 import type { InputState } from '../input/actions';
+import { clamp } from './math';
 import {
   BRITTLE_WARNING_MS,
   SLUDGE_GROUND_ACCEL_MULTIPLIER,
@@ -15,11 +15,17 @@ import {
   getCollectibleRecoveredMessage,
   getCollectibleRewardMessage,
   getPowerGainMessage,
+  getStageObjectiveBriefing,
+  getStageObjectiveCompletionMessage,
+  getStageObjectiveExitReminder,
   type CheckpointState,
   type CollectibleState,
   type DifficultySetting,
   type EnemyPressureSetting,
   type EnemyState,
+  type ActivationNodeState,
+  type GravityFieldKind,
+  type GravityFieldState,
   type HazardState,
   type LauncherState,
   type LowGravityZoneState,
@@ -37,10 +43,16 @@ import {
   type RewardRevealState,
   type RunSettings,
   type SessionProgress,
+  type StageObjectiveState,
   type StageRuntime,
+  TURRET_VARIANT_CONFIG,
+  type TurretVariantId,
+  createInactiveActivationNodeState,
   createInactiveScannerVolumeState,
   createInactiveTemporaryBridgeState,
   isPlatformActive,
+  isTopSurfaceOnlyPlatform,
+  isTimedRevealBridgeLegible,
   isTerrainSurfaceSupportActive,
   normalizeRevealedPlatformIds,
 } from './state';
@@ -77,6 +89,11 @@ const HOP_FLIGHT_TIME_MAX = 0.78;
 const HOP_HORIZONTAL_SPEED_LIMIT = 420;
 const HOP_IMPULSE_LIMIT = 980;
 const PLAYER_PRESENTATION_ORDER: PowerType[] = ['invincible', 'shooter', 'doubleJump', 'dash'];
+const DEFAULT_TURRET_PROJECTILE_SPEED = 260;
+const GRAVITY_FIELD_SCALE: Record<GravityFieldKind, number> = {
+  'anti-grav-stream': -0.38,
+  'gravity-inversion-column': -1,
+};
 
 const DIFFICULTY_CONFIG: Record<
   DifficultySetting,
@@ -130,7 +147,20 @@ type CheckpointRestoreState = {
   coinRewardBlocks: Map<string, { used: boolean; remainingHits: number }>;
   collectedCoins: number;
   allCoinsRecovered: boolean;
+  objectiveCompleted: boolean;
 };
+
+const createStageObjectiveState = (
+  stage: StageDefinition,
+  completed = false,
+): StageObjectiveState | null =>
+  stage.stageObjective
+    ? {
+        kind: stage.stageObjective.kind,
+        target: { ...stage.stageObjective.target },
+        completed,
+      }
+    : null;
 
 type SolidSurface =
   | {
@@ -237,6 +267,24 @@ const clampLaneToSupport = (
 const isGroundedSpacingEnemy = (enemy: Pick<EnemyState, 'kind'>): boolean =>
   enemy.kind === 'walker' || enemy.kind === 'turret' || enemy.kind === 'charger';
 
+const createTurretVariantRuntime = (
+  variant: TurretVariantId,
+  intervalMultiplier: number,
+): { telegraphDurationMs: number; burstGapDurationMs: number } => ({
+  telegraphDurationMs: TURRET_VARIANT_CONFIG[variant].telegraphMs * intervalMultiplier,
+  burstGapDurationMs: TURRET_VARIANT_CONFIG[variant].burstGapMs * intervalMultiplier,
+});
+
+const resetVariantTurretCycle = (
+  turret: NonNullable<EnemyState['turret']>,
+  variant: TurretVariantId,
+): void => {
+  turret.timerMs = Math.max(0, turret.intervalMs - turret.telegraphDurationMs);
+  turret.telegraphMs = 0;
+  turret.burstGapMs = 0;
+  turret.pendingShots = Math.max(0, TURRET_VARIANT_CONFIG[variant].burstShots - 1);
+};
+
 const resolveTurretPosition = (
   turret: EnemyState,
   enemies: EnemyState[],
@@ -305,8 +353,8 @@ const resolveTurretPosition = (
 
     const candidates: number[] = [];
     for (let offset = 0; offset <= laneRight - laneLeft; offset += 12) {
-      const left = Phaser.Math.Clamp(anchorX - offset, laneLeft, laneRight);
-      const right = Phaser.Math.Clamp(anchorX + offset, laneLeft, laneRight);
+      const left = clamp(anchorX - offset, laneLeft, laneRight);
+      const right = clamp(anchorX + offset, laneLeft, laneRight);
       candidates.push(left);
       if (right !== left) {
         candidates.push(right);
@@ -327,7 +375,7 @@ const resolveTurretPosition = (
     return true;
   };
 
-  const currentAnchorX = Phaser.Math.Clamp(turret.x, support.x, support.x + support.width - turret.width);
+  const currentAnchorX = clamp(turret.x, support.x, support.x + support.width - turret.width);
   if (tryPlaceOnSupport(support, currentAnchorX)) {
     return;
   }
@@ -347,7 +395,7 @@ const resolveTurretPosition = (
     );
 
   for (const fallbackSupport of fallbackSupports) {
-    const anchorX = Phaser.Math.Clamp(turret.x, fallbackSupport.x, fallbackSupport.x + fallbackSupport.width - turret.width);
+    const anchorX = clamp(turret.x, fallbackSupport.x, fallbackSupport.x + fallbackSupport.width - turret.width);
     if (tryPlaceOnSupport(fallbackSupport, anchorX)) {
       return;
     }
@@ -384,7 +432,7 @@ const findReachableHopTarget = (
     .map((platform) => {
       const targetLeft = platform.x;
       const targetRight = platform.x + platform.width - enemy.width;
-      const landingX = Phaser.Math.Clamp(currentCenterX - enemy.width / 2, targetLeft, targetRight);
+      const landingX = clamp(currentCenterX - enemy.width / 2, targetLeft, targetRight);
       const landingCenterX = landingX + enemy.width / 2;
       const dx = landingCenterX - currentCenterX;
       const dy = platform.y - enemy.height - currentY;
@@ -395,7 +443,7 @@ const findReachableHopTarget = (
         return null;
       }
 
-      const baseFlightTime = Phaser.Math.Clamp(
+      const baseFlightTime = clamp(
         Math.abs(dx) / Math.max(hop.speed, 1),
         HOP_FLIGHT_TIME_MIN,
         HOP_FLIGHT_TIME_MAX,
@@ -527,6 +575,18 @@ const findPlayerLowGravityZone = (
   return zones.find((zone) => pointInRect(center, zone)) ?? null;
 };
 
+const findPlayerGravityField = (
+  player: PlayerState,
+  fields: GravityFieldState[],
+): GravityFieldState | null => {
+  const center = {
+    x: player.x + player.width / 2,
+    y: player.y + player.height / 2,
+  };
+
+  return fields.find((field) => pointInRect(center, field)) ?? null;
+};
+
 const findTerrainSurfaceSupportPlatform = (
   platforms: PlatformState[],
   surface: Pick<TerrainSurfaceState, 'x' | 'y' | 'width'>,
@@ -614,7 +674,7 @@ export class GameSession {
       masterVolume:
         next.masterVolume == null
           ? this.snapshot.progress.runSettings.masterVolume
-          : Phaser.Math.Clamp(next.masterVolume, 0, 1),
+          : clamp(next.masterVolume, 0, 1),
     };
   }
 
@@ -636,7 +696,6 @@ export class GameSession {
     this.updatePowerTimers(deltaMs);
     this.updateRewardFeedback(deltaMs);
     this.syncPlayerPresentationPower();
-    this.updatePlayerGravityState();
 
     if (player.dead) {
       this.snapshot.respawnTimerMs -= deltaMs;
@@ -666,7 +725,7 @@ export class GameSession {
         player.x < supportSurface.x + supportSurface.width - 6;
 
       if (stillSupported) {
-        player.x = Phaser.Math.Clamp(player.x + supportSurface.vx * deltaSec, 0, stage.world.width - player.width);
+        player.x = clamp(player.x + supportSurface.vx * deltaSec, 0, stage.world.width - player.width);
         player.y += supportSurface.vy * deltaSec;
       } else {
         player.onGround = false;
@@ -717,7 +776,7 @@ export class GameSession {
       const groundMaxSpeed = groundedOnSticky ? MAX_MOVE_SPEED * SLUDGE_MAX_SPEED_MULTIPLIER : MAX_MOVE_SPEED;
       const accel = player.onGround ? groundAccel : AIR_ACCEL;
       if (direction !== 0) {
-        player.vx = Phaser.Math.Clamp(
+        player.vx = clamp(
           player.vx + direction * accel * deltaSec,
           player.onGround ? -groundMaxSpeed : -MAX_MOVE_SPEED,
           player.onGround ? groundMaxSpeed : MAX_MOVE_SPEED,
@@ -760,12 +819,15 @@ export class GameSession {
         }
       }
 
+      this.updatePlayerGravityState();
       player.vy = Math.min(player.vy + stage.world.gravity * player.gravityScale * deltaSec, MAX_FALL_SPEED);
     } else {
       player.vx = player.facing * DASH_SPEED;
       player.vy = 0;
       player.onGround = false;
       player.lowGravityZoneId = null;
+      player.gravityFieldId = null;
+      player.gravityFieldKind = null;
       player.gravityScale = 1;
     }
 
@@ -776,6 +838,9 @@ export class GameSession {
     const horizontalRect: Rect = { x: nextX, y: player.y, width: player.width, height: player.height };
     for (const surface of solidSurfaces) {
       if (player.onGround && surface.id === player.supportPlatformId) {
+        continue;
+      }
+      if (surface.kind === 'platform' && isTopSurfaceOnlyPlatform(surface.platform)) {
         continue;
       }
       if (intersectsRect(horizontalRect, surfaceRect(surface))) {
@@ -796,6 +861,9 @@ export class GameSession {
     const verticalRect: Rect = { x: nextX, y: nextY, width: player.width, height: player.height };
     for (const surface of solidSurfaces) {
       if (!intersectsRect(verticalRect, surfaceRect(surface))) {
+        continue;
+      }
+      if (surface.kind === 'platform' && player.vy < 0 && isTopSurfaceOnlyPlatform(surface.platform)) {
         continue;
       }
 
@@ -822,8 +890,9 @@ export class GameSession {
       break;
     }
 
-    player.x = Phaser.Math.Clamp(nextX, 0, stage.world.width - player.width);
+    player.x = clamp(nextX, 0, stage.world.width - player.width);
     player.y = nextY;
+    this.handleActivationNodes();
     this.handleScannerVolumes();
     this.handleRevealVolumes();
     this.finalizeTemporaryBridgeExpiry();
@@ -890,6 +959,7 @@ export class GameSession {
         player.supportPlatformId = null;
         player.supportTerrainSurfaceId = null;
         this.emitCue(LAUNCHER_CONFIG[contactedLauncher.kind].cue);
+        this.completeStageObjective('launcher', contactedLauncher.id);
       }
     }
 
@@ -1071,13 +1141,20 @@ export class GameSession {
   private updatePlayerGravityState(): void {
     if (this.snapshot.player.dashTimerMs > 0) {
       this.snapshot.player.lowGravityZoneId = null;
+      this.snapshot.player.gravityFieldId = null;
+      this.snapshot.player.gravityFieldKind = null;
       this.snapshot.player.gravityScale = 1;
       return;
     }
 
     const zone = findPlayerLowGravityZone(this.snapshot.player, this.snapshot.stageRuntime.lowGravityZones);
+    const field = this.snapshot.player.onGround
+      ? null
+      : findPlayerGravityField(this.snapshot.player, this.snapshot.stageRuntime.gravityFields);
     this.snapshot.player.lowGravityZoneId = zone?.id ?? null;
-    this.snapshot.player.gravityScale = zone?.gravityScale ?? 1;
+    this.snapshot.player.gravityFieldId = field?.id ?? null;
+    this.snapshot.player.gravityFieldKind = field?.kind ?? null;
+    this.snapshot.player.gravityScale = field ? GRAVITY_FIELD_SCALE[field.kind] : zone?.gravityScale ?? 1;
   }
 
   private armBrittleSurface(surface: TerrainSurfaceState | null): void {
@@ -1190,7 +1267,7 @@ export class GameSession {
               enemy.x < platform.x + platform.width;
             if ((intersectsRect(rect, landingZone) || crossedPlatformTop) && enemy.vy >= 0) {
               enemy.y = platform.y - enemy.height;
-              enemy.x = Phaser.Math.Clamp(enemy.x, platform.x, platform.x + platform.width - enemy.width);
+              enemy.x = clamp(enemy.x, platform.x, platform.x + platform.width - enemy.width);
               enemy.vy = 0;
               enemy.vx = 0;
               enemy.supportY = enemy.y;
@@ -1212,7 +1289,7 @@ export class GameSession {
               : null;
             if (rescuePlatform) {
               enemy.y = rescuePlatform.y - enemy.height;
-              enemy.x = Phaser.Math.Clamp(enemy.x, rescuePlatform.x, rescuePlatform.x + rescuePlatform.width - enemy.width);
+              enemy.x = clamp(enemy.x, rescuePlatform.x, rescuePlatform.x + rescuePlatform.width - enemy.width);
               enemy.supportY = enemy.y;
               enemy.supportPlatformId = rescuePlatform.id;
               enemy.vx = 0;
@@ -1230,19 +1307,15 @@ export class GameSession {
           continue;
         }
 
+        if (enemy.variant) {
+          this.updateVariantTurret(enemy, stageRuntime, deltaMs);
+          continue;
+        }
+
         enemy.turret.timerMs -= deltaMs;
         if (enemy.turret.timerMs <= 0) {
           enemy.turret.timerMs = enemy.turret.intervalMs;
-          stageRuntime.projectiles.push({
-            id: `${enemy.id}-shot-${Math.random().toString(36).slice(2, 7)}`,
-            owner: 'enemy',
-            x: enemy.direction === 1 ? enemy.x + enemy.width : enemy.x - 12,
-            y: enemy.y + 10,
-            vx: enemy.direction * 260,
-            width: 12,
-            height: 12,
-            alive: true,
-          });
+          this.spawnTurretProjectile(stageRuntime, enemy);
           enemy.direction = enemy.direction === 1 ? -1 : 1;
           this.emitCue('turret-fire');
         }
@@ -1279,7 +1352,7 @@ export class GameSession {
           enemy.vx = enemy.direction * enemy.charger.chargeSpeed;
           enemy.x += enemy.vx * deltaSec;
           if (enemy.x <= chargerLeft || enemy.x >= chargerRight) {
-            enemy.x = Phaser.Math.Clamp(enemy.x, chargerLeft, chargerRight);
+            enemy.x = clamp(enemy.x, chargerLeft, chargerRight);
             enemy.charger.state = 'cooldown';
             enemy.charger.timerMs = enemy.charger.cooldownMs;
             enemy.vx = 0;
@@ -1325,6 +1398,9 @@ export class GameSession {
 
       const shotRect = projectileRect(projectile);
       for (const surface of solidSurfaces) {
+        if (surface.kind === 'platform' && isTopSurfaceOnlyPlatform(surface.platform)) {
+          continue;
+        }
         if (intersectsRect(shotRect, surfaceRect(surface))) {
           projectile.alive = false;
           break;
@@ -1372,6 +1448,7 @@ export class GameSession {
         this.checkpointRevealIds = [...stageRuntime.revealedPlatformIds];
         this.setStageMessage(getCheckpointActivatedMessage(), 1500);
         this.emitCue('checkpoint');
+        this.completeStageObjective('checkpoint', checkpoint.id);
       }
     }
   }
@@ -1381,11 +1458,14 @@ export class GameSession {
     const rect = playerRect(player);
     const revealedIds = new Set(stageRuntime.revealedPlatformIds);
     let changed = false;
+    let objectiveCompleted = false;
 
     for (const volume of stageRuntime.revealVolumes) {
       if (!intersectsRect(rect, volume)) {
         continue;
       }
+
+      objectiveCompleted = this.completeStageObjective('revealVolume', volume.id) || objectiveCompleted;
 
       for (const revealId of volume.revealPlatformIds) {
         if (!revealedIds.has(revealId)) {
@@ -1400,13 +1480,16 @@ export class GameSession {
     }
 
     stageRuntime.revealedPlatformIds = normalizeRevealedPlatformIds(revealedIds);
-    this.setStageMessage('Hidden route revealed', 1400);
+    if (!objectiveCompleted) {
+      this.setStageMessage('Hidden route revealed', 1400);
+    }
   }
 
   private handleScannerVolumes(): void {
     const { player, stageRuntime } = this.snapshot;
     const rect = playerRect(player);
     let changed = false;
+    let objectiveCompleted = false;
 
     for (const volume of stageRuntime.scannerVolumes) {
       const inside = intersectsRect(rect, volume);
@@ -1418,9 +1501,14 @@ export class GameSession {
       }
 
       volume.activated = true;
+      objectiveCompleted = this.completeStageObjective('scannerVolume', volume.id) || objectiveCompleted;
       for (const bridgeId of volume.temporaryBridgeIds) {
         const bridge = stageRuntime.temporaryBridges.find((item) => item.id === bridgeId);
         if (!bridge) {
+          continue;
+        }
+
+        if (!isTimedRevealBridgeLegible(bridge, stageRuntime.revealedPlatformIds)) {
           continue;
         }
 
@@ -1431,8 +1519,33 @@ export class GameSession {
       }
     }
 
-    if (changed) {
+    if (changed && !objectiveCompleted) {
       this.setStageMessage('Temporary bridge online', 1300);
+    }
+  }
+
+  private handleActivationNodes(): void {
+    const { player, stageRuntime } = this.snapshot;
+    const rect = playerRect(player);
+    let activated = false;
+
+    for (const node of stageRuntime.activationNodes) {
+      if (node.activated || !intersectsRect(rect, node)) {
+        continue;
+      }
+
+      node.activated = true;
+      activated = true;
+
+      for (const platform of stageRuntime.platforms) {
+        if (platform.magnetic?.activationNodeId === node.id) {
+          platform.magnetic.powered = true;
+        }
+      }
+    }
+
+    if (activated) {
+      this.setStageMessage('Magnetic platform powered', 1400);
     }
   }
 
@@ -1490,9 +1603,79 @@ export class GameSession {
     }
   }
 
+  private spawnTurretProjectile(
+    stageRuntime: StageRuntime,
+    enemy: EnemyState,
+    projectileSpeed = DEFAULT_TURRET_PROJECTILE_SPEED,
+  ): void {
+    stageRuntime.projectiles.push({
+      id: `${enemy.id}-shot-${Math.random().toString(36).slice(2, 7)}`,
+      owner: 'enemy',
+      variant: enemy.variant,
+      x: enemy.direction === 1 ? enemy.x + enemy.width : enemy.x - 12,
+      y: enemy.y + 10,
+      vx: enemy.direction * projectileSpeed,
+      width: 12,
+      height: 12,
+      alive: true,
+    });
+  }
+
+  private updateVariantTurret(enemy: EnemyState, stageRuntime: StageRuntime, deltaMs: number): void {
+    if (!enemy.turret || !enemy.variant) {
+      return;
+    }
+
+    const turret = enemy.turret;
+    const variantConfig = TURRET_VARIANT_CONFIG[enemy.variant];
+
+    if (turret.telegraphMs > 0) {
+      turret.telegraphMs = Math.max(0, turret.telegraphMs - deltaMs);
+      if (turret.telegraphMs > 0) {
+        return;
+      }
+
+      this.spawnTurretProjectile(stageRuntime, enemy, variantConfig.projectileSpeed);
+      this.emitCue('turret-fire');
+      if (turret.pendingShots > 0) {
+        turret.pendingShots -= 1;
+        turret.burstGapMs = turret.burstGapDurationMs;
+        return;
+      }
+
+      enemy.direction = enemy.direction === 1 ? -1 : 1;
+      resetVariantTurretCycle(turret, enemy.variant);
+      return;
+    }
+
+    if (turret.burstGapMs > 0) {
+      turret.burstGapMs = Math.max(0, turret.burstGapMs - deltaMs);
+      if (turret.burstGapMs > 0) {
+        return;
+      }
+
+      this.spawnTurretProjectile(stageRuntime, enemy, variantConfig.projectileSpeed);
+      this.emitCue('turret-fire');
+      enemy.direction = enemy.direction === 1 ? -1 : 1;
+      resetVariantTurretCycle(turret, enemy.variant);
+      return;
+    }
+
+    turret.timerMs -= deltaMs;
+    if (turret.timerMs <= 0) {
+      turret.telegraphMs = turret.telegraphDurationMs;
+      turret.pendingShots = Math.max(0, variantConfig.burstShots - 1);
+    }
+  }
+
   private handleExit(): void {
     const { progress, stage, stageRuntime } = this.snapshot;
     if (!stageRuntime.exitReached && intersectsRect(playerRect(this.snapshot.player), stage.exit)) {
+      if (stageRuntime.objective && !stageRuntime.objective.completed) {
+        this.setStageMessage(getStageObjectiveExitReminder(stageRuntime.objective.kind), 2200);
+        return;
+      }
+
       stageRuntime.exitReached = true;
       this.snapshot.levelCompleted = true;
       this.snapshot.levelJustCompleted = true;
@@ -1735,7 +1918,23 @@ export class GameSession {
       ),
       collectedCoins: stageRuntime.collectedCoins,
       allCoinsRecovered: stageRuntime.allCoinsRecovered,
+      objectiveCompleted: stageRuntime.objective?.completed ?? false,
     };
+  }
+
+  private completeStageObjective(targetKind: StageObjectiveState['target']['kind'], targetId: string): boolean {
+    const objective = this.snapshot.stageRuntime.objective;
+    if (!objective || objective.completed) {
+      return false;
+    }
+
+    if (objective.target.kind !== targetKind || objective.target.id !== targetId) {
+      return false;
+    }
+
+    objective.completed = true;
+    this.setStageMessage(getStageObjectiveCompletionMessage(objective.kind), 2200);
+    return true;
   }
 
   private findSupportSurface(id: string): SolidSurface | null {
@@ -1858,6 +2057,8 @@ export class GameSession {
       coyoteTerrainSurfaceKind: null,
       launcherContactId: null,
       lowGravityZoneId: null,
+      gravityFieldId: null,
+      gravityFieldKind: null,
       gravityScale: 1,
       dead: false,
     };
@@ -1891,6 +2092,7 @@ export class GameSession {
         : undefined,
       reveal: platform.reveal ? { ...platform.reveal } : undefined,
       temporaryBridge: platform.temporaryBridge ? { ...platform.temporaryBridge } : undefined,
+      magnetic: platform.magnetic ? { ...platform.magnetic, powered: false } : undefined,
     }));
 
     const activeRevealIds = normalizeRevealedPlatformIds(revealedPlatformIds);
@@ -1902,6 +2104,7 @@ export class GameSession {
           createInactiveTemporaryBridgeState({
             id: platform.id,
             scannerId: platform.temporaryBridge.scannerId,
+            revealId: platform.reveal?.id ?? null,
             durationMs: platform.temporaryBridge.durationMs,
           }),
         );
@@ -1909,6 +2112,7 @@ export class GameSession {
 
     const filteredEnemies = stage.enemies.filter((_, index) => pressure.keepEnemy(index));
     const enemies = filteredEnemies.map<EnemyState>((enemy) => {
+      const variantRuntime = enemy.variant ? createTurretVariantRuntime(enemy.variant, intervalMultiplier) : null;
       const width = enemy.kind === 'turret' ? 28 : 34;
       const height = enemy.kind === 'turret' ? 38 : enemy.kind === 'flyer' ? 24 : 30;
       const support = isGroundedEnemy(enemy)
@@ -1925,12 +2129,13 @@ export class GameSession {
               : clampLaneToSupport(support, null, null, width);
       const initialX =
         lane.laneLeft !== null && lane.laneRight !== null
-          ? Phaser.Math.Clamp(enemy.position.x, lane.laneLeft, lane.laneRight)
+          ? clamp(enemy.position.x, lane.laneLeft, lane.laneRight)
           : enemy.position.x;
 
       return {
         id: enemy.id,
         kind: enemy.kind,
+        variant: enemy.variant,
         x: initialX,
         y: supportY ?? enemy.position.y,
         vx: 0,
@@ -1965,7 +2170,14 @@ export class GameSession {
         turret: enemy.turret
           ? {
               intervalMs: enemy.turret.intervalMs * intervalMultiplier,
-              timerMs: enemy.turret.intervalMs * intervalMultiplier,
+              timerMs: enemy.variant
+                ? Math.max(0, enemy.turret.intervalMs * intervalMultiplier - (variantRuntime?.telegraphDurationMs ?? 0))
+                : enemy.turret.intervalMs * intervalMultiplier,
+              telegraphMs: 0,
+              telegraphDurationMs: variantRuntime?.telegraphDurationMs ?? 0,
+              burstGapMs: 0,
+              burstGapDurationMs: variantRuntime?.burstGapDurationMs ?? 0,
+              pendingShots: enemy.variant ? TURRET_VARIANT_CONFIG[enemy.variant].burstShots - 1 : 0,
             }
           : undefined,
         charger: enemy.charger
@@ -2013,6 +2225,7 @@ export class GameSession {
       powerTimers,
       runSettings,
     };
+    const objective = createStageObjectiveState(stage, checkpointRestore?.objectiveCompleted ?? false);
 
     return {
       stageIndex,
@@ -2025,7 +2238,7 @@ export class GameSession {
       levelCompleted: false,
       levelJustCompleted: false,
       gameCompleted: false,
-      stageMessage: stage.hint,
+      stageMessage: objective && !objective.completed ? getStageObjectiveBriefing(objective.kind) : stage.hint,
       stageMessageTimerMs: 2600,
       respawnTimerMs: 0,
       stageRuntime: {
@@ -2065,6 +2278,7 @@ export class GameSession {
           };
         }),
         lowGravityZones: stage.lowGravityZones.map<LowGravityZoneState>((zone) => ({ ...zone })),
+        gravityFields: stage.gravityFields.map<GravityFieldState>((field) => ({ ...field })),
         revealVolumes: stage.revealVolumes.map<RevealVolumeState>((volume) => ({
           ...volume,
           revealPlatformIds: [...volume.revealPlatformIds],
@@ -2072,6 +2286,7 @@ export class GameSession {
         scannerVolumes: stage.scannerVolumes.map<ScannerVolumeState>((volume) =>
           createInactiveScannerVolumeState(volume),
         ),
+        activationNodes: stage.activationNodes.map<ActivationNodeState>((node) => createInactiveActivationNodeState(node)),
         temporaryBridges,
         revealedPlatformIds: activeRevealIds,
         checkpoints: stage.checkpoints.map<CheckpointState>((checkpoint) => ({
@@ -2110,6 +2325,7 @@ export class GameSession {
         totalCoins: stage.collectibles.length + blockCoinTotal,
         allCoinsRecovered: checkpointRestore?.allCoinsRecovered ?? false,
         exitReached: false,
+        objective,
       },
     };
   }

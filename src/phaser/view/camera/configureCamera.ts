@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 
 export const configureCamera = (
   camera: Phaser.Cameras.Scene2D.Camera,

@@ -1,16 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
-
-vi.mock('phaser', () => ({
-  default: {
-    Math: {
-      Clamp: (value: number, min: number, max: number) => Math.min(Math.max(value, min), max),
-      Wrap: (value: number, min: number, max: number) => {
-        const range = max - min;
-        return range <= 0 ? min : ((((value - min) % range) + range) % range) + min;
-      },
-    },
-  },
-}));
+import { describe, expect, it } from 'vitest';
 
 import { SceneBridge } from './sceneBridge';
 

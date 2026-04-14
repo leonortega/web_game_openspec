@@ -74,24 +74,47 @@ The game SHALL support special traversal surfaces such as spring platforms, boun
 - **THEN** it carries the player along its authored route without breaking traversal readability
 
 ### Requirement: Platform variation reinforces stage identity
-The game SHALL use platform behaviors, authored traversal modifiers, staged reveal routes, scanner-triggered temporary bridge routes, biome-authored launcher routes, and hidden reconnecting expedition secret routes to strengthen each stage's alien-biome identity rather than applying the same terrain gimmick uniformly everywhere. Each main stage MUST include at least one platform-driven traversal section that opens an elevated route, alternate line, or hidden secret connector branch by using existing moving, unstable, lift-style, spring-like, bounce-pod, gas-vent, low-gravity, reveal-platform, scanner-switch temporary-bridge, or terrain-surface behaviors. Any secret route supported by these traversal sections MUST be discoverable through authored layout and the current movement and power rules, MUST remain traversable without adding a new interact button, map-marker system, or tracked secret-state mechanic, and MUST rejoin the main path later within the same stage. Any low-gravity traversal used for this purpose MUST be authored as a specific rectangular stage section and MUST affect only the player for this change. Any bounce-pod or gas-vent traversal used for this purpose MUST be authored as a bounded contact launcher footprint and MUST NOT rely on continuous lift fields, anti-grav streams, or gravity zones. Any reveal-platform route used for this purpose MUST begin hidden and non-solid on a fresh attempt, MUST reveal from a nearby authored reveal volume, and MUST remain readable and traversable once revealed. Any scanner-switch temporary bridge route used for this purpose MUST activate from a nearby authored scanner volume, MUST not require a new interact button, and MUST remain reachable using the current movement and power rules. These high-air, hidden, timed, launcher-assisted, or terrain-shaped routes MUST remain readable and traversable without requiring gravity inversion columns, anti-grav streams, magnetic platforms, gravity flip, directional gravity, jetpack flight, or presentation-only fake platforms.
+The game SHALL use platform behaviors, authored traversal modifiers, staged reveal routes, scanner-triggered temporary bridge routes, timed-reveal secret routes, and activation-node magnetic-platform routes to strengthen each stage's alien-biome identity rather than applying the same terrain gimmick uniformly everywhere. Each main stage MUST include at least one platform-driven traversal section that opens an elevated route, alternate line, or hidden secret connector branch by using existing moving, unstable, lift-style, spring-like, bounce-pod, gas-vent, low-gravity, reveal-platform, scanner-switch temporary-bridge, timed-reveal, activation-node magnetic-platform, or terrain-surface behaviors. Gravity inversion columns and anti-grav streams MAY be used for this purpose only as bounded authored rectangular field routes, and their primary authored rollout MUST stay centered on the Halo Spire Array sky section rather than broadening into uniform multi-stage use. Any reveal-platform route used for this purpose MUST begin hidden and non-solid on a fresh attempt, MUST reveal from a nearby authored reveal volume, and MUST remain readable and traversable once revealed. Any scanner-switch temporary bridge route used for this purpose MUST activate from a nearby authored scanner volume, MUST not require a new interact button, and MUST remain reachable using the current movement and power rules. Any timed-reveal secret route used for this purpose MUST combine those existing reveal and scanner behaviors without broadening into arbitrary trigger combinations or a generalized route-state framework. Any activation-node magnetic-platform route used for this purpose MUST link a nearby authored activation node to a visibly present magnetic platform, MUST provide support only while powered, and MUST preserve a safe main-route fallback or other bounded recovery path when the route is skipped or later reset. These high-air, hidden, timed, launcher-assisted, terrain-shaped, gravity-field, or powered-support routes MUST remain readable and traversable without requiring ceiling walking, upside-down grounded support, arbitrary vector gravity, jetpack flight, attraction or repulsion forces, or presentation-only fake platforms.
 
 #### Scenario: Entering a biome-specific traversal section
 - **WHEN** the player reaches a major stage segment
 - **THEN** the terrain behavior and platform layout reflect that stage's authored environment and pacing focus
 
-#### Scenario: Crossing a hidden traversal connector
-- **WHEN** the player uses an authored traversal mechanic to enter a hidden secret connector branch
-- **THEN** the branch uses existing supported platform behaviors to reach an optional reward space or reconnecting line
-- **AND** the branch rejoins the same stage's main route later without creating a separate completion outcome
+#### Scenario: Crossing the Halo Spire Array gravity-field section
+- **WHEN** the player reaches the primary authored sky route that uses gravity inversion columns or anti-grav streams
+- **THEN** the route reads as a bounded stage-authored traversal variation rather than a global gravity rewrite
 
-#### Scenario: Revealing an optional timed bridge route
-- **WHEN** the player enters the nearby scanner volume for an authored temporary bridge route
-- **THEN** the linked bridge becomes visible and solid as part of a readable timed traversal line
+#### Scenario: Reading an activation-node magnetic route
+- **WHEN** the player reaches an authored route that pairs a nearby activation node with a magnetic platform
+- **THEN** the node and platform read as one bounded powered-support mechanic rather than a generalized puzzle system
+
+#### Scenario: Discovering a timed-reveal secret branch
+- **WHEN** the player reaches an authored hidden route that combines reveal and scanner mechanics
+- **THEN** the route reads as a bounded optional traversal variant rather than a separate generalized trigger puzzle
 
 #### Scenario: Progressing across multiple stages
 - **WHEN** the player compares different stages
 - **THEN** each stage presents distinct traversal behavior and route shape rather than only palette changes
+
+### Requirement: Timed-reveal secret routes stay readable, bounded, and safe
+The game SHALL support authored timed-reveal secret routes that combine an existing reveal cue with a scanner-triggered temporary support path. Reveal MUST remain the discovery cue for the route and MUST NOT start the timed window. Scanner activation MUST remain the timer activator and MUST NOT broaden into arbitrary trigger combinations, chained trigger logic, or a generalized route-state framework. A timed-reveal route MUST place its reveal cue and scanner activator near the route they govern, MUST NOT allow the timer to begin before the route is legible from the authored traversal space, and MUST preserve a safe main-route fallback when the route is skipped or when its timed window expires. If the timed support expires while the player still has top-surface contact with it, that support MUST remain valid until the support contact ends and MUST then become hidden and non-solid immediately.
+
+#### Scenario: Reading the route before activation
+- **WHEN** the player reaches a timed-reveal secret route and triggers its reveal cue
+- **THEN** the route becomes legible before any scanner-triggered timer begins
+
+#### Scenario: Activating the timed window
+- **WHEN** the player enters the linked scanner volume after the route is legible
+- **THEN** the temporary support becomes active and its timer begins immediately
+
+#### Scenario: Letting the secret route expire while occupied
+- **WHEN** the timed window reaches expiry while the player still has top-surface support contact with the route
+- **THEN** the support remains solid until that support contact ends
+- **AND** it becomes hidden and non-solid immediately after the player leaves it
+
+#### Scenario: Skipping the secret route
+- **WHEN** the player ignores the timed-reveal branch or misses its timed window
+- **THEN** the main route remains safely traversable without requiring the secret branch
 
 ### Requirement: Scanner switches control temporary floating bridges
 The game SHALL support authored scanner switches that temporarily enable linked floating bridges. A temporary bridge MUST begin hidden and non-solid on a fresh attempt and MUST become visible and solid on the same update in which the player enters its linked scanner volume. The bridge timer MUST start on that activation update, and a later re-entry into the scanner volume after leaving it MUST refresh the bridge back to its full authored duration. If the timer elapses while the player is standing on the bridge's top surface, the bridge MUST remain valid support until that support contact ends, after which it MUST return to hidden and non-solid immediately. This mechanic MUST use the existing proximity/contact interaction model and MUST NOT require a new interact button or shooter-power-gated projectile activation.
@@ -107,6 +130,21 @@ The game SHALL support authored scanner switches that temporarily enable linked 
 #### Scenario: Expiring while occupied
 - **WHEN** the bridge timer reaches zero while the player still has top-surface support contact with the bridge
 - **THEN** the bridge stays solid until that support contact ends and then immediately becomes hidden and non-solid
+
+### Requirement: Activation nodes power magnetic platforms with bounded support rules
+The game SHALL support authored activation nodes that power linked magnetic platforms as a binary traversal mechanic. Every magnetic platform MUST begin unpowered and non-solid on a fresh attempt, MUST remain visibly present with a readable dormant presentation before activation, and MUST become powered, visibly active, and solid on the same update in which the player triggers its linked activation node. A powered magnetic platform MUST act only as floor-like top-surface support for grounded traversal and jump initiation, and MUST NOT add wall cling, ceiling traversal, attraction or repulsion forces, generalized node graphs, or polarity-specific runtime branching. Activation MUST use one nearby authored activation-node pattern linked explicitly to the platform route and MUST NOT require a new HUD panel, interact button, or projectile-only gating.
+
+#### Scenario: Activating a magnetic platform
+- **WHEN** the player triggers the authored activation node linked to a dormant magnetic platform
+- **THEN** the linked platform becomes visibly powered and solid on that same update
+
+#### Scenario: Reading an unpowered magnetic platform
+- **WHEN** the player reaches a route that includes a dormant magnetic platform before triggering its linked node
+- **THEN** the platform remains visible but clearly reads as non-supporting until activation
+
+#### Scenario: Traversing a powered magnetic platform
+- **WHEN** the player lands on a powered magnetic platform from above
+- **THEN** the platform provides normal floor-like top-surface support and jump initiation without enabling wall or ceiling traversal
 
 ### Requirement: Moving platforms support stable grounded traversal
 The game SHALL allow the player to remain grounded on a moving platform and be carried by its motion without unnatural rejection or forced sliding during normal traversal.
@@ -141,4 +179,23 @@ The game SHALL support authored sticky sludge surfaces that change grounded trav
 #### Scenario: Dashing across sticky sludge
 - **WHEN** the player dashes while entering, crossing, or leaving sticky sludge
 - **THEN** the dash keeps its normal dash motion while active
+
+### Requirement: Authored gravity fields create bounded airborne traversal variants
+The game SHALL support authored gravity inversion columns and anti-grav streams as bounded rectangular field variants for airborne traversal. Both field kinds MUST affect only the player and only airborne vertical acceleration. An anti-grav stream MUST apply continuous upward-biased airborne acceleration while the player remains inside its authored rectangle and MUST NOT become grounded support, a one-shot launcher, or a generalized lift route. A gravity inversion column MUST reverse ongoing airborne vertical acceleration while the player remains inside its authored rectangle and MUST restore normal gravity immediately on exit. Neither field kind MUST change enemy or projectile gravity, grounded walking orientation, or arbitrary horizontal or vector-force physics.
+
+#### Scenario: Entering an anti-grav stream
+- **WHEN** the player becomes airborne inside an authored anti-grav stream rectangle
+- **THEN** the stream applies its continuous upward-biased airborne acceleration only while the player remains inside that rectangle
+
+#### Scenario: Entering a gravity inversion column
+- **WHEN** the player is airborne and enters an authored gravity inversion column rectangle
+- **THEN** the column reverses the player's ongoing airborne vertical acceleration only while the player remains inside that rectangle
+
+#### Scenario: Leaving a gravity field
+- **WHEN** the player exits an authored anti-grav stream or gravity inversion column
+- **THEN** the player's airborne movement immediately returns to the normal gravity rule for the surrounding space
+
+#### Scenario: Comparing a gravity field with a launcher
+- **WHEN** the player uses a bounce pod, gas vent, or spring near a gravity field
+- **THEN** the launcher remains a separate impulse-based traversal element and the gravity field remains a continuous airborne acceleration modifier
 

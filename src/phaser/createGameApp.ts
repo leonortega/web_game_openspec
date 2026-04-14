@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import { SceneBridge } from './adapters/sceneBridge';
 import { BootScene } from './scenes/BootScene';
 import { CompleteScene } from './scenes/CompleteScene';
@@ -22,7 +22,7 @@ export const createGameApp = (mountNode: HTMLElement | null): Phaser.Game => {
   }
 
   const game = new Phaser.Game({
-    type: Phaser.AUTO,
+    type: Phaser.WEBGL,
     parent: shell,
     width: 960,
     height: 540,

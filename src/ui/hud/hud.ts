@@ -25,24 +25,26 @@ export type HudViewModel = {
 
 export const createHud = (mount: HTMLElement): HudBindings => {
   const root = document.createElement('div');
-  root.className = 'hud-layer';
+  root.className = 'hud-layer hud-layer-tight';
   root.innerHTML = `
-    <div class="hud-top hud-bar">
-      <div class="hud-card">
-        <span class="hud-label">Stage</span>
-        <span class="hud-value" data-role="title"></span>
-      </div>
-      <div class="hud-card">
-        <span class="hud-label">${COLLECTIBLE_PRESENTATION.hudLabel}</span>
-        <span class="hud-value" data-role="coins"></span>
-      </div>
-      <div class="hud-card">
-        <span class="hud-label">Health</span>
-        <span class="hud-value" data-role="health"></span>
-      </div>
-      <div class="hud-card">
-        <span class="hud-label">Power</span>
-        <span class="hud-value" data-role="power"></span>
+    <div class="hud-scoreboard hud-scoreboard-tight">
+      <div class="hud-top hud-bar">
+        <div class="hud-card">
+          <span class="hud-label">Stage</span>
+          <span class="hud-value" data-role="title"></span>
+        </div>
+        <div class="hud-card">
+          <span class="hud-label">${COLLECTIBLE_PRESENTATION.hudLabel}</span>
+          <span class="hud-value" data-role="coins"></span>
+        </div>
+        <div class="hud-card">
+          <span class="hud-label">Health</span>
+          <span class="hud-value" data-role="health"></span>
+        </div>
+        <div class="hud-card">
+          <span class="hud-label">Power</span>
+          <span class="hud-value" data-role="power"></span>
+        </div>
       </div>
     </div>
     <div class="hud-meta">
@@ -75,7 +77,7 @@ export const createHud = (mount: HTMLElement): HudBindings => {
 export const updateHud = (hud: HudBindings, model: HudViewModel): void => {
   hud.titleValue.textContent = model.stageName;
   hud.coinsValue.textContent = model.coins;
-  hud.healthValue.textContent = `${'♥'.repeat(model.health) || '0'}`;
+  hud.healthValue.textContent = model.health.toString().padStart(2, '0');
   hud.powerValue.textContent = model.powerLabel;
   hud.runValue.textContent = model.runLabel;
   hud.segmentValue.textContent = model.segmentLabel;

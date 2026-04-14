@@ -1,9 +1,33 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 
 const MUSIC_PATTERNS: Record<string, number[]> = {
   'forest-ruins': [261.63, 329.63, 392, 329.63, 440, 392],
   'amber-cavern': [196, 246.94, 293.66, 246.94, 349.23, 293.66],
   'sky-sanctum': [293.66, 369.99, 440, 493.88, 440, 369.99],
+};
+
+type AudioContextLike = typeof globalThis & {
+  AudioContext?: typeof AudioContext;
+  webkitAudioContext?: typeof AudioContext;
+};
+
+let sharedAudioContext: AudioContext | undefined;
+
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+
+const resolveAudioContext = (): AudioContext | undefined => {
+  if (sharedAudioContext) {
+    return sharedAudioContext;
+  }
+
+  const audioGlobal = globalThis as AudioContextLike;
+  const AudioContextCtor = audioGlobal.AudioContext ?? audioGlobal.webkitAudioContext;
+  if (!AudioContextCtor) {
+    return undefined;
+  }
+
+  sharedAudioContext = new AudioContextCtor();
+  return sharedAudioContext;
 };
 
 export class SynthAudio {
@@ -130,7 +154,7 @@ export class SynthAudio {
       if (!context) {
         return;
       }
-      const masterVolume = Phaser.Math.Clamp(this.getMasterVolume(), 0, 1);
+      const masterVolume = clamp(this.getMasterVolume(), 0, 1);
       if (masterVolume <= 0) {
         return;
       }
@@ -152,6 +176,6 @@ export class SynthAudio {
   }
 
   private getContext(): AudioContext | undefined {
-    return (this.scene.sound as { context?: AudioContext }).context;
+    return resolveAudioContext();
   }
 }

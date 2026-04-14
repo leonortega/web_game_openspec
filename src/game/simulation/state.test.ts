@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   COLLECTIBLE_PRESENTATION,
   CHECKPOINT_PRESENTATION,
+  createInactiveActivationNodeState,
   createInactiveScannerVolumeState,
   createInactiveTemporaryBridgeState,
   formatActivePowerSummary,
@@ -23,10 +24,16 @@ import {
   getPowerLabel,
   getPowerRevealLabel,
   getPowerShortLabel,
+  getStageObjectiveBriefing,
+  getStageObjectiveCompletionMessage,
+  getStageObjectiveExitReminder,
   isBrittleSurfaceBroken,
   isBrittleSurfaceWarning,
   isPlatformActive,
+  isTopSurfaceOnlyPlatform,
+  isPlatformVisible,
   isPlatformRevealed,
+  isTimedRevealBridgeLegible,
   isTerrainSurfaceSupportActive,
   normalizeRevealedPlatformIds,
 } from './state';
@@ -90,6 +97,12 @@ describe('astronaut presentation mappings', () => {
     expect(getCollectibleRewardBlockLabel(2)).toBe('RS2');
   });
 
+  it('formats lightweight objective messages through the transient stage-message copy', () => {
+    expect(getStageObjectiveBriefing('restoreBeacon')).toBe('Objective: restore the survey beacon');
+    expect(getStageObjectiveCompletionMessage('reactivateRelay')).toBe('Relay reactivated');
+    expect(getStageObjectiveExitReminder('powerLiftTower')).toBe('Power the lift tower before exit');
+  });
+
   it('normalizes revealed platform ids for deterministic checkpoint snapshots', () => {
     expect(normalizeRevealedPlatformIds(['bridge-b', 'bridge-a', 'bridge-b'])).toEqual(['bridge-a', 'bridge-b']);
   });
@@ -111,7 +124,38 @@ describe('astronaut presentation mappings', () => {
     ).toBe(true);
   });
 
+  it('keeps magnetic platforms visible while dormant and solid only once they are powered', () => {
+    const magneticPlatform = {
+      id: 'magnetic-a',
+      reveal: undefined,
+      temporaryBridge: undefined,
+      magnetic: { activationNodeId: 'node-a', powered: false },
+    };
+
+    expect(isPlatformVisible(magneticPlatform, [], [])).toBe(true);
+    expect(isPlatformActive(magneticPlatform, [], [])).toBe(false);
+    expect(isTopSurfaceOnlyPlatform(magneticPlatform)).toBe(true);
+    expect(isPlatformActive({ ...magneticPlatform, magnetic: { activationNodeId: 'node-a', powered: true } }, [], [])).toBe(true);
+  });
+
   it('creates inactive scanner and bridge runtime state for fresh attempts and respawns', () => {
+    expect(
+      createInactiveActivationNodeState({
+        id: 'node-a',
+        x: 10,
+        y: 20,
+        width: 28,
+        height: 44,
+      }),
+    ).toEqual({
+      id: 'node-a',
+      x: 10,
+      y: 20,
+      width: 28,
+      height: 44,
+      activated: false,
+    });
+
     expect(
       createInactiveScannerVolumeState({
         id: 'scanner-a',
@@ -132,14 +176,41 @@ describe('astronaut presentation mappings', () => {
       playerInside: false,
     });
 
-    expect(createInactiveTemporaryBridgeState({ id: 'bridge-a', scannerId: 'scanner-a', durationMs: 2400 })).toEqual({
+    expect(
+      createInactiveTemporaryBridgeState({
+        id: 'bridge-a',
+        scannerId: 'scanner-a',
+        revealId: 'reveal-a',
+        durationMs: 2400,
+      }),
+    ).toEqual({
       id: 'bridge-a',
       scannerId: 'scanner-a',
+      revealId: 'reveal-a',
       durationMs: 2400,
       remainingMs: 0,
       active: false,
       pendingHide: false,
     });
+  });
+
+  it('treats timed-reveal bridges as legible only after their reveal state is discovered', () => {
+    expect(isTimedRevealBridgeLegible({ revealId: null }, [])).toBe(true);
+    expect(isTimedRevealBridgeLegible({ revealId: 'route-a' }, [])).toBe(false);
+    expect(isTimedRevealBridgeLegible({ revealId: 'route-a' }, ['route-a'])).toBe(true);
+  });
+
+  it('shows timed-reveal support after reveal but keeps it solid only during the active timed window', () => {
+    const timedRevealPlatform = {
+      id: 'bridge-a',
+      reveal: { id: 'route-a' },
+      temporaryBridge: { scannerId: 'scanner-a', durationMs: 2000 },
+    };
+
+    expect(isPlatformVisible(timedRevealPlatform, [], [])).toBe(false);
+    expect(isPlatformVisible(timedRevealPlatform, ['route-a'], [])).toBe(true);
+    expect(isPlatformActive(timedRevealPlatform, ['route-a'], [])).toBe(false);
+    expect(isPlatformActive(timedRevealPlatform, ['route-a'], ['bridge-a'])).toBe(true);
   });
 
   it('treats brittle terrain support as active until the broken phase and keeps sludge always supporting', () => {

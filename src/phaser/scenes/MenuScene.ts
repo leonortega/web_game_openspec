@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import {
   DIFFICULTY_LABELS,
   ENEMY_PRESSURE_LABELS,
@@ -6,6 +6,11 @@ import {
   getPowerLabel,
 } from '../../game/simulation/state';
 import { SceneBridge } from '../adapters/sceneBridge';
+import {
+  RETRO_FONT_FAMILY,
+  createRetroMenuPalette,
+  drawRetroBackdrop,
+} from '../view/retroPresentation';
 
 type MenuMode = 'main';
 type MenuView = 'root' | 'options' | 'help';
@@ -35,6 +40,16 @@ const HELP_LINES = [
   'Help Controls: When this panel is longer than the visible window, use Up or Down to scroll and use the mouse wheel to read the hidden sections.',
 ];
 
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+
+const wrapIndex = (value: number, length: number): number => {
+  if (length <= 0) {
+    return 0;
+  }
+
+  return ((value % length) + length) % length;
+};
+
 export class MenuScene extends Phaser.Scene {
   private mode: MenuMode = 'main';
 
@@ -56,12 +71,24 @@ export class MenuScene extends Phaser.Scene {
 
   private helpViewportHeight = 0;
 
+  private helpViewportTop = 0;
+
+  private helpParagraphDebug: Array<{
+    text: string;
+    top: number;
+    bottom: number;
+    visible: boolean;
+    cropY: number;
+    cropHeight: number;
+  }> = [];
+
   constructor() {
     super('menu');
   }
 
   create(): void {
     const bridge = this.registry.get('bridge') as SceneBridge;
+    const retro = createRetroMenuPalette();
     this.view = 'root';
     this.rootSelectedIndex = 0;
     this.optionsSelectedIndex = 0;
@@ -74,50 +101,54 @@ export class MenuScene extends Phaser.Scene {
     const rootTexts = new Map<RootOptionId, Phaser.GameObjects.Text>();
     const optionsTexts = new Map<OptionsOptionId, Phaser.GameObjects.Text>();
 
+    drawRetroBackdrop(this, 0, 0, width, height, retro, 'transition');
     this.add
-      .rectangle(width / 2, height / 2, width, height, 0x091310, 1)
-      .setOrigin(0.5);
-    this.add
-      .rectangle(width / 2, height / 2, width - 128, height - 132, 0x11201c, 0.94)
+      .rectangle(width / 2, height / 2, width - 112, height - 110, retro.panel, 0.98)
       .setOrigin(0.5)
-      .setStrokeStyle(2, 0xf5cf64, 0.22);
+      .setStrokeStyle(4, retro.border, 0.92);
+    this.add.rectangle(width / 2, 82, width - 146, 26, retro.stageAccent, 1).setStrokeStyle(2, retro.ink, 1);
+    this.add.rectangle(width / 2, height - 54, width - 146, 26, retro.panelAlt, 1).setStrokeStyle(2, retro.border, 0.58);
 
     const eyebrowText = this.add
       .text(width / 2, 82, 'Orbital Survey', {
-        fontFamily: 'Trebuchet MS',
-        fontSize: '42px',
-        color: '#f7f3d6',
+        fontFamily: RETRO_FONT_FAMILY,
+        fontSize: '30px',
+        color: retro.shadow,
         fontStyle: 'bold',
+        letterSpacing: 3,
       })
       .setOrigin(0.5);
 
     const titleText = this.add
       .text(width / 2, 134, '', {
-        fontFamily: 'Trebuchet MS',
-        fontSize: '32px',
-        color: '#d9e7d6',
+        fontFamily: RETRO_FONT_FAMILY,
+        fontSize: '28px',
+        color: retro.text,
         fontStyle: 'bold',
+        letterSpacing: 2,
       })
       .setOrigin(0.5);
 
     const subtitleText = this.add
       .text(width / 2, 176, '', {
-        fontFamily: 'Trebuchet MS',
-        fontSize: '18px',
-        color: '#b9cab8',
+        fontFamily: RETRO_FONT_FAMILY,
+        fontSize: '16px',
+        color: retro.dimText,
         align: 'center',
         wordWrap: { width: width - 220 },
+        lineSpacing: 6,
       })
       .setOrigin(0.5);
 
     rootOptions.forEach((option, index) => {
       const text = this.add
         .text(width / 2, 258 + index * 58, '', {
-          fontFamily: 'Trebuchet MS',
-          fontSize: '28px',
-          color: '#d3dfd0',
-          backgroundColor: '#13201c',
-          padding: { x: 18, y: 10 },
+          fontFamily: RETRO_FONT_FAMILY,
+          fontSize: '24px',
+          color: retro.text,
+          backgroundColor: '#11161c',
+          padding: { x: 20, y: 8 },
+          letterSpacing: 2,
         })
         .setOrigin(0.5)
         .setInteractive({ useHandCursor: true });
@@ -137,11 +168,12 @@ export class MenuScene extends Phaser.Scene {
     optionEntries.forEach((option, index) => {
       const text = this.add
         .text(width / 2, 238 + index * 58, '', {
-          fontFamily: 'Trebuchet MS',
-          fontSize: '27px',
-          color: '#d3dfd0',
-          backgroundColor: '#13201c',
-          padding: { x: 18, y: 10 },
+          fontFamily: RETRO_FONT_FAMILY,
+          fontSize: '22px',
+          color: retro.text,
+          backgroundColor: '#11161c',
+          padding: { x: 20, y: 8 },
+          letterSpacing: 2,
         })
         .setOrigin(0.5)
         .setInteractive({ useHandCursor: true });
@@ -160,11 +192,12 @@ export class MenuScene extends Phaser.Scene {
 
     const optionsHintText = this.add
       .text(width / 2, 432, '', {
-        fontFamily: 'Trebuchet MS',
-        fontSize: '17px',
-        color: '#b9cab8',
+        fontFamily: RETRO_FONT_FAMILY,
+        fontSize: '15px',
+        color: retro.dimText,
         align: 'center',
         wordWrap: { width: width - 260 },
+        lineSpacing: 6,
       })
       .setOrigin(0.5);
 
@@ -176,62 +209,91 @@ export class MenuScene extends Phaser.Scene {
     const helpViewportHeight = helpPanelHeight - 134;
     this.helpPanelHeight = helpPanelHeight;
     this.helpViewportHeight = helpViewportHeight;
+    this.helpViewportTop = helpViewportTop;
     const helpViewportWidth = helpPanelWidth - 112;
     const helpTrackX = helpPanelWidth / 2 - 28;
     const helpTrackHeight = helpViewportHeight;
     const helpScrollStep = 56;
     const helpBackground = this.add
-      .rectangle(0, 0, helpPanelWidth, helpPanelHeight, 0x0d1715, 0.96)
-      .setStrokeStyle(2, 0xf5cf64, 0.28);
+      .rectangle(0, 0, helpPanelWidth, helpPanelHeight, retro.panel, 0.99)
+      .setStrokeStyle(4, retro.border, 0.92);
     const helpTitle = this.add
       .text(0, -helpPanelHeight / 2 + 38, 'Help', {
-        fontFamily: 'Trebuchet MS',
-        fontSize: '30px',
-        color: '#f7f3d6',
+        fontFamily: RETRO_FONT_FAMILY,
+        fontSize: '26px',
+        color: retro.text,
         fontStyle: 'bold',
+        letterSpacing: 2,
       })
       .setOrigin(0.5);
     const helpViewport = this.add.container(0, 0);
-    const helpBody = this.add
-      .text(-helpPanelWidth / 2 + helpViewportPadding, helpViewportTop, HELP_LINES.join('\n\n'), {
-        fontFamily: 'Trebuchet MS',
-        fontSize: '18px',
-        color: '#d5e1d4',
-        align: 'left',
-        lineSpacing: 8,
-        wordWrap: { width: helpViewportWidth },
-      })
-      .setOrigin(0, 0);
-    helpViewport.add(helpBody);
-    const helpMaskGraphics = this.make.graphics();
-    helpMaskGraphics.setVisible(false);
-    helpMaskGraphics.fillStyle(0xffffff, 1);
-    helpMaskGraphics.fillRect(
-      width / 2 - helpPanelWidth / 2 + helpViewportPadding,
-      316 + helpViewportTop,
-      helpViewportWidth,
-      helpViewportHeight,
+    const helpParagraphs = HELP_LINES.map((line) =>
+      this.add
+        .text(-helpPanelWidth / 2 + helpViewportPadding, 0, line, {
+          fontFamily: RETRO_FONT_FAMILY,
+          fontSize: '16px',
+          color: retro.text,
+          align: 'left',
+          lineSpacing: 6,
+          wordWrap: { width: helpViewportWidth },
+        })
+        .setOrigin(0, 0),
     );
-    helpViewport.setMask(helpMaskGraphics.createGeometryMask());
+    helpViewport.add(helpParagraphs);
     const helpScrollbarTrack = this.add
-      .rectangle(helpTrackX, helpViewportTop + helpTrackHeight / 2, 10, helpTrackHeight, 0x23312c, 0.92)
+      .rectangle(helpTrackX, helpViewportTop + helpTrackHeight / 2, 10, helpTrackHeight, retro.panelAlt, 1)
       .setOrigin(0.5)
       .setVisible(false);
     const helpScrollbarThumb = this.add
-      .rectangle(helpTrackX, helpViewportTop + 36, 14, 72, 0xf5cf64, 0.95)
+      .rectangle(helpTrackX, helpViewportTop + 36, 14, 72, retro.warm, 1)
       .setOrigin(0.5)
       .setVisible(false);
     helpPanel.add([helpBackground, helpTitle, helpViewport, helpScrollbarTrack, helpScrollbarThumb]);
 
+    let helpContentHeight = 0;
+
+    const syncHelpParagraphLayout = (): void => {
+      let cursorY = helpViewportTop - this.helpScrollOffset;
+      const visibleBottom = helpViewportTop + helpViewportHeight;
+      this.helpParagraphDebug = [];
+
+      for (const paragraph of helpParagraphs) {
+        paragraph.setPosition(-helpPanelWidth / 2 + helpViewportPadding, cursorY);
+        const paragraphBottom = cursorY + paragraph.height;
+        const visibleTop = Math.max(cursorY, helpViewportTop);
+        const clippedBottom = Math.min(paragraphBottom, visibleBottom);
+        const cropY = Math.max(0, visibleTop - cursorY);
+        const cropHeight = Math.max(0, clippedBottom - visibleTop);
+        const isVisible = cropHeight > 0;
+
+        paragraph.setVisible(isVisible);
+        if (isVisible) {
+          paragraph.setCrop(0, cropY, helpViewportWidth, cropHeight);
+        } else {
+          paragraph.setCrop();
+        }
+
+        this.helpParagraphDebug.push({
+          text: paragraph.text,
+          top: cursorY,
+          bottom: paragraphBottom,
+          visible: isVisible,
+          cropY,
+          cropHeight,
+        });
+        cursorY += paragraph.height + 24;
+      }
+    };
+
     const setHelpScroll = (nextOffset: number): void => {
-      this.helpScrollOffset = Phaser.Math.Clamp(nextOffset, 0, this.helpScrollMax);
-      helpBody.setY(helpViewportTop - this.helpScrollOffset);
+      this.helpScrollOffset = clamp(nextOffset, 0, this.helpScrollMax);
+      syncHelpParagraphLayout();
 
       if (!this.helpScrollbarVisible) {
         return;
       }
 
-      const visibleRatio = helpViewportHeight / (helpBody.height || helpViewportHeight);
+      const visibleRatio = helpViewportHeight / Math.max(helpContentHeight, helpViewportHeight);
       const thumbHeight = Math.max(52, Math.min(helpTrackHeight, helpTrackHeight * visibleRatio));
       const trackTravel = helpTrackHeight - thumbHeight;
       const scrollRatio = this.helpScrollMax <= 0 ? 0 : this.helpScrollOffset / this.helpScrollMax;
@@ -243,7 +305,14 @@ export class MenuScene extends Phaser.Scene {
     };
 
     const refreshHelpOverflow = (): void => {
-      this.helpScrollMax = Math.max(0, helpBody.height - helpViewportHeight);
+      let cursorY = helpViewportTop;
+      for (const paragraph of helpParagraphs) {
+        paragraph.setPosition(-helpPanelWidth / 2 + helpViewportPadding, cursorY);
+        cursorY += paragraph.height + 24;
+      }
+
+      helpContentHeight = Math.max(0, cursorY - helpViewportTop - 24);
+      this.helpScrollMax = Math.max(0, helpContentHeight - helpViewportHeight);
       this.helpScrollbarVisible = this.helpScrollMax > 0;
       helpScrollbarTrack.setVisible(this.view === 'help' && this.helpScrollbarVisible);
       helpScrollbarThumb.setVisible(this.view === 'help' && this.helpScrollbarVisible);
@@ -261,10 +330,11 @@ export class MenuScene extends Phaser.Scene {
 
     const footerText = this.add
       .text(width / 2, height - 52, '', {
-        fontFamily: 'Trebuchet MS',
-        fontSize: '18px',
-        color: '#b9cab8',
+        fontFamily: RETRO_FONT_FAMILY,
+        fontSize: '14px',
+        color: retro.text,
         align: 'center',
+        letterSpacing: 1,
       })
       .setOrigin(0.5);
 
@@ -288,7 +358,7 @@ export class MenuScene extends Phaser.Scene {
       const state = bridge.getSession().getState();
       if (option === 'difficulty') {
         const currentIndex = difficultyValues.indexOf(state.progress.runSettings.difficulty);
-        const nextIndex = Phaser.Math.Wrap(currentIndex + direction, 0, difficultyValues.length);
+        const nextIndex = wrapIndex(currentIndex + direction, difficultyValues.length);
         bridge.updateRunSettings({ difficulty: difficultyValues[nextIndex] });
         render();
         return;
@@ -296,14 +366,14 @@ export class MenuScene extends Phaser.Scene {
 
       if (option === 'enemies') {
         const currentIndex = enemyValues.indexOf(state.progress.runSettings.enemyPressure);
-        const nextIndex = Phaser.Math.Wrap(currentIndex + direction, 0, enemyValues.length);
+        const nextIndex = wrapIndex(currentIndex + direction, enemyValues.length);
         bridge.updateRunSettings({ enemyPressure: enemyValues[nextIndex] });
         render();
         return;
       }
 
       bridge.updateRunSettings({
-        masterVolume: Phaser.Math.Clamp(state.progress.runSettings.masterVolume + direction * 0.1, 0, 1),
+        masterVolume: clamp(state.progress.runSettings.masterVolume + direction * 0.1, 0, 1),
       });
       render();
     };
@@ -363,8 +433,8 @@ export class MenuScene extends Phaser.Scene {
         const selected = this.view === 'root' && index === this.rootSelectedIndex;
         text.setVisible(this.view === 'root');
         text.setText(rootLabels[option]);
-        text.setColor(selected ? '#11150f' : '#d3dfd0');
-        text.setBackgroundColor(selected ? '#f5cf64' : '#13201c');
+        text.setColor(selected ? '#080a0d' : retro.text);
+        text.setBackgroundColor(selected ? '#f0b84b' : '#11161c');
         if (this.view === 'root') {
           this.visibleTexts.push(text);
         }
@@ -379,8 +449,8 @@ export class MenuScene extends Phaser.Scene {
         const selected = this.view === 'options' && index === this.optionsSelectedIndex;
         text.setVisible(this.view === 'options');
         text.setText(optionLabels[option]);
-        text.setColor(selected ? '#11150f' : '#d3dfd0');
-        text.setBackgroundColor(selected ? '#f5cf64' : '#13201c');
+        text.setColor(selected ? '#080a0d' : retro.text);
+        text.setBackgroundColor(selected ? '#f0b84b' : '#11161c');
         if (this.view === 'options') {
           this.visibleTexts.push(text);
         }
@@ -398,7 +468,7 @@ export class MenuScene extends Phaser.Scene {
       helpScrollbarTrack.setVisible(this.view === 'help' && this.helpScrollbarVisible);
       helpScrollbarThumb.setVisible(this.view === 'help' && this.helpScrollbarVisible);
       if (this.view === 'help') {
-        this.visibleTexts.push(helpTitle, helpBody);
+        this.visibleTexts.push(helpTitle, ...helpParagraphs.filter((paragraph) => paragraph.visible));
       }
 
       footerText.setText(
@@ -425,9 +495,9 @@ export class MenuScene extends Phaser.Scene {
       }
 
       if (this.view === 'root') {
-        this.rootSelectedIndex = Phaser.Math.Wrap(this.rootSelectedIndex - 1, 0, rootOptions.length);
+        this.rootSelectedIndex = wrapIndex(this.rootSelectedIndex - 1, rootOptions.length);
       } else {
-        this.optionsSelectedIndex = Phaser.Math.Wrap(this.optionsSelectedIndex - 1, 0, optionEntries.length);
+        this.optionsSelectedIndex = wrapIndex(this.optionsSelectedIndex - 1, optionEntries.length);
       }
       render();
     });
@@ -439,9 +509,9 @@ export class MenuScene extends Phaser.Scene {
       }
 
       if (this.view === 'root') {
-        this.rootSelectedIndex = Phaser.Math.Wrap(this.rootSelectedIndex + 1, 0, rootOptions.length);
+        this.rootSelectedIndex = wrapIndex(this.rootSelectedIndex + 1, rootOptions.length);
       } else {
-        this.optionsSelectedIndex = Phaser.Math.Wrap(this.optionsSelectedIndex + 1, 0, optionEntries.length);
+        this.optionsSelectedIndex = wrapIndex(this.optionsSelectedIndex + 1, optionEntries.length);
       }
       render();
     });
@@ -511,7 +581,6 @@ export class MenuScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       cleanup.forEach((dispose) => dispose());
       this.visibleTexts = [];
-      helpMaskGraphics.destroy();
     });
 
     refreshHelpOverflow();
@@ -526,9 +595,21 @@ export class MenuScene extends Phaser.Scene {
     joined: string;
     helpPanelHeight: number;
     helpViewportHeight: number;
+    helpViewportTop: number;
+    helpViewportBottom: number;
     helpScrollOffset: number;
     helpScrollMax: number;
     helpScrollbarVisible: boolean;
+    helpParagraphs: Array<{
+      text: string;
+      top: number;
+      bottom: number;
+      visible: boolean;
+      cropY: number;
+      cropHeight: number;
+      visibleTop: number;
+      visibleBottom: number;
+    }>;
   } {
     const bridge = this.registry.get('bridge') as SceneBridge;
     const settings = bridge.getSession().getState().progress.runSettings;
@@ -559,11 +640,18 @@ export class MenuScene extends Phaser.Scene {
             : null,
       helpPanelHeight: this.helpPanelHeight,
       helpViewportHeight: this.helpViewportHeight,
+      helpViewportTop: this.helpViewportTop,
+      helpViewportBottom: this.helpViewportTop + this.helpViewportHeight,
       texts,
       joined: texts.join('\n'),
       helpScrollOffset: this.helpScrollOffset,
       helpScrollMax: this.helpScrollMax,
       helpScrollbarVisible: this.helpScrollbarVisible,
+      helpParagraphs: this.helpParagraphDebug.map((paragraph) => ({
+        ...paragraph,
+        visibleTop: paragraph.top + paragraph.cropY,
+        visibleBottom: paragraph.top + paragraph.cropY + paragraph.cropHeight,
+      })),
     };
   }
 }

@@ -12,9 +12,13 @@ export type Rect = {
 
 export type HazardKind = 'spikes';
 export type EnemyKind = 'walker' | 'hopper' | 'turret' | 'charger' | 'flyer';
+export type TurretVariantId = 'resinBurst' | 'ionPulse';
 export type PlatformKind = 'static' | 'moving' | 'falling' | 'spring';
 export type LauncherKind = 'bouncePod' | 'gasVent';
 export type TerrainSurfaceKind = 'brittleCrystal' | 'stickySludge';
+export type GravityFieldKind = 'anti-grav-stream' | 'gravity-inversion-column';
+export type StageObjectiveKind = 'restoreBeacon' | 'reactivateRelay' | 'powerLiftTower';
+export type StageObjectiveTargetKind = 'checkpoint' | 'revealVolume' | 'scannerVolume' | 'launcher';
 export type BrittleSurfacePhase = 'intact' | 'warning' | 'expired' | 'broken';
 export type PowerType = 'doubleJump' | 'shooter' | 'invincible' | 'dash';
 export type DifficultySetting = 'casual' | 'standard' | 'expert';
@@ -63,6 +67,11 @@ export type LowGravityZoneState = Rect & {
   gravityScale: number;
 };
 
+export type GravityFieldState = Rect & {
+  id: string;
+  kind: GravityFieldKind;
+};
+
 export type RevealVolumeState = Rect & {
   id: string;
   revealPlatformIds: string[];
@@ -75,9 +84,15 @@ export type ScannerVolumeState = Rect & {
   playerInside: boolean;
 };
 
+export type ActivationNodeState = Rect & {
+  id: string;
+  activated: boolean;
+};
+
 export type TemporaryBridgeState = {
   id: string;
   scannerId: string;
+  revealId: string | null;
   durationMs: number;
   remainingMs: number;
   active: boolean;
@@ -120,6 +135,7 @@ export type PlatformState = {
   spring?: { boost: number; cooldownMs: number; timerMs: number };
   reveal?: PlatformRevealState;
   temporaryBridge?: { scannerId: string; durationMs: number };
+  magnetic?: { activationNodeId: string; powered: boolean };
 };
 
 export type CheckpointState = {
@@ -151,6 +167,15 @@ export type RewardRevealState = {
   durationMs: number;
 };
 
+export type StageObjectiveState = {
+  kind: StageObjectiveKind;
+  target: {
+    kind: StageObjectiveTargetKind;
+    id: string;
+  };
+  completed: boolean;
+};
+
 export type HazardState = {
   id: string;
   kind: HazardKind;
@@ -160,6 +185,7 @@ export type HazardState = {
 export type EnemyState = {
   id: string;
   kind: EnemyKind;
+  variant?: TurretVariantId;
   x: number;
   y: number;
   vx: number;
@@ -182,7 +208,15 @@ export type EnemyState = {
     targetX: number | null;
     targetY: number | null;
   };
-  turret?: { intervalMs: number; timerMs: number };
+  turret?: {
+    intervalMs: number;
+    timerMs: number;
+    telegraphMs: number;
+    telegraphDurationMs: number;
+    burstGapMs: number;
+    burstGapDurationMs: number;
+    pendingShots: number;
+  };
   charger?: {
     left: number;
     right: number;
@@ -207,6 +241,7 @@ export type EnemyState = {
 export type ProjectileState = {
   id: string;
   owner: 'enemy' | 'player';
+  variant?: TurretVariantId;
   x: number;
   y: number;
   vx: number;
@@ -239,6 +274,8 @@ export type PlayerState = {
   coyoteTerrainSurfaceKind: TerrainSurfaceKind | null;
   launcherContactId: string | null;
   lowGravityZoneId: string | null;
+  gravityFieldId: string | null;
+  gravityFieldKind: GravityFieldKind | null;
   gravityScale: number;
   dead: boolean;
 };
@@ -248,8 +285,10 @@ export type StageRuntime = {
   terrainSurfaces: TerrainSurfaceState[];
   launchers: LauncherState[];
   lowGravityZones: LowGravityZoneState[];
+  gravityFields: GravityFieldState[];
   revealVolumes: RevealVolumeState[];
   scannerVolumes: ScannerVolumeState[];
+  activationNodes: ActivationNodeState[];
   temporaryBridges: TemporaryBridgeState[];
   revealedPlatformIds: string[];
   checkpoints: CheckpointState[];
@@ -263,6 +302,7 @@ export type StageRuntime = {
   totalCoins: number;
   allCoinsRecovered: boolean;
   exitReached: boolean;
+  objective: StageObjectiveState | null;
 };
 
 export type SessionProgress = {
@@ -312,33 +352,33 @@ export const POWER_LABELS: Record<PowerType, string> = Object.fromEntries(
 
 export const PLAYER_POWER_VARIANTS: Record<'base' | PowerType, PlayerPowerVariant> = {
   base: {
-    bodyColor: 0xe7edf5,
-    detailColor: 0x284257,
-    accentColor: 0x9ed6ff,
+    bodyColor: 0xf7f3d6,
+    detailColor: 0x11141b,
+    accentColor: 0x8fdff2,
     auraColor: null,
   },
   doubleJump: {
-    bodyColor: 0xe3f8f2,
-    detailColor: 0x2a7b68,
-    accentColor: 0x7ff0cb,
+    bodyColor: 0xdfe8bf,
+    detailColor: 0x31451d,
+    accentColor: 0xf5cf64,
     auraColor: null,
   },
   shooter: {
-    bodyColor: 0xf8d8bf,
-    detailColor: 0x7d3d14,
-    accentColor: 0xff8f45,
+    bodyColor: 0xf0c6a1,
+    detailColor: 0x4d2312,
+    accentColor: 0xe97652,
     auraColor: null,
   },
   invincible: {
-    bodyColor: 0xd8fbff,
-    detailColor: 0x17657d,
-    accentColor: 0xffffff,
-    auraColor: 0x8ae9ff,
+    bodyColor: 0x9fdae8,
+    detailColor: 0x173848,
+    accentColor: 0xe9fff7,
+    auraColor: 0x8fdff2,
   },
   dash: {
-    bodyColor: 0xeaf1f8,
-    detailColor: 0x365f9f,
-    accentColor: 0x7eb7ff,
+    bodyColor: 0xc6d2bf,
+    detailColor: 0x263140,
+    accentColor: 0xf5cf64,
     auraColor: null,
   },
 };
@@ -355,7 +395,43 @@ export const ENEMY_PRESSURE_LABELS: Record<EnemyPressureSetting, string> = {
   high: 'High',
 };
 
+export const TURRET_VARIANT_CONFIG: Record<
+  TurretVariantId,
+  {
+    supportedStageId: 'amber-cavern' | 'sky-sanctum';
+    telegraphMs: number;
+    burstShots: number;
+    burstGapMs: number;
+    projectileSpeed: number;
+    baseColor: number;
+    telegraphColor: number;
+    projectileColor: number;
+  }
+> = {
+  resinBurst: {
+    supportedStageId: 'amber-cavern',
+    telegraphMs: 900,
+    burstShots: 2,
+    burstGapMs: 180,
+    projectileSpeed: 260,
+    baseColor: 0xf2b060,
+    telegraphColor: 0xffd978,
+    projectileColor: 0xffb34e,
+  },
+  ionPulse: {
+    supportedStageId: 'sky-sanctum',
+    telegraphMs: 980,
+    burstShots: 1,
+    burstGapMs: 0,
+    projectileSpeed: 360,
+    baseColor: 0x97ddff,
+    telegraphColor: 0xb8f6ff,
+    projectileColor: 0x7cefff,
+  },
+};
+
 export const LAUNCHER_KINDS: LauncherKind[] = ['bouncePod', 'gasVent'];
+export const GRAVITY_FIELD_KINDS: GravityFieldKind[] = ['anti-grav-stream', 'gravity-inversion-column'];
 export const TERRAIN_SURFACE_KINDS: TerrainSurfaceKind[] = ['brittleCrystal', 'stickySludge'];
 export const BRITTLE_WARNING_MS = 420;
 export const SLUDGE_GROUND_ACCEL_MULTIPLIER = 0.48;
@@ -374,6 +450,27 @@ export const CHECKPOINT_PRESENTATION = {
   singular: 'survey beacon',
   plural: 'survey beacons',
 } as const;
+
+const STAGE_OBJECTIVE_PRESENTATION: Record<
+  StageObjectiveKind,
+  { briefing: string; completion: string; reminder: string }
+> = {
+  restoreBeacon: {
+    briefing: 'Objective: restore the survey beacon',
+    completion: 'Survey beacon restored',
+    reminder: 'Restore the survey beacon before exit',
+  },
+  reactivateRelay: {
+    briefing: 'Objective: reactivate the relay',
+    completion: 'Relay reactivated',
+    reminder: 'Reactivate the relay before exit',
+  },
+  powerLiftTower: {
+    briefing: 'Objective: power the lift tower',
+    completion: 'Lift tower powered',
+    reminder: 'Power the lift tower before exit',
+  },
+};
 
 const capitalize = (value: string): string => `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 
@@ -458,6 +555,15 @@ export const getCollectibleRewardRevealLabel = (): string => COLLECTIBLE_PRESENT
 export const getCollectibleRewardBlockLabel = (remainingHits: number): string =>
   remainingHits > 0 ? `${COLLECTIBLE_PRESENTATION.rewardBlockPrefix}${remainingHits}` : '--';
 
+export const getStageObjectiveBriefing = (kind: StageObjectiveKind): string =>
+  STAGE_OBJECTIVE_PRESENTATION[kind].briefing;
+
+export const getStageObjectiveCompletionMessage = (kind: StageObjectiveKind): string =>
+  STAGE_OBJECTIVE_PRESENTATION[kind].completion;
+
+export const getStageObjectiveExitReminder = (kind: StageObjectiveKind): string =>
+  STAGE_OBJECTIVE_PRESENTATION[kind].reminder;
+
 export const normalizeRevealedPlatformIds = (ids: Iterable<string>): string[] => [...new Set(ids)].sort();
 
 export const normalizeTemporaryBridgeIds = (ids: Iterable<string>): string[] => [...new Set(ids)].sort();
@@ -468,12 +574,31 @@ export const isPlatformRevealed = (
 ): boolean => !platform.reveal || revealedPlatformIds.includes(platform.reveal.id);
 
 export const isPlatformActive = (
-  platform: Pick<PlatformState, 'reveal' | 'temporaryBridge' | 'id'>,
+  platform: Pick<PlatformState, 'reveal' | 'temporaryBridge' | 'magnetic' | 'id'>,
   revealedPlatformIds: readonly string[],
   activeTemporaryBridgeIds: readonly string[] = [],
 ): boolean =>
   isPlatformRevealed(platform, revealedPlatformIds) &&
-  (!platform.temporaryBridge || activeTemporaryBridgeIds.includes(platform.id));
+  (!platform.temporaryBridge || activeTemporaryBridgeIds.includes(platform.id)) &&
+  (!platform.magnetic || platform.magnetic.powered);
+
+export const isPlatformVisible = (
+  platform: Pick<PlatformState, 'reveal' | 'temporaryBridge' | 'magnetic' | 'id'>,
+  revealedPlatformIds: readonly string[],
+  activeTemporaryBridgeIds: readonly string[] = [],
+): boolean =>
+  isPlatformActive(platform, revealedPlatformIds, activeTemporaryBridgeIds) ||
+  Boolean(platform.magnetic) ||
+  Boolean(platform.reveal && platform.temporaryBridge && isPlatformRevealed(platform, revealedPlatformIds));
+
+export const isTopSurfaceOnlyPlatform = (
+  platform: Pick<PlatformState, 'magnetic'>,
+): boolean => Boolean(platform.magnetic);
+
+export const isTimedRevealBridgeLegible = (
+  bridge: Pick<TemporaryBridgeState, 'revealId'>,
+  revealedPlatformIds: readonly string[],
+): boolean => bridge.revealId === null || revealedPlatformIds.includes(bridge.revealId);
 
 export const createInactiveScannerVolumeState = (
   volume: Pick<ScannerVolumeState, 'id' | 'x' | 'y' | 'width' | 'height' | 'temporaryBridgeIds'>,
@@ -484,8 +609,15 @@ export const createInactiveScannerVolumeState = (
   playerInside: false,
 });
 
+export const createInactiveActivationNodeState = (
+  node: Pick<ActivationNodeState, 'id' | 'x' | 'y' | 'width' | 'height'>,
+): ActivationNodeState => ({
+  ...node,
+  activated: false,
+});
+
 export const createInactiveTemporaryBridgeState = (
-  bridge: Pick<TemporaryBridgeState, 'id' | 'scannerId' | 'durationMs'>,
+  bridge: Pick<TemporaryBridgeState, 'id' | 'scannerId' | 'durationMs' | 'revealId'>,
 ): TemporaryBridgeState => ({
   ...bridge,
   remainingMs: 0,

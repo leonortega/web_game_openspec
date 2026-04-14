@@ -1,14 +1,22 @@
 import type {
   EnemyKind,
+  GravityFieldKind,
   HazardKind,
   LauncherKind,
   PlatformKind,
   Rect,
   RewardDefinition,
+  StageObjectiveKind,
+  StageObjectiveTargetKind,
   TerrainSurfaceKind,
+  TurretVariantId,
   Vector2,
 } from '../simulation/state';
-import { LAUNCHER_KINDS } from '../simulation/state';
+import { GRAVITY_FIELD_KINDS, LAUNCHER_KINDS, TURRET_VARIANT_CONFIG } from '../simulation/state';
+
+export type ActivationNodeDefinition = Rect & {
+  id: string;
+};
 
 export type PlatformDefinition = Rect & {
   id: string;
@@ -18,11 +26,17 @@ export type PlatformDefinition = Rect & {
   spring?: { boost: number; cooldownMs: number };
   reveal?: { id: string };
   temporaryBridge?: { scannerId: string; durationMs: number };
+  magnetic?: { activationNodeId: string };
 };
 
 export type LowGravityZoneDefinition = Rect & {
   id: string;
   gravityScale: number;
+};
+
+export type GravityFieldDefinition = Rect & {
+  id: string;
+  kind: GravityFieldKind;
 };
 
 export type RevealVolumeDefinition = Rect & {
@@ -49,6 +63,7 @@ export type LauncherDefinition = Rect & {
 export type EnemyDefinition = {
   id: string;
   kind: EnemyKind;
+  variant?: TurretVariantId;
   position: Vector2;
   patrol?: { left: number; right: number; speed: number };
   hop?: { intervalMs: number; impulse: number; speed: number };
@@ -84,13 +99,29 @@ export type SecretRouteDefinition = {
   id: string;
   title: string;
   areaKind: 'abandonedMicroArea' | 'sampleCave';
-  mechanics: ('optionalDetour' | 'revealPlatform' | 'scannerBridge' | 'lowGravity' | 'launcher' | 'terrainSurface')[];
+  mechanics: (
+    | 'optionalDetour'
+    | 'revealPlatform'
+    | 'scannerBridge'
+    | 'timedReveal'
+    | 'lowGravity'
+    | 'launcher'
+    | 'terrainSurface'
+  )[];
   cue: SecretRouteCueDefinition;
   entry: Rect;
   interior: Rect;
   reconnect: Rect;
   mainPath: Rect;
   reward: SecretRouteRewardDefinition;
+};
+
+export type StageObjectiveDefinition = {
+  kind: StageObjectiveKind;
+  target: {
+    kind: StageObjectiveTargetKind;
+    id: string;
+  };
 };
 
 export type StageDefinition = {
@@ -128,8 +159,10 @@ export type StageDefinition = {
   terrainSurfaces: TerrainSurfaceDefinition[];
   launchers: LauncherDefinition[];
   lowGravityZones: LowGravityZoneDefinition[];
+  gravityFields: GravityFieldDefinition[];
   revealVolumes: RevealVolumeDefinition[];
   scannerVolumes: ScannerVolumeDefinition[];
+  activationNodes: ActivationNodeDefinition[];
   checkpoints: { id: string; rect: Rect }[];
   collectibles: { id: string; position: Vector2 }[];
   rewardBlocks: RewardBlockDefinition[];
@@ -138,6 +171,7 @@ export type StageDefinition = {
   enemies: EnemyDefinition[];
   exit: Rect;
   hint: string;
+  stageObjective?: StageObjectiveDefinition;
 };
 
 const ground = (x: number, y: number, width: number, height = 32): PlatformDefinition => ({
@@ -212,6 +246,7 @@ const temporaryBridgePlatform = (
   width: number,
   height = 24,
   durationMs = 2200,
+  revealId?: string,
 ): PlatformDefinition => ({
   id,
   kind: 'static',
@@ -219,23 +254,24 @@ const temporaryBridgePlatform = (
   y,
   width,
   height,
+  reveal: revealId ? { id: revealId } : undefined,
   temporaryBridge: { scannerId, durationMs },
 });
 
-const lowGravityZone = (
+const gravityField = (
   id: string,
+  kind: GravityFieldKind,
   x: number,
   y: number,
   width: number,
   height: number,
-  gravityScale: number,
-): LowGravityZoneDefinition => ({
+): GravityFieldDefinition => ({
   id,
+  kind,
   x,
   y,
   width,
   height,
-  gravityScale,
 });
 
 const revealVolume = (
@@ -268,6 +304,37 @@ const scannerVolume = (
   width,
   height,
   temporaryBridgeIds,
+});
+
+const activationNode = (
+  id: string,
+  x: number,
+  y: number,
+  width = 28,
+  height = 48,
+): ActivationNodeDefinition => ({
+  id,
+  x,
+  y,
+  width,
+  height,
+});
+
+const magneticPlatform = (
+  id: string,
+  activationNodeId: string,
+  x: number,
+  y: number,
+  width: number,
+  height = 20,
+): PlatformDefinition => ({
+  id,
+  kind: 'static',
+  x,
+  y,
+  width,
+  height,
+  magnetic: { activationNodeId },
 });
 
 const terrainSurface = (
@@ -354,8 +421,10 @@ type StageExtension = {
   terrainSurfaces?: TerrainSurfaceDefinition[];
   launchers?: LauncherDefinition[];
   lowGravityZones?: LowGravityZoneDefinition[];
+  gravityFields?: GravityFieldDefinition[];
   revealVolumes?: RevealVolumeDefinition[];
   scannerVolumes?: ScannerVolumeDefinition[];
+  activationNodes?: ActivationNodeDefinition[];
   checkpoints: StageDefinition['checkpoints'];
   collectibles: StageDefinition['collectibles'];
   rewardBlocks: RewardBlockDefinition[];
@@ -364,6 +433,7 @@ type StageExtension = {
   enemies: EnemyDefinition[];
   exit: Rect;
   hint: string;
+  stageObjective?: StageObjectiveDefinition;
 };
 
 const blockCenterX = (block: RewardBlockDefinition): number => block.x + block.width / 2;
@@ -464,6 +534,39 @@ const secretRouteRewardScore = (stage: StageDefinition, reward: SecretRouteRewar
   return collectibleScore + blockScore;
 };
 
+const routeUsesTimedRevealMechanic = (stage: StageDefinition, route: SecretRouteDefinition): boolean => {
+  const routeBounds = expandRect(route.interior, 160);
+  const revealVolumeIds = route.cue.revealVolumeIds ?? [];
+  const revealPlatformIds = route.cue.revealPlatformIds ?? [];
+  const scannerVolumeIds = route.cue.scannerVolumeIds ?? [];
+  const temporaryBridgeIds = route.cue.temporaryBridgeIds ?? [];
+
+  if (
+    revealVolumeIds.length === 0 ||
+    revealPlatformIds.length === 0 ||
+    scannerVolumeIds.length === 0 ||
+    temporaryBridgeIds.length === 0
+  ) {
+    return false;
+  }
+
+  return (
+    revealVolumeIds.every((volumeId) =>
+      stage.revealVolumes.some((volume) => volume.id === volumeId && intersectsRect(routeBounds, volume)),
+    ) &&
+    scannerVolumeIds.every((volumeId) =>
+      stage.scannerVolumes.some((volume) => volume.id === volumeId && intersectsRect(routeBounds, volume)),
+    ) &&
+    temporaryBridgeIds.every((platformId) => {
+      const platform = stage.platforms.find(
+        (entry) => entry.id === platformId && Boolean(entry.temporaryBridge) && Boolean(entry.reveal) && intersectsRect(routeBounds, entry),
+      );
+
+      return Boolean(platform?.reveal && revealPlatformIds.includes(platform.reveal.id));
+    })
+  );
+};
+
 const routeUsesReadableMechanic = (stage: StageDefinition, route: SecretRouteDefinition): boolean => {
   const routeBounds = expandRect(route.interior, 160);
   return route.mechanics.some((mechanic) => {
@@ -496,6 +599,8 @@ const routeUsesReadableMechanic = (stage: StageDefinition, route: SecretRouteDef
             ),
           ) ?? false)
         );
+      case 'timedReveal':
+        return routeUsesTimedRevealMechanic(stage, route);
       case 'lowGravity':
         return (
           route.cue.lowGravityZoneIds?.every((zoneId) =>
@@ -521,6 +626,12 @@ const routeUsesReadableMechanic = (stage: StageDefinition, route: SecretRouteDef
 };
 
 const LAUNCHER_MAX_DIRECTION_RADIANS = (25 * Math.PI) / 180;
+const HALO_SPIRE_ARRAY_STAGE_ID = 'sky-sanctum';
+const GRAVITY_FIELD_CHECKPOINT_CLEARANCE = 56;
+const MAGNETIC_PLATFORM_STAGE_ID = 'forest-ruins';
+const MAGNETIC_NODE_MAX_HORIZONTAL_DISTANCE = 240;
+const MAGNETIC_NODE_MAX_VERTICAL_DISTANCE = 180;
+const MAGNETIC_ROUTE_FALLBACK_MAX_DROP = 240;
 
 const hasValidLauncherDirection = (direction?: Vector2): boolean => {
   if (!direction) {
@@ -656,7 +767,8 @@ const validateRewardBlocks = (stage: StageDefinition): StageDefinition => {
 
 const authoredStaticElements = (
   stage: StageDefinition,
-): { id: string; rect: Rect; category: 'checkpoint' | 'collectible' | 'rewardBlock' | 'exit' }[] => [
+): { id: string; rect: Rect; category: 'activationNode' | 'checkpoint' | 'collectible' | 'rewardBlock' | 'exit' }[] => [
+  ...stage.activationNodes.map((node) => ({ id: node.id, rect: node, category: 'activationNode' as const })),
   ...stage.checkpoints.map((checkpoint) => ({ id: checkpoint.id, rect: checkpoint.rect, category: 'checkpoint' as const })),
   ...stage.collectibles.map((collectible) => ({
     id: collectible.id,
@@ -733,6 +845,33 @@ const validateSecretRoutes = (stage: StageDefinition): StageDefinition => {
       throw new Error(`Secret route must use nearby authored traversal cues from supported mechanics: ${route.id}`);
     }
 
+    if (route.mechanics.includes('timedReveal')) {
+      const unsupportedTimedRevealMechanics = route.mechanics.filter(
+        (mechanic) => mechanic !== 'timedReveal' && mechanic !== 'optionalDetour',
+      );
+      if (unsupportedTimedRevealMechanics.length > 0) {
+        throw new Error(`Timed-reveal secret routes must stay bounded to reveal plus scanner composition: ${route.id}`);
+      }
+
+      const linkedRevealVolumes = stage.revealVolumes.filter((volume) => route.cue.revealVolumeIds?.includes(volume.id));
+      const linkedScannerVolumes = stage.scannerVolumes.filter((volume) => route.cue.scannerVolumeIds?.includes(volume.id));
+      const overlappingCueScanner = linkedScannerVolumes.some((volume) => intersectsRect(expandRect(route.cue.rect, 8), volume));
+      const overlappingTriggerVolumes = linkedRevealVolumes.some((revealVolume) =>
+        linkedScannerVolumes.some((scannerVolume) => intersectsRect(revealVolume, scannerVolume)),
+      );
+      const fallbackDependsOnTimedSupport = stage.platforms.some(
+        (platform) => Boolean(platform.temporaryBridge) && intersectsRect(route.mainPath, platform),
+      );
+
+      if (overlappingCueScanner || overlappingTriggerVolumes) {
+        throw new Error(`Timed-reveal secret routes must make the route legible before scanner timing begins: ${route.id}`);
+      }
+
+      if (fallbackDependsOnTimedSupport) {
+        throw new Error(`Timed-reveal secret routes must preserve a safe main-route fallback outside timed support: ${route.id}`);
+      }
+    }
+
     const missingCollectibles = route.reward.collectibleIds.filter(
       (collectibleId) => !stage.collectibles.some((collectible) => collectible.id === collectibleId),
     );
@@ -784,6 +923,12 @@ const validateStageCatalogSecretRoutes = (stages: StageDefinition[]): StageDefin
 };
 
 const validateTraversalMechanics = (stage: StageDefinition): StageDefinition => {
+  const activationNodeIds = stage.activationNodes.map((node) => node.id);
+  const uniqueActivationNodeIds = new Set(activationNodeIds);
+  const magneticPlatforms = stage.platforms.filter(
+    (platform): platform is PlatformDefinition & { magnetic: NonNullable<PlatformDefinition['magnetic']> } =>
+      Boolean(platform.magnetic),
+  );
   const revealIds = stage.platforms.flatMap((platform) => (platform.reveal ? [platform.reveal.id] : []));
   const uniqueRevealIds = new Set(revealIds);
   const temporaryBridgeIds = stage.platforms.flatMap((platform) => (platform.temporaryBridge ? [platform.id] : []));
@@ -794,6 +939,29 @@ const validateTraversalMechanics = (stage: StageDefinition): StageDefinition => 
   const uniqueTerrainSurfaceIds = new Set(terrainSurfaceIds);
   const launcherIds = stage.launchers.map((launcherEntry) => launcherEntry.id);
   const uniqueLauncherIds = new Set(launcherIds);
+  const checkpointIds = new Set(stage.checkpoints.map((checkpoint) => checkpoint.id));
+  const revealVolumeIds = new Set(stage.revealVolumes.map((volume) => volume.id));
+
+  if (uniqueActivationNodeIds.size !== activationNodeIds.length) {
+    throw new Error('Activation node ids must be unique.');
+  }
+
+  const invalidActivationNodes = stage.activationNodes.filter((node) => !isRectWithinWorld(stage, node));
+  if (invalidActivationNodes.length > 0) {
+    throw new Error(
+      `Activation nodes must use positive bounded rectangles: ${invalidActivationNodes.map((node) => node.id).join(', ')}`,
+    );
+  }
+
+  if ((stage.activationNodes.length > 0 || magneticPlatforms.length > 0) && stage.id !== MAGNETIC_PLATFORM_STAGE_ID) {
+    throw new Error(`Activation-node magnetic-platform rollout is limited to ${MAGNETIC_PLATFORM_STAGE_ID}.`);
+  }
+
+  if (stage.id === MAGNETIC_PLATFORM_STAGE_ID && (stage.activationNodes.length > 0 || magneticPlatforms.length > 0)) {
+    if (stage.activationNodes.length !== 1 || magneticPlatforms.length !== 1) {
+      throw new Error('Activation-node magnetic-platform rollout must author exactly one node and one linked platform.');
+    }
+  }
 
   const findSupportingPlatformForSurface = (surface: TerrainSurfaceDefinition): PlatformDefinition | null =>
     stage.platforms.find(
@@ -829,6 +997,75 @@ const validateTraversalMechanics = (stage: StageDefinition): StageDefinition => 
     throw new Error('Temporary bridge platform ids must be unique.');
   }
 
+  const invalidMagneticPlatforms = magneticPlatforms.filter(
+    (platform) => platform.kind !== 'static' || Boolean(platform.reveal) || Boolean(platform.temporaryBridge),
+  );
+  if (invalidMagneticPlatforms.length > 0) {
+    throw new Error(
+      `Magnetic platforms must be static authored support without reveal or temporary-bridge composition: ${invalidMagneticPlatforms
+        .map((platform) => platform.id)
+        .join(', ')}`,
+    );
+  }
+
+  const missingActivationNodeReferences = magneticPlatforms.flatMap((platform) =>
+    uniqueActivationNodeIds.has(platform.magnetic.activationNodeId)
+      ? []
+      : [`${platform.id}->${platform.magnetic.activationNodeId}`],
+  );
+  if (missingActivationNodeReferences.length > 0) {
+    throw new Error(`Magnetic platforms reference unknown activation nodes: ${missingActivationNodeReferences.join(', ')}`);
+  }
+
+  const unusedActivationNodes = stage.activationNodes
+    .filter((node) => !magneticPlatforms.some((platform) => platform.magnetic.activationNodeId === node.id))
+    .map((node) => node.id);
+  if (unusedActivationNodes.length > 0) {
+    throw new Error(`Activation nodes must link at least one magnetic platform: ${unusedActivationNodes.join(', ')}`);
+  }
+
+  const unsupportedActivationNodeSupport = stage.activationNodes.filter((node) => !findTraversableSupport(stage, node));
+  if (unsupportedActivationNodeSupport.length > 0) {
+    throw new Error(
+      `Activation nodes must sit over traversable authored support: ${unsupportedActivationNodeSupport.map((node) => node.id).join(', ')}`,
+    );
+  }
+
+  const distantMagneticLinks = magneticPlatforms.flatMap((platform) => {
+    const node = stage.activationNodes.find((entry) => entry.id === platform.magnetic.activationNodeId);
+    if (!node) {
+      return [];
+    }
+
+    const platformCenter = { x: platform.x + platform.width / 2, y: platform.y + platform.height / 2 };
+    const nodeCenter = { x: node.x + node.width / 2, y: node.y + node.height / 2 };
+    return Math.abs(platformCenter.x - nodeCenter.x) > MAGNETIC_NODE_MAX_HORIZONTAL_DISTANCE ||
+      Math.abs(platformCenter.y - nodeCenter.y) > MAGNETIC_NODE_MAX_VERTICAL_DISTANCE
+      ? [`${node.id}->${platform.id}`]
+      : [];
+  });
+  if (distantMagneticLinks.length > 0) {
+    throw new Error(`Activation nodes must stay nearby their linked magnetic platforms: ${distantMagneticLinks.join(', ')}`);
+  }
+
+  const unsafeMagneticFallbacks = magneticPlatforms.filter((platform) => {
+    const fallbackSupport = findSupportBelowSpan(
+      stage.platforms.filter((candidate) => candidate.id !== platform.id && !candidate.magnetic),
+      platform.x,
+      platform.width,
+      platform.y + platform.height,
+    );
+
+    return !fallbackSupport || fallbackSupport.y - (platform.y + platform.height) > MAGNETIC_ROUTE_FALLBACK_MAX_DROP;
+  });
+  if (unsafeMagneticFallbacks.length > 0) {
+    throw new Error(
+      `Activation-node magnetic platforms must preserve a retry-safe non-magnetic fallback path: ${unsafeMagneticFallbacks
+        .map((platform) => platform.id)
+        .join(', ')}`,
+    );
+  }
+
   if (uniqueScannerIds.size !== scannerIds.length) {
     throw new Error('Scanner volume ids must be unique.');
   }
@@ -857,14 +1094,65 @@ const validateTraversalMechanics = (stage: StageDefinition): StageDefinition => 
     );
   }
 
+  const gravityFieldIds = stage.gravityFields.map((field) => field.id);
+  if (new Set(gravityFieldIds).size !== gravityFieldIds.length) {
+    throw new Error('Gravity field ids must be unique.');
+  }
+
+  const invalidGravityFields = stage.gravityFields.filter((field) => !isRectWithinWorld(stage, field));
+  if (invalidGravityFields.length > 0) {
+    throw new Error(
+      `Gravity fields must use positive bounded rectangles: ${invalidGravityFields.map((field) => field.id).join(', ')}`,
+    );
+  }
+
+  const unsupportedGravityFields = stage.gravityFields.filter((field) => !GRAVITY_FIELD_KINDS.includes(field.kind));
+  if (unsupportedGravityFields.length > 0) {
+    throw new Error(
+      `Gravity fields must use a supported kind: ${unsupportedGravityFields.map((field) => field.id).join(', ')}`,
+    );
+  }
+
+  if (stage.gravityFields.length > 0 && stage.id !== HALO_SPIRE_ARRAY_STAGE_ID) {
+    throw new Error(`Gravity-field rollout is limited to ${HALO_SPIRE_ARRAY_STAGE_ID}.`);
+  }
+
+  if (stage.id === HALO_SPIRE_ARRAY_STAGE_ID && stage.gravityFields.length > 0) {
+    const authoredKinds = new Set(stage.gravityFields.map((field) => field.kind));
+    if (
+      stage.gravityFields.length !== 2 ||
+      !authoredKinds.has('anti-grav-stream') ||
+      !authoredKinds.has('gravity-inversion-column')
+    ) {
+      throw new Error(
+        'Halo Spire gravity-field rollout must author exactly one anti-grav stream and one gravity inversion column.',
+      );
+    }
+  }
+
   const invalidTemporaryBridgePlatforms = stage.platforms.filter(
-    (platform) =>
-      platform.temporaryBridge &&
-      (platform.kind !== 'static' || platform.temporaryBridge.durationMs <= 0 || Boolean(platform.reveal)),
+    (platform) => platform.temporaryBridge && (platform.kind !== 'static' || platform.temporaryBridge.durationMs <= 0),
   );
   if (invalidTemporaryBridgePlatforms.length > 0) {
     throw new Error(
-      `Temporary bridges must be static, timer-backed platforms without reveal links: ${invalidTemporaryBridgePlatforms
+      `Temporary bridges must be static, timer-backed platforms: ${invalidTemporaryBridgePlatforms.map((platform) => platform.id).join(', ')}`,
+    );
+  }
+
+  const timedRevealPlatforms = stage.platforms.filter(
+    (platform): platform is PlatformDefinition & {
+      reveal: NonNullable<PlatformDefinition['reveal']>;
+      temporaryBridge: NonNullable<PlatformDefinition['temporaryBridge']>;
+    } => Boolean(platform.reveal && platform.temporaryBridge),
+  );
+  const malformedTimedRevealPlatforms = timedRevealPlatforms.filter(
+    (platform) =>
+      !stage.revealVolumes.some((volume) => volume.revealPlatformIds.includes(platform.reveal.id)) ||
+      !stage.scannerVolumes.some((volume) => volume.id === platform.temporaryBridge.scannerId && volume.temporaryBridgeIds.includes(platform.id)),
+  );
+  if (malformedTimedRevealPlatforms.length > 0) {
+    throw new Error(
+      `Timed-reveal platforms must link one reveal cue and one scanner activator through authored stage data: ${malformedTimedRevealPlatforms
         .map((platform) => platform.id)
         .join(', ')}`,
     );
@@ -979,6 +1267,21 @@ const validateTraversalMechanics = (stage: StageDefinition): StageDefinition => 
     throw new Error(`Launchers cannot overlap another launcher or spring contact area: ${ambiguousLauncherContacts.join(', ')}`);
   }
 
+  if (stage.stageObjective) {
+    const objectiveTargets: Record<StageObjectiveTargetKind, Set<string>> = {
+      checkpoint: checkpointIds,
+      revealVolume: revealVolumeIds,
+      scannerVolume: uniqueScannerIds,
+      launcher: uniqueLauncherIds,
+    };
+
+    if (!objectiveTargets[stage.stageObjective.target.kind].has(stage.stageObjective.target.id)) {
+      throw new Error(
+        `Stage objective references unknown ${stage.stageObjective.target.kind}: ${stage.stageObjective.target.id}`,
+      );
+    }
+  }
+
   const overlappingTerrainSurfaces: string[] = [];
   for (let index = 0; index < stage.terrainSurfaces.length; index += 1) {
     for (let nextIndex = index + 1; nextIndex < stage.terrainSurfaces.length; nextIndex += 1) {
@@ -994,7 +1297,104 @@ const validateTraversalMechanics = (stage: StageDefinition): StageDefinition => 
     throw new Error(`Terrain surfaces cannot overlap or conflict: ${overlappingTerrainSurfaces.join(', ')}`);
   }
 
+  const overlappingGravityFields: string[] = [];
+  for (let index = 0; index < stage.gravityFields.length; index += 1) {
+    for (let nextIndex = index + 1; nextIndex < stage.gravityFields.length; nextIndex += 1) {
+      const current = stage.gravityFields[index];
+      const next = stage.gravityFields[nextIndex];
+      if (intersectsRect(current, next)) {
+        overlappingGravityFields.push(`${current.id}<->${next.id}`);
+      }
+    }
+
+    const current = stage.gravityFields[index];
+    for (const zone of stage.lowGravityZones) {
+      if (intersectsRect(current, zone)) {
+        overlappingGravityFields.push(`${current.id}<->${zone.id}`);
+      }
+    }
+  }
+
+  if (overlappingGravityFields.length > 0) {
+    throw new Error(`Gravity fields cannot overlap another gravity modifier zone: ${overlappingGravityFields.join(', ')}`);
+  }
+
+  const unsafeGravityFieldCheckpoints = stage.checkpoints.filter((checkpoint) =>
+    stage.gravityFields.some((field) => intersectsRect(expandRect(field, GRAVITY_FIELD_CHECKPOINT_CLEARANCE), checkpoint.rect)),
+  );
+  if (unsafeGravityFieldCheckpoints.length > 0) {
+    throw new Error(
+      `Checkpoints must stay outside immediate gravity-field motion: ${unsafeGravityFieldCheckpoints
+        .map((checkpoint) => checkpoint.id)
+        .join(', ')}`,
+    );
+  }
+
   return stage;
+};
+
+const validateEnemyVariants = (stage: StageDefinition): StageDefinition => {
+  const variantEnemies = stage.enemies.filter(
+    (enemy): enemy is EnemyDefinition & { variant: TurretVariantId } => Boolean(enemy.variant),
+  );
+
+  const nonTurretVariants = variantEnemies.filter((enemy) => enemy.kind !== 'turret');
+  if (nonTurretVariants.length > 0) {
+    throw new Error(
+      `Biome-linked variants are limited to turret enemies: ${nonTurretVariants.map((enemy) => enemy.id).join(', ')}`,
+    );
+  }
+
+  const unsupportedStageVariants = variantEnemies.filter(
+    (enemy) => TURRET_VARIANT_CONFIG[enemy.variant].supportedStageId !== stage.id,
+  );
+  if (unsupportedStageVariants.length > 0) {
+    throw new Error(
+      `Turret variants must stay on their supported biome stages: ${unsupportedStageVariants
+        .map((enemy) => `${enemy.id}:${enemy.variant}`)
+        .join(', ')}`,
+    );
+  }
+
+  const authoredVariants = [...new Set(variantEnemies.map((enemy) => enemy.variant))];
+  if (authoredVariants.length > 1) {
+    throw new Error(`Stage must roll out only one supported turret variant at a time: ${stage.id}`);
+  }
+
+  const supportedVariants = Object.entries(TURRET_VARIANT_CONFIG)
+    .filter(([, config]) => config.supportedStageId === stage.id)
+    .map(([variant]) => variant as TurretVariantId);
+  if (supportedVariants.length === 0 && variantEnemies.length > 0) {
+    throw new Error(`Turret variants are not supported on stage: ${stage.id}`);
+  }
+
+  if (supportedVariants.length > 0) {
+    const stageVariantEnemies = variantEnemies.filter((enemy) => supportedVariants.includes(enemy.variant));
+    if (stageVariantEnemies.length !== 2) {
+      throw new Error(`Supported turret variant rollout must author exactly two encounters on ${stage.id}`);
+    }
+
+    const ordered = [...stageVariantEnemies].sort((left, right) => left.position.x - right.position.x);
+    if (ordered[0].position.x >= ordered[1].position.x) {
+      throw new Error(`Turret variant rollout must introduce a teaching beat before mixed reuse on ${stage.id}`);
+    }
+  }
+
+  return stage;
+};
+
+const validateStageCatalogMagneticRollout = (stages: StageDefinition[]): StageDefinition[] => {
+  const activationNodeCount = stages.reduce((total, stage) => total + stage.activationNodes.length, 0);
+  const magneticPlatformCount = stages.reduce(
+    (total, stage) => total + stage.platforms.filter((platform) => platform.magnetic).length,
+    0,
+  );
+
+  if (activationNodeCount !== 1 || magneticPlatformCount !== 1) {
+    throw new Error('Stage catalog must author exactly one activation node and one magnetic platform for the bounded rollout.');
+  }
+
+  return stages;
 };
 
 const applyStageExtension = (stage: StageDefinition, extension: StageExtension): StageDefinition => {
@@ -1011,8 +1411,10 @@ const applyStageExtension = (stage: StageDefinition, extension: StageExtension):
     terrainSurfaces: [...stage.terrainSurfaces, ...(extension.terrainSurfaces ?? [])],
     launchers: [...stage.launchers, ...(extension.launchers ?? [])],
     lowGravityZones: [...stage.lowGravityZones, ...(extension.lowGravityZones ?? [])],
+    gravityFields: [...stage.gravityFields, ...(extension.gravityFields ?? [])],
     revealVolumes: [...stage.revealVolumes, ...(extension.revealVolumes ?? [])],
     scannerVolumes: [...stage.scannerVolumes, ...(extension.scannerVolumes ?? [])],
+    activationNodes: [...stage.activationNodes, ...(extension.activationNodes ?? [])],
     checkpoints: [...stage.checkpoints, ...extension.checkpoints],
     collectibles: [...stage.collectibles, ...extension.collectibles],
     rewardBlocks: normalizeRewardBlocks(platforms, [...stage.rewardBlocks, ...extension.rewardBlocks]),
@@ -1021,6 +1423,7 @@ const applyStageExtension = (stage: StageDefinition, extension: StageExtension):
     enemies: [...stage.enemies, ...extension.enemies],
     exit: extension.exit,
     hint: extension.hint,
+    stageObjective: extension.stageObjective ?? stage.stageObjective,
   };
 };
 
@@ -1085,8 +1488,10 @@ const baseStageDefinitions: StageDefinition[] = [
     terrainSurfaces: [],
     launchers: [launcher('forest-bounce-pod-route', 'bouncePod', 6990, 460, 110, 14, { x: 0.32, y: -1 })],
     lowGravityZones: [],
+    gravityFields: [],
     revealVolumes: [],
     scannerVolumes: [],
+    activationNodes: [],
     checkpoints: [
       { id: 'cp-1', rect: { x: 1420, y: 460, width: 24, height: 80 } },
       { id: 'cp-2', rect: { x: 3090, y: 510, width: 24, height: 80 } },
@@ -1236,8 +1641,10 @@ const baseStageDefinitions: StageDefinition[] = [
     terrainSurfaces: [],
     launchers: [],
     lowGravityZones: [],
+    gravityFields: [],
     revealVolumes: [],
     scannerVolumes: [],
+    activationNodes: [],
     checkpoints: [
       { id: 'cp-1', rect: { x: 1310, y: 330, width: 24, height: 80 } },
       { id: 'cp-2', rect: { x: 3510, y: 500, width: 24, height: 80 } },
@@ -1302,8 +1709,9 @@ const baseStageDefinitions: StageDefinition[] = [
       {
         id: 'turret-2',
         kind: 'turret',
+        variant: 'resinBurst',
         position: { x: 6116, y: 362 },
-        turret: { intervalMs: 1600 },
+        turret: { intervalMs: 2200 },
       },
       {
         id: 'charger-1',
@@ -1326,8 +1734,9 @@ const baseStageDefinitions: StageDefinition[] = [
       {
         id: 'turret-3',
         kind: 'turret',
+        variant: 'resinBurst',
         position: { x: 7776, y: 382 },
-        turret: { intervalMs: 1400 },
+        turret: { intervalMs: 2200 },
       },
     ],
     exit: { x: 8090, y: 420, width: 44, height: 80 },
@@ -1397,8 +1806,10 @@ const baseStageDefinitions: StageDefinition[] = [
     terrainSurfaces: [],
     launchers: [],
     lowGravityZones: [],
+    gravityFields: [],
     revealVolumes: [],
     scannerVolumes: [],
+    activationNodes: [],
     checkpoints: [
       { id: 'cp-1', rect: { x: 1240, y: 420, width: 24, height: 80 } },
       { id: 'cp-2', rect: { x: 3380, y: 470, width: 24, height: 80 } },
@@ -1451,8 +1862,9 @@ const baseStageDefinitions: StageDefinition[] = [
       {
         id: 'turret-1',
         kind: 'turret',
+        variant: 'ionPulse',
         position: { x: 2646, y: 412 },
-        turret: { intervalMs: 1500 },
+        turret: { intervalMs: 2100 },
       },
       {
         id: 'walker-2',
@@ -1493,8 +1905,9 @@ const baseStageDefinitions: StageDefinition[] = [
       {
         id: 'turret-4',
         kind: 'turret',
+        variant: 'ionPulse',
         position: { x: 8556, y: 552 },
-        turret: { intervalMs: 1400 },
+        turret: { intervalMs: 2100 },
       },
     ],
     exit: { x: 8600, y: 510, width: 48, height: 80 },
@@ -1522,6 +1935,7 @@ const forestRuinsExtension: StageExtension = {
     ground(9240, 320, 160),
     ground(9390, 400, 180),
     ground(9650, 470, 190),
+    magneticPlatform('forest-magnetic-platform-1', 'forest-magnetic-node-1', 9928, 356, 132),
     ground(9920, 540, 210),
     ground(10010, 320, 160),
     spring(10210, 610, 200, 32, 920),
@@ -1536,6 +1950,7 @@ const forestRuinsExtension: StageExtension = {
     { id: 'cp-5', rect: { x: 9960, y: 460, width: 24, height: 80 } },
     { id: 'cp-6', rect: { x: 11460, y: 370, width: 24, height: 80 } },
   ],
+  activationNodes: [activationNode('forest-magnetic-node-1', 9760, 422)],
   collectibles: [
     { id: 'crystal-8', position: { x: 8420, y: 470 } },
     { id: 'crystal-8b', position: { x: 8520, y: 300 } },
@@ -1617,6 +2032,10 @@ const forestRuinsExtension: StageExtension = {
   ],
   exit: { x: 11890, y: 450, width: 40, height: 80 },
   hint: 'Eight crater sectors now span the meteor sink, relay canopy, and observatory rise, with optional canopy pockets feeding back into the survey line.',
+  stageObjective: {
+    kind: 'restoreBeacon',
+    target: { kind: 'checkpoint', id: 'cp-6' },
+  },
 };
 
 const amberCavernExtension: StageExtension = {
@@ -1798,7 +2217,7 @@ const skySanctumExtension: StageExtension = {
     ground(11970, 380, 180),
     ground(12230, 320, 180),
     ground(12280, 230, 150),
-    temporaryBridgePlatform('sky-temporary-bridge-1', 'sky-halo-scanner', 12450, 230, 120, 24, 2600),
+    temporaryBridgePlatform('sky-temporary-bridge-1', 'sky-halo-scanner', 12450, 230, 120, 24, 2600, 'sky-timed-secret-bridge'),
     ground(12620, 230, 140),
     ground(12490, 400, 180),
     ground(12750, 500, 220),
@@ -1809,11 +2228,16 @@ const skySanctumExtension: StageExtension = {
     terrainSurface('sky-brittle-route', 'brittleCrystal', 10420, 550, 110),
   ],
   launchers: [launcher('sky-gas-vent-route', 'gasVent', 9050, 490, 96, 14, { x: 0.18, y: -1 })],
-  lowGravityZones: [lowGravityZone('sky-low-gravity-pocket', 8960, 120, 1180, 430, 0.42)],
+  lowGravityZones: [],
+  gravityFields: [
+    gravityField('sky-anti-grav-stream', 'anti-grav-stream', 8960, 120, 260, 380),
+    gravityField('sky-gravity-inversion-column', 'gravity-inversion-column', 9510, 130, 220, 340),
+  ],
   revealVolumes: [
     revealVolume('sky-hidden-bridge-trigger', 10920, 170, 220, 190, ['sky-hidden-bridge-1', 'sky-hidden-bridge-2']),
+    revealVolume('sky-timed-route-trigger', 12210, 120, 160, 170, ['sky-timed-secret-bridge']),
   ],
-  scannerVolumes: [scannerVolume('sky-halo-scanner', 12190, 150, 210, 190, ['sky-temporary-bridge-1'])],
+  scannerVolumes: [scannerVolume('sky-halo-scanner', 12400, 120, 170, 180, ['sky-temporary-bridge-1'])],
   checkpoints: [
     { id: 'cp-5', rect: { x: 10670, y: 400, width: 24, height: 80 } },
     { id: 'cp-6', rect: { x: 13180, y: 350, width: 24, height: 80 } },
@@ -1846,6 +2270,31 @@ const skySanctumExtension: StageExtension = {
     rewardBlock('sky-coin-5', 11260, 140, { kind: 'coins', amount: 2 }),
     rewardBlock('sky-temp-bridge-cache', 12650, 130, { kind: 'coins', amount: 2 }),
     rewardBlock('sky-shooter', 13060, 350, { kind: 'power', power: 'shooter' }),
+  ],
+  secretRoutes: [
+    {
+      id: 'sky-halo-timed-secret-route',
+      title: 'Halo Relay Slipstream',
+      areaKind: 'abandonedMicroArea',
+      mechanics: ['optionalDetour', 'timedReveal'],
+      cue: {
+        description: 'A relay shimmer outlines a short upper path before the halo scanner can energize it.',
+        rect: { x: 12300, y: 214, width: 80, height: 16 },
+        revealVolumeIds: ['sky-timed-route-trigger'],
+        revealPlatformIds: ['sky-timed-secret-bridge'],
+        scannerVolumeIds: ['sky-halo-scanner'],
+        temporaryBridgeIds: ['sky-temporary-bridge-1'],
+      },
+      entry: { x: 12220, y: 180, width: 120, height: 96 },
+      interior: { x: 12390, y: 100, width: 360, height: 180 },
+      reconnect: { x: 12610, y: 166, width: 120, height: 64 },
+      mainPath: { x: 12480, y: 336, width: 240, height: 64 },
+      reward: {
+        collectibleIds: ['sky-19c'],
+        rewardBlockIds: ['sky-temp-bridge-cache'],
+        note: 'The relay ledge hides extra samples before it rejoins the halo causeway.',
+      },
+    },
   ],
   hazards: [
     { id: 'sky-spikes-8', kind: 'spikes', rect: { x: 8790, y: 544, width: 60, height: 16 } },
@@ -1887,13 +2336,20 @@ const skySanctumExtension: StageExtension = {
   ],
   exit: { x: 13120, y: 350, width: 48, height: 80 },
   hint: 'The array now climbs through the belfry, halo causeway, and crown approach with optional halo rails reconnecting above the storm band.',
+  stageObjective: {
+    kind: 'reactivateRelay',
+    target: { kind: 'scannerVolume', id: 'sky-halo-scanner' },
+  },
 };
 
 export const validateStageDefinition = (stage: StageDefinition): StageDefinition =>
-  validateSecretRoutes(validateTraversalMechanics(validateStaticElementCollisions(validateRewardBlocks(stage))));
+  validateEnemyVariants(
+    validateSecretRoutes(validateTraversalMechanics(validateStaticElementCollisions(validateRewardBlocks(stage)))),
+  );
 
 export const stageDefinitions: StageDefinition[] = validateStageCatalogSecretRoutes(
-  baseStageDefinitions.map((stage) => {
+  validateStageCatalogMagneticRollout(
+    baseStageDefinitions.map((stage) => {
     switch (stage.id) {
       case 'forest-ruins':
         return validateStageDefinition(applyStageExtension(stage, forestRuinsExtension));
@@ -1907,5 +2363,6 @@ export const stageDefinitions: StageDefinition[] = validateStageCatalogSecretRou
           rewardBlocks: normalizeRewardBlocks(stage.platforms, stage.rewardBlocks),
         });
     }
-  }),
+    }),
+  ),
 );

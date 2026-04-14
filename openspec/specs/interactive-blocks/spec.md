@@ -1,4 +1,9 @@
-## MODIFIED Requirements
+# interactive-blocks Specification
+
+## Purpose
+Define authored interactive block behavior, fixed power grants, and player-facing naming for reward-giving stage blocks.
+
+## Requirements
 
 ### Requirement: Power blocks grant only the supported fixed powers
 The game SHALL support exactly four authored powers from interactive blocks, backed by the existing fixed mechanics: double jump displayed as `Thruster Burst`, shooter displayed as `Plasma Blaster`, invincible for 10 seconds displayed as `Shield Field`, and dash displayed as `Booster Dash`. A power block MUST grant one of those fixed powers, MUST preserve its existing mechanic and duration, and MUST not randomize outside that set or introduce additional power types.

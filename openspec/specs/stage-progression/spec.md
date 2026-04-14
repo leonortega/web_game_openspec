@@ -4,7 +4,7 @@
 TBD - created by archiving change mvp-platform-game. Update Purpose after archive.
 ## Requirements
 ### Requirement: Stages have a clear start-to-exit completion flow
-The game SHALL organize play into discrete stages with a defined start position, traversable route, intermediate gameplay segments, and completion exit. A stage MUST begin with a short pre-play presentation step before active control starts, and completion MUST flow through a readable stage-clear results step before continuing. A stage MUST only be marked complete when the player reaches the exit in a valid active state, and the route to that exit MUST support sustained progression across a long-form stage structure.
+The game SHALL organize play into discrete stages with a defined start position, traversable route, intermediate gameplay segments, and completion exit. A stage MUST begin with a short pre-play presentation step before active control starts, and completion MUST flow through a readable stage-clear results step before continuing. A stage MUST only be marked complete when the player reaches the exit in a valid active state and any authored lightweight stage objective for that stage is already complete. Stages without an authored lightweight stage objective MUST continue to complete immediately on valid exit contact. Stages with an authored lightweight stage objective MUST keep the route to that exit readable and MUST provide immediate in-stage feedback if the player touches the exit before the required objective is complete.
 
 #### Scenario: Beginning a stage
 - **WHEN** the player enters a level
@@ -14,9 +14,37 @@ The game SHALL organize play into discrete stages with a defined start position,
 - **WHEN** the player moves from one major stage segment to the next
 - **THEN** the game preserves a clear sense of forward progress toward the exit
 
-#### Scenario: Reaching the exit
-- **WHEN** the player reaches the stage exit while alive
+#### Scenario: Reaching the exit on a standard stage
+- **WHEN** the player reaches the exit while alive on a stage without an authored lightweight objective
 - **THEN** the stage is marked complete and the stage-clear flow begins
+
+#### Scenario: Reaching the exit before completing the objective
+- **WHEN** the player reaches the exit while alive on a stage whose authored lightweight objective is still incomplete
+- **THEN** the stage is not marked complete
+- **AND** the game presents immediate feedback that the objective still remains
+
+#### Scenario: Reaching the exit after completing the objective
+- **WHEN** the player reaches the exit while alive on a stage whose authored lightweight objective is complete
+- **THEN** the stage is marked complete and the stage-clear flow begins
+
+### Requirement: Selected stages can author lightweight mission objectives
+The game SHALL allow a bounded subset of stages to author one lightweight mission objective using existing contact, volume, checkpoint, or activation patterns instead of a separate mission system. For this change, supported objective fiction MUST be limited to restoring a beacon, reactivating a relay, or powering a lift tower. Each objective-authored stage MUST track a single stage-local objective that starts incomplete on a fresh attempt, becomes complete when its authored target interaction succeeds, and remains complete for the rest of that stage attempt including later checkpoint respawns. Manual restart or a fresh stage start MUST reset that objective to incomplete. The game MUST communicate objective briefing and incomplete-exit reminders through the existing transient stage-message flow rather than requiring a new mission screen or separate persistent HUD panel.
+
+#### Scenario: Starting an objective-authored stage
+- **WHEN** the player begins a stage that authors a lightweight mission objective
+- **THEN** the game communicates the current objective through the existing stage-message flow near the start of active play
+
+#### Scenario: Completing an authored objective target
+- **WHEN** the player triggers the authored contact, volume, checkpoint, or activation target bound to that stage objective
+- **THEN** the stage objective becomes complete for the current attempt
+
+#### Scenario: Respawning after objective completion
+- **WHEN** the player dies after completing the authored stage objective and then respawns from a checkpoint in the same stage attempt
+- **THEN** the objective remains complete after the respawn
+
+#### Scenario: Starting a fresh attempt after prior objective progress
+- **WHEN** the player manually restarts the stage or begins a new attempt after previously completing its lightweight objective
+- **THEN** the objective resets to incomplete for that new attempt
 
 ### Requirement: Checkpoints update respawn progress within a stage
 The game SHALL support in-level checkpoints that update the player's respawn location after activation. Stages targeting the long-form duration requirement MUST include enough checkpoint coverage that a late-stage failure does not force the player to replay most of the stage. Player-facing gameplay and stage messaging for those checkpoints MUST present them as survey beacons while preserving the existing checkpoint activation, respawn, and persistence behavior. A checkpoint respawn within the same stage run MUST preserve already collected finite level coins and the current stage coin total, while fresh stage starts or manual restarts MUST rebuild collectible state normally.
@@ -100,11 +128,15 @@ The game SHALL structure each main stage into multiple authored segments with di
 - **THEN** the stage remains fully completable without requiring the optional branch content
 
 ### Requirement: Secret-route authoring remains discoverable, rewarding, and verifiable
-The game SHALL author expedition secret routes so their discovery depends on authored layout cues and currently supported traversal mechanics rather than on new tracked runtime discovery state. Each authored secret route MUST present a readable clue, opening, elevation change, traversal affordance, or reward glimpse from a traversable part of the stage so that discovery feels earned rather than arbitrary. Each route MUST provide meaningful optional reward value through research samples, a worthwhile reward pocket, or a distinct traversal and recovery beat, and MUST reconnect to the main route later without trapping the player in a dead-end that breaks forward progression. Authored validation and scripted playtest coverage MUST confirm that the route can be discovered, that its optional reward value is reachable, that the main route remains completable when the secret route is skipped, and that the later reconnection behaves as authored.
+The game SHALL author expedition secret routes so their discovery depends on authored layout cues and currently supported traversal mechanics rather than on new tracked runtime discovery state. Each authored secret route MUST present a readable clue, opening, elevation change, traversal affordance, or reward glimpse from a traversable part of the stage so that discovery feels earned rather than arbitrary. Each route MUST provide meaningful optional reward value through research samples, a worthwhile reward pocket, or a distinct traversal and recovery beat, and MUST reconnect to the main route later without trapping the player in a dead-end that breaks forward progression. Timed-reveal secret routes MUST additionally present a nearby reveal cue and scanner activator that make the route legible before the timed window starts, and verification MUST confirm both that the route can be discovered and used and that the main route remains safe and completable when the timed branch is skipped or expires. Authored validation and scripted playtest coverage MUST confirm that the route can be discovered, that its optional reward value is reachable, that the main route remains completable when the secret route is skipped, and that the later reconnection behaves as authored.
 
 #### Scenario: Loading a valid secret route
 - **WHEN** a stage defines a secret route with a readable discovery cue, optional reward value, and a later reconnection point
 - **THEN** authored validation accepts that route as a valid same-stage optional branch
+
+#### Scenario: Verifying a timed-reveal secret route
+- **WHEN** a stage defines a timed-reveal secret route with a nearby reveal cue, scanner activator, optional reward value, and downstream reconnection
+- **THEN** validation and scripted coverage accept it only if the route becomes legible before timing begins and the main route remains safe when the branch is skipped or expires
 
 #### Scenario: Rejecting a non-reconnecting secret route
 - **WHEN** a stage defines a hidden branch that has no safe return, no downstream reconnection, or no meaningful optional value
@@ -114,6 +146,22 @@ The game SHALL author expedition secret routes so their discovery depends on aut
 - **WHEN** scripted playtest coverage evaluates a stage with an authored secret route
 - **THEN** the coverage demonstrates both that the route can be discovered and rewarded
 - **AND** that the stage still completes correctly when the player stays on the main route instead
+
+### Requirement: Timed-reveal route state composes reveal persistence with temporary activation reset
+The game SHALL treat timed-reveal secret routes as a composition of reveal-platform discovery state and scanner-triggered temporary activation state. The reveal-discovery portion of a timed-reveal route MUST follow the current reveal-platform checkpoint behavior: it starts hidden on a fresh attempt, becomes discovered for the rest of the current attempt after the reveal cue is triggered, and is restored on later checkpoint respawns only when the checkpoint was activated after that reveal occurred. The timed-activation portion of the same route MUST follow the current temporary-bridge timing behavior: scanner-triggered support starts inactive on a fresh attempt, begins timing only after scanner activation, and MUST reset to inactive with no running timer on death, checkpoint respawn, manual restart, or a fresh stage start. A checkpoint snapshot MUST NOT restore a running timer or active temporary support for a timed-reveal route, even when the route's reveal-discovery state persists.
+
+#### Scenario: Revealing before a checkpoint and dying after activation
+- **WHEN** the player reveals a timed-reveal route, activates a checkpoint, later activates the route's scanner window, and then dies
+- **THEN** respawning from that checkpoint restores the route as revealed
+- **AND** the timed support returns inactive until the scanner is triggered again
+
+#### Scenario: Activating a checkpoint before revealing the route
+- **WHEN** the player activates a checkpoint before discovering a timed-reveal route and later reveals and uses it before dying
+- **THEN** respawning from that earlier checkpoint restores the route as undiscovered and inactive
+
+#### Scenario: Restarting after prior use
+- **WHEN** the player restarts the stage or begins a fresh attempt after previously discovering and activating a timed-reveal route
+- **THEN** the route starts again from its fresh-attempt hidden and inactive baseline
 
 ### Requirement: Stages include terrain variation that changes pacing
 The game SHALL structure stages with meaningful terrain variations such as moving traversal, unstable surfaces, or mobility-assisted routes so progress is shaped by more than static jumps and enemy placement.
@@ -193,6 +241,25 @@ The game SHALL treat scanner-switch temporary bridges as live traversal timing s
 - **WHEN** the player restarts the stage or begins a fresh attempt after previously activating a temporary bridge
 - **THEN** every scanner switch and temporary bridge starts again from its inactive, hidden, and non-solid state
 
+### Requirement: Activation-node magnetic platform state resets on respawn and fresh attempts
+The game SHALL treat activation-node magnetic platforms as live traversal power state rather than checkpoint-persistent route discovery. Every activation node and linked magnetic platform MUST start inactive, visibly dormant, and non-solid on a fresh attempt. Death, checkpoint respawn, and manual stage restart MUST rebuild activation-node and magnetic-platform state from that dormant baseline instead of preserving prior powered state. A checkpoint snapshot MUST NOT restore a previously powered magnetic platform, even if the checkpoint was activated after its linked node had already been triggered. Stages that use this mechanic MUST remain safely completable when the powered route is skipped or resets on retry, either because the magnetic route is optional or because the activation node can be re-encountered before the route is required again.
+
+#### Scenario: Dying after powering a magnetic platform
+- **WHEN** the player triggers an activation node, powers its linked magnetic platform, and then dies before finishing the route
+- **THEN** the next life restores the node and platform to their dormant, non-solid baseline until retriggered
+
+#### Scenario: Respawning from a later checkpoint after platform activation
+- **WHEN** the player powers a magnetic platform, later reaches a checkpoint, and then dies afterward in the same stage
+- **THEN** respawning from that checkpoint does not preserve the powered state and requires the route to follow its authored retry-safe behavior
+
+#### Scenario: Starting a fresh attempt after prior magnetic-route use
+- **WHEN** the player restarts the stage or begins a fresh attempt after previously activating a magnetic platform
+- **THEN** every activation node and linked magnetic platform starts again from its dormant and unpowered baseline
+
+#### Scenario: Authoring a retry-safe magnetic route
+- **WHEN** a stage defines a route that uses an activation-node magnetic platform
+- **THEN** authored validation or scripted coverage accepts it only if the stage remains safely completable when that powered route is unavailable until retriggered
+
 ### Requirement: Brittle crystal floor state resets with attempt and checkpoint recovery
 The game SHALL treat brittle crystal floor breakage as live traversal state rather than checkpoint-persistent route discovery. Every brittle crystal floor MUST begin intact and solid on a fresh attempt. Death, checkpoint respawn, and manual stage restart MUST restore every brittle crystal floor to its intact untriggered state, regardless of whether the floor had already warned or broken earlier in that run. A checkpoint snapshot MUST NOT preserve a brittle floor's warned, broken, or partially expired state.
 
@@ -245,4 +312,23 @@ The game SHALL validate authored bounce pod and gas vent launcher metadata befor
 #### Scenario: Running launcher regression coverage
 - **WHEN** automated tests or scripted playtest coverage run for the new launcher mechanic
 - **THEN** the suite exercises both launcher kinds, suppression or cooldown reuse, and at least one launcher route combined with low gravity or sticky sludge
+
+### Requirement: Gravity-field traversal stays stateless, bounded, and respawn-safe
+The game SHALL treat gravity inversion columns and anti-grav streams as always-authored traversal geometry rather than as discovered, timed, or checkpoint-persistent route state. Every gravity field MUST begin each fresh attempt in its authored always-on baseline with no activation, cooldown, or saved traversal state. Checkpoint respawn and manual restart MUST rebuild gravity-field behavior solely from authored geometry and the player's restored position. Checkpoints used near gravity-field sections MUST place the player on stable support outside immediate forced field motion, and authored validation plus scripted playtest coverage MUST confirm that the Halo Spire Array sky rollout remains readable, completable, and reset-consistent after respawn or restart.
+
+#### Scenario: Respawning near a gravity-field section
+- **WHEN** the player dies after using an authored gravity inversion column or anti-grav stream and respawns from a checkpoint in that stage
+- **THEN** the field behavior resumes from its always-on authored baseline without any preserved activation or temporary state
+
+#### Scenario: Starting a fresh attempt after prior field use
+- **WHEN** the player restarts the stage or begins a fresh attempt after previously traversing a gravity-field route
+- **THEN** every gravity inversion column and anti-grav stream behaves exactly as authored with no carried-over runtime state
+
+#### Scenario: Activating a checkpoint near a gravity-field route
+- **WHEN** the player reaches a checkpoint associated with a gravity-field traversal section
+- **THEN** the checkpoint stands on stable support and does not respawn the player into immediate forced airborne field motion
+
+#### Scenario: Validating the bounded rollout
+- **WHEN** authored validation or scripted playtest coverage evaluates the Halo Spire Array sky route that uses gravity fields
+- **THEN** it accepts the route only if the section remains readable, completable, and bounded to the intended stage-authored rollout
 

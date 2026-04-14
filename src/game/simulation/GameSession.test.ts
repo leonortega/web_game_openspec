@@ -1,21 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
-
-vi.mock('phaser', () => ({
-  default: {
-    Math: {
-      Clamp: (value: number, min: number, max: number) => Math.min(Math.max(value, min), max),
-      Wrap: (value: number, min: number, max: number) => {
-        const range = max - min;
-        return range <= 0 ? min : ((((value - min) % range) + range) % range) + min;
-      },
-    },
-  },
-}));
+import { describe, expect, it } from 'vitest';
 
 import { GameSession } from './GameSession';
 import { defaultInputState } from '../input/actions';
+import { TURRET_VARIANT_CONFIG } from './state';
 
 const getMutableState = (session: GameSession) => session.getState() as any;
+
+const advanceSession = (session: GameSession, totalMs: number, stepMs = 16) => {
+  let remainingMs = totalMs;
+  while (remainingMs > 0) {
+    const deltaMs = Math.min(stepMs, remainingMs);
+    session.update(deltaMs, defaultInputState());
+    remainingMs -= deltaMs;
+  }
+};
 
 const getCoinRewardBlock = (state: any) => {
   const rewardBlock = state.stageRuntime.rewardBlocks.find((block: any) => block.reward.kind === 'coins');
@@ -59,7 +57,212 @@ const placePlayerOnSupportOutsideLauncher = (state: any, supportPlatform: any) =
   state.player.supportTerrainSurfaceId = null;
 };
 
+const getGravityField = (state: any, kind: 'anti-grav-stream' | 'gravity-inversion-column') => {
+  const field = state.stageRuntime.gravityFields.find((candidate: any) => candidate.kind === kind);
+  if (!field) {
+    throw new Error(`Expected stage to include a ${kind} gravity field.`);
+  }
+
+  return field;
+};
+
+const placePlayerInsideField = (state: any, field: any, vy = 0) => {
+  state.player.x = field.x + Math.min(field.width - state.player.width, 40);
+  state.player.y = field.y + Math.min(field.height - state.player.height, 56);
+  state.player.vx = 0;
+  state.player.vy = vy;
+  state.player.onGround = false;
+  state.player.supportPlatformId = null;
+  state.player.supportTerrainSurfaceId = null;
+};
+
+const getTimedRevealFixture = (state: any) => {
+  const revealVolume = state.stageRuntime.revealVolumes.find((volume: any) => volume.id === 'sky-timed-route-trigger');
+  const scanner = state.stageRuntime.scannerVolumes.find((volume: any) => volume.id === 'sky-halo-scanner');
+  const bridge = state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === 'sky-temporary-bridge-1');
+  const bridgePlatform = state.stageRuntime.platforms.find((platform: any) => platform.id === 'sky-temporary-bridge-1');
+
+  if (!revealVolume || !scanner || !bridge || !bridgePlatform) {
+    throw new Error('Expected timed-reveal route fixture in sky-sanctum.');
+  }
+
+  return { revealVolume, scanner, bridge, bridgePlatform };
+};
+
+const getMagneticFixture = (state: any) => {
+  const activationNode = state.stageRuntime.activationNodes.find((node: any) => node.id === 'forest-magnetic-node-1');
+  const platform = state.stageRuntime.platforms.find((entry: any) => entry.id === 'forest-magnetic-platform-1');
+  const fallbackPlatform = state.stageRuntime.platforms.find((entry: any) => entry.id === 'platform-9920-540');
+
+  if (!activationNode || !platform?.magnetic || !fallbackPlatform) {
+    throw new Error('Expected forest magnetic fixture.');
+  }
+
+  return { activationNode, platform, fallbackPlatform };
+};
+
 describe('GameSession regression coverage', () => {
+  it('powers the authored magnetic platform on activation-node contact and resets it on restart', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+    const { activationNode, platform } = getMagneticFixture(state);
+
+    expect(activationNode.activated).toBe(false);
+    expect(platform.magnetic.powered).toBe(false);
+
+    state.player.x = activationNode.x + 2;
+    state.player.y = activationNode.y + 2;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+
+    session.update(16, defaultInputState());
+
+    expect(state.stageRuntime.activationNodes.find((node: any) => node.id === activationNode.id).activated).toBe(true);
+    expect(state.stageRuntime.platforms.find((entry: any) => entry.id === platform.id).magnetic.powered).toBe(true);
+
+    session.restartStage();
+
+    const restarted = getMutableState(session);
+    const restartedFixture = getMagneticFixture(restarted);
+    expect(restartedFixture.activationNode.activated).toBe(false);
+    expect(restartedFixture.platform.magnetic.powered).toBe(false);
+  });
+
+  it('keeps magnetic platforms top-surface-only after activation and resets them on checkpoint respawn', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+    const checkpoint = state.stageRuntime.checkpoints[0];
+    const { activationNode, platform } = getMagneticFixture(state);
+
+    state.player.x = checkpoint.rect.x;
+    state.player.y = checkpoint.rect.y;
+    session.update(16, defaultInputState());
+
+    state.player.x = activationNode.x + 2;
+    state.player.y = activationNode.y + 2;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+    session.update(16, defaultInputState());
+
+    state.player.x = platform.x + 36;
+    state.player.y = platform.y - state.player.height - 2;
+    state.player.vx = 0;
+    state.player.vy = 320;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+    advanceSession(session, 32, 16);
+
+    expect(state.player.onGround).toBe(true);
+    expect(state.player.supportPlatformId).toBe(platform.id);
+    expect(state.player.y).toBe(platform.y - state.player.height);
+
+    state.player.x = platform.x - state.player.width - 2;
+    state.player.y = platform.y - state.player.height + 8;
+    state.player.vx = 180;
+    state.player.vy = 0;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+    session.update(16, defaultInputState());
+
+    expect(state.player.x).toBeGreaterThan(platform.x - state.player.width);
+
+    state.player.x = platform.x + 28;
+    state.player.y = platform.y + platform.height + 2;
+    state.player.vx = 0;
+    state.player.vy = -220;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+    session.update(16, defaultInputState());
+
+    expect(state.player.y).toBeLessThan(platform.y + platform.height + 2);
+    expect(state.player.supportPlatformId).toBeNull();
+
+    state.player.health = 1;
+    (session as any).damagePlayer();
+    (session as any).respawnPlayer();
+
+    const respawned = getMutableState(session);
+    const respawnedFixture = getMagneticFixture(respawned);
+    expect(respawned.activeCheckpointId).toBe(checkpoint.id);
+    expect(respawnedFixture.activationNode.activated).toBe(false);
+    expect(respawnedFixture.platform.magnetic.powered).toBe(false);
+    expect(respawned.player.y).toBeLessThanOrEqual(respawnedFixture.fallbackPlatform.y - respawned.player.height);
+  });
+
+  it('fires resinBurst turrets with a long amber telegraph followed by a short two-shot burst', () => {
+    const session = new GameSession();
+    session.forceStartStage(1);
+
+    const state = getMutableState(session);
+    const turret = state.stageRuntime.enemies.find((enemy: any) => enemy.id === 'turret-2');
+    if (!turret?.turret) {
+      throw new Error('Expected Ember Rift resinBurst turret fixture.');
+    }
+
+    state.stageRuntime.enemies = [turret];
+    state.stageRuntime.hazards = [];
+
+    const telegraphStartMs = turret.turret.intervalMs - turret.turret.telegraphDurationMs;
+    advanceSession(session, telegraphStartMs);
+
+    expect(turret.turret.telegraphMs).toBe(TURRET_VARIANT_CONFIG.resinBurst.telegraphMs);
+    expect(state.stageRuntime.projectiles).toHaveLength(0);
+
+    advanceSession(session, TURRET_VARIANT_CONFIG.resinBurst.telegraphMs - 1);
+    expect(state.stageRuntime.projectiles).toHaveLength(0);
+
+    advanceSession(session, 1, 1);
+    expect(state.stageRuntime.projectiles).toHaveLength(1);
+    expect(state.stageRuntime.projectiles[0].vx).toBe(-TURRET_VARIANT_CONFIG.resinBurst.projectileSpeed);
+    expect(state.stageRuntime.projectiles[0].variant).toBe('resinBurst');
+    expect(turret.direction).toBe(-1);
+
+    advanceSession(session, TURRET_VARIANT_CONFIG.resinBurst.burstGapMs - 1);
+    expect(state.stageRuntime.projectiles).toHaveLength(1);
+
+    advanceSession(session, 1, 1);
+    expect(state.stageRuntime.projectiles).toHaveLength(2);
+    expect(state.stageRuntime.projectiles[1].vx).toBe(-TURRET_VARIANT_CONFIG.resinBurst.projectileSpeed);
+    expect(turret.direction).toBe(1);
+    expect(turret.turret.telegraphMs).toBe(0);
+    expect(turret.turret.timerMs).toBe(turret.turret.intervalMs - turret.turret.telegraphDurationMs);
+  });
+
+  it('fires ionPulse turrets with a long cyan telegraph into one faster pulse shot', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    const state = getMutableState(session);
+    const turret = state.stageRuntime.enemies.find((enemy: any) => enemy.id === 'turret-1');
+    if (!turret?.turret) {
+      throw new Error('Expected Halo Spire ionPulse turret fixture.');
+    }
+
+    state.stageRuntime.enemies = [turret];
+    state.stageRuntime.hazards = [];
+
+    const telegraphStartMs = turret.turret.intervalMs - turret.turret.telegraphDurationMs;
+    advanceSession(session, telegraphStartMs);
+
+    expect(turret.turret.telegraphMs).toBe(TURRET_VARIANT_CONFIG.ionPulse.telegraphMs);
+    advanceSession(session, TURRET_VARIANT_CONFIG.ionPulse.telegraphMs);
+
+    expect(state.stageRuntime.projectiles).toHaveLength(1);
+    expect(state.stageRuntime.projectiles[0].vx).toBe(-TURRET_VARIANT_CONFIG.ionPulse.projectileSpeed);
+    expect(state.stageRuntime.projectiles[0].variant).toBe('ionPulse');
+    expect(turret.direction).toBe(1);
+    expect(turret.turret.burstGapMs).toBe(0);
+    expect(turret.turret.timerMs).toBe(turret.turret.intervalMs - turret.turret.telegraphDurationMs);
+
+    session.restartStage();
+    const restartedTurret = getMutableState(session).stageRuntime.enemies.find((enemy: any) => enemy.id === 'turret-1');
+    expect(restartedTurret.turret.timerMs).toBe(restartedTurret.turret.intervalMs - restartedTurret.turret.telegraphDurationMs);
+  });
+
   it('consumes non-invincible active powers without reducing health on a damaging hit', () => {
     const session = new GameSession();
     const state = getMutableState(session);
@@ -228,6 +431,113 @@ describe('GameSession regression coverage', () => {
     expect(restartedCoinBlock.remainingHits).toBe(restartedCoinBlock.reward.amount);
   });
 
+  it('starts objective-authored stages with a transient objective briefing', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+
+    expect(state.stageRuntime.objective).toEqual({
+      kind: 'restoreBeacon',
+      target: { kind: 'checkpoint', id: 'cp-6' },
+      completed: false,
+    });
+    expect(state.stageMessage).toBe('Objective: restore the survey beacon');
+  });
+
+  it('completes checkpoint-authored objectives when the authored beacon checkpoint activates', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+    const objectiveCheckpoint = state.stageRuntime.checkpoints.find((checkpoint: any) => checkpoint.id === 'cp-6');
+
+    state.player.x = objectiveCheckpoint.rect.x;
+    state.player.y = objectiveCheckpoint.rect.y;
+    session.update(16, defaultInputState());
+
+    expect(state.stageRuntime.objective.completed).toBe(true);
+    expect(state.stageMessage).toBe('Survey beacon restored');
+  });
+
+  it('blocks exit completion on objective-authored stages until the authored relay is reactivated', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    const state = getMutableState(session);
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+
+    state.player.x = state.stage.exit.x + 4;
+    state.player.y = state.stage.exit.y;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    session.update(16, defaultInputState());
+
+    expect(state.levelCompleted).toBe(false);
+    expect(state.stageRuntime.exitReached).toBe(false);
+    expect(state.stageMessage).toBe('Reactivate the relay before exit');
+
+    const scanner = state.stageRuntime.scannerVolumes.find((volume: any) => volume.id === 'sky-halo-scanner');
+    state.player.x = scanner.x + 16;
+    state.player.y = scanner.y + 16;
+    session.update(16, defaultInputState());
+
+    expect(state.stageRuntime.objective.completed).toBe(true);
+    expect(state.stageMessage).toBe('Relay reactivated');
+
+    state.player.x = state.stage.exit.x + 4;
+    state.player.y = state.stage.exit.y;
+    session.update(16, defaultInputState());
+
+    expect(state.levelCompleted).toBe(true);
+    expect(state.stageRuntime.exitReached).toBe(true);
+  });
+
+  it('persists completed stage objectives through same-attempt checkpoint respawns', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    let state = getMutableState(session);
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+
+    const checkpoint = state.stageRuntime.checkpoints.find((entry: any) => entry.id === 'cp-5');
+    state.player.x = checkpoint.rect.x;
+    state.player.y = checkpoint.rect.y;
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    const scanner = state.stageRuntime.scannerVolumes.find((volume: any) => volume.id === 'sky-halo-scanner');
+    state.player.x = scanner.x + 16;
+    state.player.y = scanner.y + 16;
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.stageRuntime.objective.completed).toBe(true);
+
+    state.player.health = 1;
+    (session as any).damagePlayer();
+    (session as any).respawnPlayer();
+
+    const respawned = getMutableState(session);
+    expect(respawned.activeCheckpointId).toBe('cp-5');
+    expect(respawned.stageRuntime.objective.completed).toBe(true);
+  });
+
+  it('resets stage objectives on manual restart and fresh attempts', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+    const objectiveCheckpoint = state.stageRuntime.checkpoints.find((checkpoint: any) => checkpoint.id === 'cp-6');
+
+    state.player.x = objectiveCheckpoint.rect.x;
+    state.player.y = objectiveCheckpoint.rect.y;
+    session.update(16, defaultInputState());
+    expect(state.stageRuntime.objective.completed).toBe(true);
+
+    session.restartStage();
+
+    const restarted = getMutableState(session);
+    expect(restarted.stageRuntime.objective.completed).toBe(false);
+    expect(restarted.stageMessage).toBe('Objective: restore the survey beacon');
+  });
+
   it('persists revealed platforms only when the checkpoint is activated after the reveal', () => {
     const session = new GameSession();
     session.forceStartStage(2);
@@ -278,36 +588,69 @@ describe('GameSession regression coverage', () => {
     expect(state.stageRuntime.revealedPlatformIds).not.toContain(revealPlatform.reveal.id);
   });
 
-  it('activates temporary bridges on scanner entry and refreshes them only after leaving and re-entering', () => {
+  it('does not start a timed-reveal bridge until the linked reveal cue has made the route legible', () => {
     const session = new GameSession();
     session.forceStartStage(2);
 
     let state = getMutableState(session);
-    const scanner = state.stageRuntime.scannerVolumes[0];
-    const bridgePlatform = state.stageRuntime.platforms.find((platform: any) => platform.temporaryBridge);
-    const fullDuration = bridgePlatform.temporaryBridge.durationMs;
-
-    expect(state.stageRuntime.temporaryBridges[0].active).toBe(false);
+    const { revealVolume, scanner, bridge } = getTimedRevealFixture(state);
 
     state.player.x = scanner.x + 16;
     state.player.y = scanner.y + 16;
     session.update(16, defaultInputState());
 
     state = getMutableState(session);
-    expect(state.stageRuntime.scannerVolumes[0].activated).toBe(true);
-    expect(state.stageRuntime.temporaryBridges[0].active).toBe(true);
-    expect(state.stageRuntime.temporaryBridges[0].remainingMs).toBe(fullDuration);
+    expect(state.stageRuntime.scannerVolumes.find((volume: any) => volume.id === scanner.id).activated).toBe(true);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).active).toBe(false);
+
+    state.player.x = scanner.x - state.player.width - 24;
+    state.player.y = scanner.y + 16;
+    session.update(16, defaultInputState());
+
+    state.player.x = revealVolume.x + 16;
+    state.player.y = revealVolume.y + 16;
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.stageRuntime.revealedPlatformIds).toContain(bridge.revealId);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).active).toBe(false);
+  });
+
+  it('activates timed-reveal bridges on scanner entry only after reveal, then refreshes them only after leaving and re-entering', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    let state = getMutableState(session);
+    const { revealVolume, scanner, bridge, bridgePlatform } = getTimedRevealFixture(state);
+    const fullDuration = bridgePlatform.temporaryBridge.durationMs;
+
+    expect(bridge.active).toBe(false);
+
+    state.player.x = revealVolume.x + 16;
+    state.player.y = revealVolume.y + 16;
+    session.update(16, defaultInputState());
+
+    state.player.x = scanner.x + 16;
+    state.player.y = scanner.y + 16;
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.stageRuntime.scannerVolumes.find((volume: any) => volume.id === scanner.id).activated).toBe(true);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).active).toBe(true);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).remainingMs).toBe(fullDuration);
 
     session.update(16, defaultInputState());
     const afterStayingInside = getMutableState(session);
-    expect(afterStayingInside.stageRuntime.temporaryBridges[0].remainingMs).toBe(fullDuration - 16);
+    expect(afterStayingInside.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).remainingMs).toBe(
+      fullDuration - 16,
+    );
 
     afterStayingInside.player.x = scanner.x - afterStayingInside.player.width - 24;
     afterStayingInside.player.y = scanner.y + 16;
     session.update(16, defaultInputState());
 
     let afterLeaving = getMutableState(session);
-    const remainingAfterLeaving = afterLeaving.stageRuntime.temporaryBridges[0].remainingMs;
+    const remainingAfterLeaving = afterLeaving.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).remainingMs;
     expect(remainingAfterLeaving).toBeLessThan(fullDuration - 16);
 
     afterLeaving.player.x = scanner.x + scanner.width - 20;
@@ -315,21 +658,24 @@ describe('GameSession regression coverage', () => {
     session.update(16, defaultInputState());
 
     state = getMutableState(session);
-    expect(state.stageRuntime.temporaryBridges[0].remainingMs).toBe(fullDuration);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).remainingMs).toBe(fullDuration);
   });
 
-  it('keeps an expired temporary bridge active until the player leaves its support surface', () => {
+  it('keeps an expired timed-reveal bridge active until the player leaves its support surface', () => {
     const session = new GameSession();
     session.forceStartStage(2);
 
     let state = getMutableState(session);
-    const scanner = state.stageRuntime.scannerVolumes[0];
+    const { revealVolume, scanner, bridge } = getTimedRevealFixture(state);
+    state.player.x = revealVolume.x + 16;
+    state.player.y = revealVolume.y + 16;
+    session.update(16, defaultInputState());
+
     state.player.x = scanner.x + 16;
     state.player.y = scanner.y + 16;
     session.update(16, defaultInputState());
 
     state = getMutableState(session);
-    const bridge = state.stageRuntime.temporaryBridges[0];
     const bridgePlatform = state.stageRuntime.platforms.find((platform: any) => platform.id === bridge.id);
 
     bridge.remainingMs = 1;
@@ -343,8 +689,8 @@ describe('GameSession regression coverage', () => {
     session.update(16, defaultInputState());
 
     state = getMutableState(session);
-    expect(state.stageRuntime.temporaryBridges[0].active).toBe(true);
-    expect(state.stageRuntime.temporaryBridges[0].pendingHide).toBe(true);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).active).toBe(true);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).pendingHide).toBe(true);
     expect(state.player.supportPlatformId).toBe(bridge.id);
 
     state.player.x = bridgePlatform.x + bridgePlatform.width + 36;
@@ -354,20 +700,85 @@ describe('GameSession regression coverage', () => {
     session.update(16, defaultInputState());
 
     state = getMutableState(session);
-    expect(state.stageRuntime.temporaryBridges[0].active).toBe(false);
-    expect(state.stageRuntime.temporaryBridges[0].pendingHide).toBe(false);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).active).toBe(false);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).pendingHide).toBe(false);
   });
 
-  it('resets scanner switches and temporary bridges after death, checkpoint respawn, and manual restart', () => {
+  it('persists timed-reveal discovery across checkpoint respawn only when the checkpoint was activated after reveal, while timer state still resets', () => {
     const session = new GameSession();
     session.forceStartStage(2);
 
     let state = getMutableState(session);
-    const scanner = state.stageRuntime.scannerVolumes[0];
+    const { revealVolume, scanner, bridge } = getTimedRevealFixture(state);
+    const lateCheckpoint = state.stageRuntime.checkpoints[state.stageRuntime.checkpoints.length - 1];
+
+    state.player.x = revealVolume.x + 16;
+    state.player.y = revealVolume.y + 16;
+    session.update(16, defaultInputState());
+
+    state.player.x = lateCheckpoint.rect.x;
+    state.player.y = lateCheckpoint.rect.y;
+    session.update(16, defaultInputState());
+
+    state.player.x = scanner.x + 16;
+    state.player.y = scanner.y + 16;
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).active).toBe(true);
+
+    state.player.health = 1;
+    (session as any).damagePlayer();
+    (session as any).respawnPlayer();
+
+    state = getMutableState(session);
+    expect(state.stageRuntime.revealedPlatformIds).toContain(bridge.revealId);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).active).toBe(false);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).remainingMs).toBe(0);
+  });
+
+  it('resets timed-reveal discovery when the reveal happened after the active checkpoint and still clears the active timer on respawn', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    let state = getMutableState(session);
+    const { revealVolume, scanner, bridge } = getTimedRevealFixture(state);
+    const earlyCheckpoint = state.stageRuntime.checkpoints[0];
+
+    state.player.x = earlyCheckpoint.rect.x;
+    state.player.y = earlyCheckpoint.rect.y;
+    session.update(16, defaultInputState());
+
+    state.player.x = revealVolume.x + 16;
+    state.player.y = revealVolume.y + 16;
+    session.update(16, defaultInputState());
+
+    state.player.x = scanner.x + 16;
+    state.player.y = scanner.y + 16;
+    session.update(16, defaultInputState());
+
+    state.player.health = 1;
+    (session as any).damagePlayer();
+    (session as any).respawnPlayer();
+
+    state = getMutableState(session);
+    expect(state.stageRuntime.revealedPlatformIds).not.toContain(bridge.revealId);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).active).toBe(false);
+  });
+
+  it('resets scanner switches and timed-reveal bridges after death, checkpoint respawn, manual restart, and fresh attempts', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    let state = getMutableState(session);
+    const { revealVolume, scanner, bridge } = getTimedRevealFixture(state);
     const checkpoint = state.stageRuntime.checkpoints[0];
 
     const activateBridge = () => {
       const mutable = getMutableState(session);
+      mutable.player.x = revealVolume.x + 16;
+      mutable.player.y = revealVolume.y + 16;
+      session.update(16, defaultInputState());
       mutable.player.x = scanner.x + 16;
       mutable.player.y = scanner.y + 16;
       session.update(16, defaultInputState());
@@ -375,7 +786,7 @@ describe('GameSession regression coverage', () => {
 
     activateBridge();
     state = getMutableState(session);
-    expect(state.stageRuntime.temporaryBridges[0].active).toBe(true);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).active).toBe(true);
 
     state.player.health = 1;
     (session as any).damagePlayer();
@@ -409,6 +820,11 @@ describe('GameSession regression coverage', () => {
     expect(state.stageRuntime.temporaryBridges.every((bridge: any) => bridge.remainingMs === 0 && bridge.active === false)).toBe(
       true,
     );
+
+    session.forceStartStage(2);
+    state = getMutableState(session);
+    expect(state.stageRuntime.revealedPlatformIds).not.toContain(bridge.revealId);
+    expect(state.stageRuntime.temporaryBridges.find((entry: any) => entry.id === bridge.id).active).toBe(false);
   });
 
   it('applies low gravity after jump impulses, pauses it during dash, and resumes it afterward', () => {
@@ -457,6 +873,90 @@ describe('GameSession regression coverage', () => {
     next = getMutableState(session);
     expect(next.player.gravityScale).toBe(0.4);
     expect(next.player.vy).toBeCloseTo(next.stage.world.gravity * 0.4 * 0.016, 5);
+  });
+
+  it('applies anti-grav streams and gravity inversion after impulses, suppresses them during dash, and restores normal gravity on exit', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+    const support = state.stageRuntime.platforms.find((platform: any) => platform.kind === 'static' && platform.width >= 180);
+
+    state.stageRuntime.gravityFields = [
+      {
+        id: 'test-anti-grav',
+        kind: 'anti-grav-stream',
+        x: support.x - 20,
+        y: support.y - 220,
+        width: 280,
+        height: 260,
+      },
+      {
+        id: 'test-inversion',
+        kind: 'gravity-inversion-column',
+        x: support.x + 320,
+        y: support.y - 240,
+        width: 220,
+        height: 280,
+      },
+    ];
+    state.player.x = support.x + 24;
+    state.player.y = support.y - state.player.height;
+    state.player.onGround = true;
+    state.player.supportPlatformId = support.id;
+
+    session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
+
+    let next = getMutableState(session);
+    expect(next.player.gravityFieldId).toBe('test-anti-grav');
+    expect(next.player.gravityFieldKind).toBe('anti-grav-stream');
+    expect(next.player.gravityScale).toBeLessThan(0);
+    expect(next.player.vy).toBeLessThan(-640);
+
+    next.progress.activePowers.dash = true;
+    next.player.x = support.x + 30;
+    next.player.y = support.y - 120;
+    next.player.onGround = false;
+    next.player.supportPlatformId = null;
+    next.player.vy = 90;
+    session.update(16, { ...defaultInputState(), dashPressed: true });
+
+    next = getMutableState(session);
+    expect(next.player.dashTimerMs).toBeGreaterThan(0);
+    expect(next.player.vy).toBe(0);
+    expect(next.player.gravityFieldId).toBeNull();
+    expect(next.player.gravityScale).toBe(1);
+
+    next.player.dashTimerMs = 0;
+    next.player.vy = 0;
+    next.player.onGround = false;
+    next.player.supportPlatformId = null;
+    session.update(16, defaultInputState());
+
+    next = getMutableState(session);
+    expect(next.player.gravityFieldId).toBe('test-anti-grav');
+    expect(next.player.vy).toBeLessThan(0);
+
+    placePlayerInsideField(next, state.stageRuntime.gravityFields[1]);
+    session.update(16, defaultInputState());
+
+    next = getMutableState(session);
+    expect(next.player.gravityFieldId).toBe('test-inversion');
+    expect(next.player.gravityFieldKind).toBe('gravity-inversion-column');
+    expect(next.player.gravityScale).toBe(-1);
+    expect(next.player.vy).toBeCloseTo(-next.stage.world.gravity * 0.016, 5);
+
+    next.player.x = state.stageRuntime.gravityFields[1].x + state.stageRuntime.gravityFields[1].width + 80;
+    next.player.y = support.y - 120;
+    next.player.vx = 0;
+    next.player.vy = 0;
+    next.player.onGround = false;
+    next.player.supportPlatformId = null;
+    session.update(16, defaultInputState());
+
+    next = getMutableState(session);
+    expect(next.player.gravityFieldId).toBeNull();
+    expect(next.player.gravityFieldKind).toBeNull();
+    expect(next.player.gravityScale).toBe(1);
+    expect(next.player.vy).toBeCloseTo(next.stage.world.gravity * 0.016, 5);
   });
 
   it('keeps spring boosts and falling-platform escape jumps intact inside low-gravity zones', () => {
@@ -509,6 +1009,142 @@ describe('GameSession regression coverage', () => {
     state = getMutableState(session);
     expect(state.player.vy).toBeLessThan(-620);
     expect(state.player.supportPlatformId).toBeNull();
+  });
+
+  it('keeps spring boosts, launcher impulses, sludge jumps, and falling-platform escape timing intact inside gravity fields', () => {
+    const session = new GameSession();
+    let state = getMutableState(session);
+    const springPlatform = state.stageRuntime.platforms.find((platform: any) => platform.kind === 'spring');
+
+    state.stageRuntime.gravityFields = [
+      {
+        id: 'spring-stream',
+        kind: 'anti-grav-stream',
+        x: springPlatform.x - 20,
+        y: springPlatform.y - 220,
+        width: 320,
+        height: 260,
+      },
+    ];
+    state.player.x = springPlatform.x + 10;
+    state.player.y = springPlatform.y - state.player.height;
+    state.player.vy = 60;
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.player.vy).toBe(-springPlatform.spring.boost);
+
+    session.forceStartStage(2);
+    state = getMutableState(session);
+    const { launcherEntry: gasVent, supportPlatform } = getLauncher(state, 'gasVent');
+    const stickySurface = state.stageRuntime.terrainSurfaces.find((surface: any) => surface.kind === 'stickySludge');
+    const antiGravField = getGravityField(state, 'anti-grav-stream');
+
+    expect(stickySurface.supportPlatformId).toBe(gasVent.supportPlatformId);
+    expect(antiGravField.x).toBeLessThan(gasVent.x + gasVent.width);
+    placePlayerAboveLauncher(state, gasVent, supportPlatform);
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.player.vx).toBeCloseTo(gasVent.direction.x * gasVent.impulse, 5);
+    expect(state.player.vy).toBeCloseTo(gasVent.direction.y * gasVent.impulse, 5);
+
+    session.update(16, defaultInputState());
+    state = getMutableState(session);
+    expect(state.player.gravityFieldId).toBe(antiGravField.id);
+
+    state.player.x = stickySurface.x + 20;
+    state.player.y = supportPlatform.y - state.player.height;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    state.player.onGround = true;
+    state.player.supportPlatformId = supportPlatform.id;
+    state.player.supportTerrainSurfaceId = stickySurface.id;
+    session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
+
+    state = getMutableState(session);
+    expect(state.player.gravityFieldId).toBe(antiGravField.id);
+    expect(state.player.vy).toBeLessThan(0);
+    expect(state.player.vy).toBeGreaterThan(-640);
+
+    session.forceStartStage(0);
+    state = getMutableState(session);
+    const fallingPlatform = state.stageRuntime.platforms.find((platform: any) => platform.kind === 'falling');
+    state.stageRuntime.gravityFields = [
+      {
+        id: 'falling-inversion',
+        kind: 'gravity-inversion-column',
+        x: fallingPlatform.x - 20,
+        y: fallingPlatform.y - 240,
+        width: 320,
+        height: 280,
+      },
+    ];
+    state.player.x = fallingPlatform.x + 28;
+    state.player.y = fallingPlatform.y - state.player.height;
+    state.player.onGround = true;
+    state.player.supportPlatformId = fallingPlatform.id;
+
+    session.update(16, defaultInputState());
+    for (let index = 0; index < 48; index += 1) {
+      session.update(16, defaultInputState());
+    }
+
+    session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
+    state = getMutableState(session);
+    expect(state.player.gravityFieldKind).toBe('gravity-inversion-column');
+    expect(state.player.vy).toBeLessThan(-640);
+    expect(state.player.supportPlatformId).toBeNull();
+  });
+
+  it('keeps gravity fields stateless across respawn, checkpoint respawn, and manual restart', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    let state = getMutableState(session);
+    const antiGravField = getGravityField(state, 'anti-grav-stream');
+    const checkpoint = state.stageRuntime.checkpoints.find((entry: any) => entry.id === 'cp-5');
+    if (!checkpoint) {
+      throw new Error('Expected Halo Spire checkpoint fixture.');
+    }
+
+    placePlayerInsideField(state, antiGravField);
+    session.update(16, defaultInputState());
+    state = getMutableState(session);
+    expect(state.player.gravityFieldId).toBe(antiGravField.id);
+
+    state.player.x = checkpoint.rect.x;
+    state.player.y = checkpoint.rect.y;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    session.update(16, defaultInputState());
+    expect(getMutableState(session).activeCheckpointId).toBe(checkpoint.id);
+
+    placePlayerInsideField(getMutableState(session), antiGravField);
+    session.update(16, defaultInputState());
+    getMutableState(session).player.health = 1;
+    (session as any).damagePlayer();
+    (session as any).respawnPlayer();
+
+    state = getMutableState(session);
+    expect(state.activeCheckpointId).toBe(checkpoint.id);
+    expect(state.stageRuntime.gravityFields.map((field: any) => field.id)).toEqual([
+      'sky-anti-grav-stream',
+      'sky-gravity-inversion-column',
+    ]);
+    expect(state.player.gravityFieldId).toBeNull();
+    expect(state.player.gravityFieldKind).toBeNull();
+    expect(state.player.gravityScale).toBe(1);
+
+    session.restartStage();
+    state = getMutableState(session);
+    expect(state.stageRuntime.gravityFields.map((field: any) => field.id)).toEqual([
+      'sky-anti-grav-stream',
+      'sky-gravity-inversion-column',
+    ]);
+    expect(state.player.gravityFieldId).toBeNull();
+    expect(state.player.gravityFieldKind).toBeNull();
+    expect(state.player.gravityScale).toBe(1);
   });
 
   it('arms brittle floors on first support, allows an expiry jump, and breaks after contact ends', () => {
@@ -828,6 +1464,16 @@ describe('GameSession regression coverage', () => {
     let state = getMutableState(session);
     const { launcherEntry: gasVent, supportPlatform } = getLauncher(state, 'gasVent');
     const stickySurface = state.stageRuntime.terrainSurfaces.find((surface: any) => surface.kind === 'stickySludge');
+    state.stageRuntime.lowGravityZones = [
+      {
+        id: 'launcher-low-gravity',
+        x: gasVent.x - 80,
+        y: gasVent.y - 220,
+        width: 260,
+        height: 260,
+        gravityScale: 0.45,
+      },
+    ];
     const lowGravityZone = state.stageRuntime.lowGravityZones[0];
 
     expect(stickySurface.supportPlatformId).toBe(gasVent.supportPlatformId);

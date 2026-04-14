@@ -1,16 +1,19 @@
-import Phaser from 'phaser';
+import * as Phaser from 'phaser';
 import {
   getCollectibleRewardBlockLabel,
   getCollectibleRewardRevealLabel,
   PLAYER_POWER_VARIANTS,
+  TURRET_VARIANT_CONFIG,
   getPowerRevealLabel,
   getPowerShortLabel,
   isBrittleSurfaceBroken,
   isBrittleSurfaceWarning,
   isPlatformActive,
+  isPlatformVisible,
   type CheckpointState,
   type CollectibleState,
   type EnemyState,
+  type GravityFieldState,
   type LauncherState,
   type PlatformState,
   type ProjectileState,
@@ -22,6 +25,14 @@ import { createHud } from '../../ui/hud/hud';
 import { SceneBridge } from '../adapters/sceneBridge';
 import { SynthAudio } from '../audio/SynthAudio';
 import { configureCamera } from '../view/camera/configureCamera';
+import {
+  RETRO_FONT_FAMILY,
+  createRetroPresentationPalette,
+  drawRetroBackdrop,
+  getRetroMotionStep,
+  snapRetroValue,
+  type RetroPresentationPalette,
+} from '../view/retroPresentation';
 
 export class GameScene extends Phaser.Scene {
   private bridge!: SceneBridge;
@@ -40,13 +51,21 @@ export class GameScene extends Phaser.Scene {
 
   private playerWingRight!: Phaser.GameObjects.Rectangle;
 
+  private retroPalette!: RetroPresentationPalette;
+
   private platformSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
   private terrainSurfaceSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
   private launcherSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
+  private hazardSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
   private gravityZoneSprites: Phaser.GameObjects.Rectangle[] = [];
+
+  private gravityFieldSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
+  private activationNodeSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
   private enemySprites = new Map<string, Phaser.GameObjects.Sprite>();
 
@@ -70,6 +89,8 @@ export class GameScene extends Phaser.Scene {
 
   private hud = createHud(document.createElement('div'));
 
+  private completeTransitionEvent?: Phaser.Time.TimerEvent;
+
   constructor() {
     super('game');
   }
@@ -77,22 +98,19 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.bridge = this.registry.get('bridge') as SceneBridge;
     this.audio = new SynthAudio(this, () => this.bridge.getSession().getState().progress.runSettings.masterVolume);
+    this.completeTransitionEvent = undefined;
     const mount = this.game.canvas.parentElement as HTMLElement;
     this.hud.root.remove();
     this.hud = createHud(mount);
 
     const state = this.bridge.getSession().getState();
     const { stage } = state;
+    this.retroPalette = createRetroPresentationPalette(stage.palette);
 
     this.cameras.main.fadeIn(150);
     configureCamera(this.cameras.main, stage.world.width, stage.world.height);
 
-    const bg = this.add.graphics();
-    bg.fillGradientStyle(stage.palette.skyTop, stage.palette.skyTop, stage.palette.skyBottom, stage.palette.skyBottom, 1);
-    bg.fillRect(0, 0, stage.world.width, stage.world.height);
-    bg.fillStyle(stage.palette.accent, 0.1);
-    bg.fillCircle(220, 160, 180);
-    bg.fillCircle(stage.world.width - 220, 120, 120);
+    drawRetroBackdrop(this, 0, 0, stage.world.width, stage.world.height, this.retroPalette, 'gameplay');
 
     for (const zone of state.stageRuntime.lowGravityZones) {
       const overlay = this.add
@@ -101,12 +119,44 @@ export class GameScene extends Phaser.Scene {
           zone.y + zone.height / 2,
           zone.width,
           zone.height,
-          stage.palette.accent,
-          0.09,
+          this.retroPalette.cool,
+          0.11,
         )
-        .setStrokeStyle(2, stage.palette.accent, 0.28)
+        .setStrokeStyle(2, this.retroPalette.cool, 0.4)
         .setOrigin(0.5);
       this.gravityZoneSprites.push(overlay);
+    }
+
+    for (const field of state.stageRuntime.gravityFields) {
+      const overlay = this.add
+        .rectangle(
+          field.x + field.width / 2,
+          field.y + field.height / 2,
+          field.width,
+          field.height,
+          this.gravityFieldColor(field),
+          this.gravityFieldAlpha(field),
+        )
+        .setStrokeStyle(2, this.gravityFieldColor(field), 0.42)
+        .setOrigin(0.5)
+        .setDepth(1);
+      this.gravityFieldSprites.set(field.id, overlay);
+    }
+
+    for (const node of state.stageRuntime.activationNodes) {
+      const sprite = this.add
+        .rectangle(
+          node.x + node.width / 2,
+          node.y + node.height / 2,
+          node.width,
+          node.height,
+          this.activationNodeColor(node),
+          0.9,
+        )
+        .setStrokeStyle(2, this.retroPalette.border, 0.48)
+        .setOrigin(0.5)
+        .setDepth(3);
+      this.activationNodeSprites.set(node.id, sprite);
     }
 
     for (const platform of state.stageRuntime.platforms) {
@@ -120,7 +170,7 @@ export class GameScene extends Phaser.Scene {
         )
         .setOrigin(0.5);
       sprite.setVisible(
-        isPlatformActive(
+        isPlatformVisible(
           platform,
           state.stageRuntime.revealedPlatformIds,
           state.stageRuntime.temporaryBridges.filter((bridge) => bridge.active).map((bridge) => bridge.id),
@@ -141,7 +191,7 @@ export class GameScene extends Phaser.Scene {
         )
         .setOrigin(0.5)
         .setDepth(2);
-      sprite.setStrokeStyle(1, 0xf7f3d6, terrainSurface.kind === 'stickySludge' ? 0.22 : 0.34);
+      sprite.setStrokeStyle(2, this.retroPalette.border, terrainSurface.kind === 'stickySludge' ? 0.24 : 0.38);
       this.terrainSurfaceSprites.set(terrainSurface.id, sprite);
     }
 
@@ -157,7 +207,7 @@ export class GameScene extends Phaser.Scene {
         )
         .setOrigin(0.5)
         .setDepth(3);
-      sprite.setStrokeStyle(2, 0xf7f3d6, 0.35);
+      sprite.setStrokeStyle(2, this.retroPalette.border, 0.5);
       this.launcherSprites.set(launcherEntry.id, sprite);
     }
 
@@ -165,12 +215,12 @@ export class GameScene extends Phaser.Scene {
       this.drawHazard(hazard);
     }
 
-    this.playerAura = this.add.ellipse(0, 0, 44, 58, 0x92f7ff, 0.22).setVisible(false);
-    this.player = this.add.rectangle(0, 0, 26, 42, 0xf5cf64).setOrigin(0, 0);
-    this.playerHeadband = this.add.rectangle(0, 0, 18, 6, 0xf7f3d6).setVisible(false);
-    this.playerAccent = this.add.rectangle(0, 0, 10, 8, 0xf7f3d6).setVisible(false);
-    this.playerWingLeft = this.add.rectangle(0, 0, 8, 16, 0xeafff0).setVisible(false);
-    this.playerWingRight = this.add.rectangle(0, 0, 8, 16, 0xeafff0).setVisible(false);
+    this.playerAura = this.add.ellipse(0, 0, 40, 52, this.retroPalette.cool, 0.18).setVisible(false).setDepth(5);
+    this.player = this.add.rectangle(0, 0, 24, 40, this.retroPalette.warm).setOrigin(0, 0).setDepth(6);
+    this.playerHeadband = this.add.rectangle(0, 0, 18, 6, this.retroPalette.border).setVisible(false).setDepth(7);
+    this.playerAccent = this.add.rectangle(0, 0, 10, 8, this.retroPalette.border).setVisible(false).setDepth(7);
+    this.playerWingLeft = this.add.rectangle(0, 0, 8, 16, this.retroPalette.bright).setVisible(false).setDepth(7);
+    this.playerWingRight = this.add.rectangle(0, 0, 8, 16, this.retroPalette.bright).setVisible(false).setDepth(7);
 
     for (const checkpoint of state.stageRuntime.checkpoints) {
       const sprite = this.add.sprite(checkpoint.rect.x, checkpoint.rect.y, 'checkpoint').setOrigin(0, 0);
@@ -191,13 +241,13 @@ export class GameScene extends Phaser.Scene {
           rewardBlock.height,
           this.rewardBlockColor(rewardBlock),
         )
-        .setStrokeStyle(2, 0xf7f3d6, 0.3)
+        .setStrokeStyle(2, this.retroPalette.border, 0.55)
         .setOrigin(0.5);
       const label = this.add
         .text(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2, this.rewardBlockLabel(rewardBlock), {
-          fontFamily: 'Trebuchet MS',
+          fontFamily: RETRO_FONT_FAMILY,
           fontSize: '14px',
-          color: '#11150f',
+          color: this.retroPalette.shadow,
           fontStyle: 'bold',
         })
         .setOrigin(0.5);
@@ -210,18 +260,18 @@ export class GameScene extends Phaser.Scene {
       this.enemySprites.set(enemy.id, sprite);
     }
 
-    this.exitSprite = this.add.sprite(stage.exit.x, stage.exit.y, 'exit').setOrigin(0, 0).setTint(stage.palette.accent);
+    this.exitSprite = this.add.sprite(stage.exit.x, stage.exit.y, 'exit').setOrigin(0, 0).setTint(this.retroPalette.warm);
 
     this.pauseOverlay = this.add
-      .rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x08100d, 0.7)
+      .rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, this.retroPalette.ink, 0.8)
       .setDepth(100)
       .setScrollFactor(0)
       .setVisible(false);
     this.pauseText = this.add
-      .text(this.scale.width / 2, this.scale.height / 2, 'PAUSE', {
-        fontFamily: 'Trebuchet MS',
-        fontSize: '44px',
-        color: '#f7f3d6',
+      .text(this.scale.width / 2, this.scale.height / 2, 'PAUSED', {
+        fontFamily: RETRO_FONT_FAMILY,
+        fontSize: '40px',
+        color: this.retroPalette.text,
         fontStyle: 'bold',
         letterSpacing: 4,
       })
@@ -244,6 +294,9 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, syncPauseOverlayLayout);
     });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.handleShutdown();
+    });
   }
 
   update(_: number, delta: number): void {
@@ -259,14 +312,17 @@ export class GameScene extends Phaser.Scene {
     this.syncView();
     this.bridge.syncHud(this.hud);
 
-    if (state.levelJustCompleted) {
-      this.time.delayedCall(350, () => {
+    if (state.levelJustCompleted && !this.completeTransitionEvent) {
+      this.completeTransitionEvent = this.time.delayedCall(350, () => {
+        this.completeTransitionEvent = undefined;
         this.scene.start('complete');
       });
     }
   }
 
-  shutdown(): void {
+  private handleShutdown(): void {
+    this.completeTransitionEvent?.remove(false);
+    this.completeTransitionEvent = undefined;
     this.audio.stopMusic();
     this.setPauseOverlayVisible(false);
     this.hud.root.remove();
@@ -274,6 +330,8 @@ export class GameScene extends Phaser.Scene {
     this.terrainSurfaceSprites.clear();
     this.launcherSprites.clear();
     this.gravityZoneSprites = [];
+    this.gravityFieldSprites.clear();
+    this.activationNodeSprites.clear();
     this.enemySprites.clear();
     this.checkpointSprites.clear();
     this.collectibleSprites.clear();
@@ -281,6 +339,7 @@ export class GameScene extends Phaser.Scene {
     this.rewardBlockSprites.clear();
     this.rewardBlockLabels.clear();
     this.rewardRevealTexts.clear();
+    this.hazardSprites.clear();
   }
 
   private setupInput(): void {
@@ -341,21 +400,39 @@ export class GameScene extends Phaser.Scene {
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.events.off(Phaser.Scenes.Events.UPDATE, updateInput);
-      this.hud.root.remove();
-      this.audio.stopMusic();
     });
   }
 
-  private drawHazard(hazard: { kind: string; rect: { x: number; y: number; width: number; height: number } }): void {
-    this.add
+  private drawHazard(hazard: { id?: string; kind: string; rect: { x: number; y: number; width: number; height: number } }): void {
+    const base = this.add
       .rectangle(
         hazard.rect.x + hazard.rect.width / 2,
         hazard.rect.y + hazard.rect.height / 2,
         hazard.rect.width,
         hazard.rect.height,
-        0xe75b5b,
+        this.retroPalette.alert,
       )
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setDepth(4)
+      .setStrokeStyle(2, this.retroPalette.ink, 1);
+
+    const toothWidth = Math.max(8, Math.floor(hazard.rect.width / 3));
+    for (let index = 0; index < Math.max(2, Math.floor(hazard.rect.width / toothWidth)); index += 1) {
+      this.add
+        .rectangle(
+          hazard.rect.x + toothWidth / 2 + toothWidth * index,
+          hazard.rect.y + 2,
+          Math.max(4, toothWidth - 2),
+          Math.max(4, Math.floor(hazard.rect.height / 2)),
+          this.retroPalette.warm,
+        )
+        .setOrigin(0.5, 0)
+        .setDepth(5);
+    }
+
+    if (hazard.id) {
+      this.hazardSprites.set(hazard.id, base);
+    }
   }
 
   private syncView(): void {
@@ -369,11 +446,13 @@ export class GameScene extends Phaser.Scene {
     this.player.setAlpha(player.invulnerableMs > 0 && Math.floor(player.invulnerableMs / 90) % 2 === 0 ? 0.45 : 1);
     this.player.setFillStyle(variant.bodyColor);
     this.player.setStrokeStyle(2, variant.detailColor, 0.95);
+    const auraStep = getRetroMotionStep(this.time.now + centerX, 110, 3);
+    const auraAlpha = [0.14, 0.2, 0.28][auraStep] ?? 0.14;
     this.playerAura
       .setPosition(centerX, centerY)
       .setFillStyle(variant.auraColor ?? variant.accentColor, variant.auraColor ? 0.24 : 0.12)
       .setVisible(Boolean(variant.auraColor))
-      .setAlpha(variant.auraColor ? 0.18 + Math.abs(Math.sin(this.time.now / 140)) * 0.22 : 0);
+      .setAlpha(variant.auraColor ? auraAlpha : 0);
     this.playerHeadband.setVisible(false);
     this.playerAccent.setVisible(false);
     this.playerWingLeft.setVisible(false);
@@ -390,6 +469,10 @@ export class GameScene extends Phaser.Scene {
 
     for (const launcherEntry of state.stageRuntime.launchers) {
       this.syncLauncher(launcherEntry);
+    }
+
+    for (const activationNode of state.stageRuntime.activationNodes) {
+      this.syncActivationNode(activationNode);
     }
 
     for (const checkpoint of state.stageRuntime.checkpoints) {
@@ -454,6 +537,31 @@ export class GameScene extends Phaser.Scene {
       height: number;
       visible: boolean;
     }[];
+    gravityFieldVisuals: {
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      visible: boolean;
+      fillColor: number;
+    }[];
+    activationNodeVisuals: {
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      visible: boolean;
+      fillColor: number;
+    }[];
+    magneticPlatformVisuals: {
+      id: string;
+      powered: boolean;
+      visible: boolean;
+      fillColor: number;
+      alpha: number;
+    }[];
   } {
     return {
       runPaused: this.bridge.isRunPaused(),
@@ -482,6 +590,40 @@ export class GameScene extends Phaser.Scene {
           height: launcherEntry.height,
           visible: this.launcherSprites.get(launcherEntry.id)?.visible ?? false,
         })),
+      gravityFieldVisuals: this.bridge
+        .getSession()
+        .getState()
+        .stageRuntime.gravityFields.map((field) => ({
+          id: field.id,
+          x: field.x,
+          y: field.y,
+          width: field.width,
+          height: field.height,
+          visible: this.gravityFieldSprites.get(field.id)?.visible ?? false,
+          fillColor: this.gravityFieldSprites.get(field.id)?.fillColor ?? 0,
+        })),
+      activationNodeVisuals: this.bridge
+        .getSession()
+        .getState()
+        .stageRuntime.activationNodes.map((node) => ({
+          id: node.id,
+          x: node.x,
+          y: node.y,
+          width: node.width,
+          height: node.height,
+          visible: this.activationNodeSprites.get(node.id)?.visible ?? false,
+          fillColor: this.activationNodeSprites.get(node.id)?.fillColor ?? 0,
+        })),
+      magneticPlatformVisuals: this.bridge
+        .getSession()
+        .getState()
+        .stageRuntime.platforms.filter((platform) => platform.magnetic).map((platform) => ({
+          id: platform.id,
+          powered: platform.magnetic?.powered ?? false,
+          visible: this.platformSprites.get(platform.id)?.visible ?? false,
+          fillColor: this.platformSprites.get(platform.id)?.fillColor ?? 0,
+          alpha: this.platformSprites.get(platform.id)?.alpha ?? 0,
+        })),
     };
   }
 
@@ -498,7 +640,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     const state = this.bridge.getSession().getState();
-    const visible = isPlatformActive(
+    const visible = isPlatformVisible(
+      platform,
+      state.stageRuntime.revealedPlatformIds,
+      state.stageRuntime.temporaryBridges.filter((bridge) => bridge.active).map((bridge) => bridge.id),
+    );
+    const active = isPlatformActive(
       platform,
       state.stageRuntime.revealedPlatformIds,
       state.stageRuntime.temporaryBridges.filter((bridge) => bridge.active).map((bridge) => bridge.id),
@@ -510,10 +657,17 @@ export class GameScene extends Phaser.Scene {
 
     sprite.setPosition(platform.x + platform.width / 2, platform.y + platform.height / 2);
     sprite.setFillStyle(this.platformColor(platform));
+    sprite.setStrokeStyle(0);
 
     if (platform.kind === 'falling' && platform.fall) {
       const alpha = platform.fall.falling ? 0.45 : platform.fall.triggered ? 0.7 : 1;
       sprite.setAlpha(alpha);
+    } else if (platform.magnetic) {
+      sprite.setAlpha(platform.magnetic.powered ? 1 : 0.46);
+      sprite.setStrokeStyle(2, platform.magnetic.powered ? 0xd6fff6 : 0x90a6bf, 0.48);
+    } else if (platform.temporaryBridge && platform.reveal && !active) {
+      sprite.setAlpha(0.38);
+      sprite.setStrokeStyle(2, 0xf7f3d6, 0.2);
     } else {
       sprite.setAlpha(1);
     }
@@ -532,6 +686,20 @@ export class GameScene extends Phaser.Scene {
       .setVisible(true);
   }
 
+  private syncActivationNode(node: { id: string; x: number; y: number; width: number; height: number; activated: boolean }): void {
+    const sprite = this.activationNodeSprites.get(node.id);
+    if (!sprite) {
+      return;
+    }
+
+    sprite
+      .setPosition(node.x + node.width / 2, node.y + node.height / 2)
+      .setSize(node.width, node.height)
+      .setFillStyle(this.activationNodeColor(node), node.activated ? 0.98 : 0.9)
+      .setStrokeStyle(2, node.activated ? this.retroPalette.bright : this.retroPalette.border, node.activated ? 0.52 : 0.4)
+      .setVisible(true);
+  }
+
   private syncTerrainSurface(surface: TerrainSurfaceState): void {
     const sprite = this.terrainSurfaceSprites.get(surface.id);
     if (!sprite) {
@@ -542,12 +710,14 @@ export class GameScene extends Phaser.Scene {
     sprite.setSize(surface.width, surface.height);
     sprite.setVisible(true);
     sprite.setFillStyle(this.terrainSurfaceColor(surface), this.terrainSurfaceAlpha(surface));
-    sprite.setStrokeStyle(1, 0xf7f3d6, surface.kind === 'stickySludge' ? 0.22 : 0.34);
+    sprite.setStrokeStyle(2, this.retroPalette.border, surface.kind === 'stickySludge' ? 0.24 : 0.38);
   }
 
   private syncCheckpoint(checkpoint: CheckpointState): void {
     const sprite = this.checkpointSprites.get(checkpoint.id);
-    sprite?.setTint(checkpoint.activated ? 0xd8ff74 : 0x91f275);
+    sprite
+      ?.setTint(checkpoint.activated ? this.retroPalette.safe : this.retroPalette.cool)
+      .setScale(checkpoint.activated ? 1.12 : 1);
   }
 
   private syncCollectible(collectible: CollectibleState): void {
@@ -557,7 +727,11 @@ export class GameScene extends Phaser.Scene {
     }
     sprite.setVisible(!collectible.collected);
     if (!collectible.collected) {
+      const collectibleStep = getRetroMotionStep(this.time.now + collectible.position.x, 140, 2);
       sprite.setPosition(collectible.position.x, collectible.position.y);
+      sprite.setTint(this.retroPalette.warm);
+      sprite.setScale(collectibleStep === 0 ? 1 : 1.12);
+      sprite.setAlpha(collectibleStep === 0 ? 1 : 0.86);
     }
   }
 
@@ -569,12 +743,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     const flashProgress = Phaser.Math.Clamp(rewardBlock.hitFlashMs / 180, 0, 1);
-    const bumpOffset = flashProgress > 0 ? 10 * flashProgress : 0;
+    const bumpOffset = flashProgress > 0 ? snapRetroValue(10 * flashProgress, 2) : 0;
     const alpha = rewardBlock.used ? 0.35 : 1;
 
     sprite.setPosition(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2 - bumpOffset);
     sprite.setFillStyle(this.rewardBlockColor(rewardBlock));
-    sprite.setStrokeStyle(2, flashProgress > 0 ? 0xffffff : 0xf7f3d6, flashProgress > 0 ? 0.8 : 0.3);
+    sprite.setStrokeStyle(2, flashProgress > 0 ? 0xffffff : this.retroPalette.border, flashProgress > 0 ? 0.8 : 0.55);
     sprite.setAlpha(alpha);
     label.setPosition(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2 - bumpOffset);
     label.setText(this.rewardBlockLabel(rewardBlock));
@@ -586,11 +760,11 @@ export class GameScene extends Phaser.Scene {
     if (!text) {
       text = this.add
         .text(rewardReveal.x, rewardReveal.y, this.rewardRevealText(rewardReveal), {
-          fontFamily: 'Trebuchet MS',
+          fontFamily: RETRO_FONT_FAMILY,
           fontSize: '18px',
           color: this.rewardRevealColor(rewardReveal),
           fontStyle: 'bold',
-          stroke: '#08100d',
+          stroke: this.retroPalette.shadow,
           strokeThickness: 4,
         })
         .setOrigin(0.5)
@@ -599,7 +773,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const alpha = Phaser.Math.Clamp(rewardReveal.timerMs / rewardReveal.durationMs, 0, 1);
-    const floatOffset = (1 - alpha) * 24;
+  const floatOffset = snapRetroValue((1 - alpha) * 24, 3);
     text.setText(this.rewardRevealText(rewardReveal));
     text.setColor(this.rewardRevealColor(rewardReveal));
     text.setPosition(rewardReveal.x, rewardReveal.y - floatOffset);
@@ -615,11 +789,30 @@ export class GameScene extends Phaser.Scene {
     if (enemy.alive) {
       sprite.setPosition(enemy.x, enemy.y);
       sprite.setFlipX(enemy.direction < 0);
+      sprite.setScale(1);
+      sprite.setAlpha(1);
+      const turretVariant = enemy.variant ? TURRET_VARIANT_CONFIG[enemy.variant] : null;
       sprite.setTint(
-        enemy.kind === 'charger' ? 0xffa16f : enemy.kind === 'flyer' ? 0xc9fdff : 0xffffff,
+        enemy.kind === 'charger'
+          ? this.retroPalette.alert
+          : enemy.kind === 'flyer'
+            ? this.retroPalette.cool
+            : turretVariant
+              ? turretVariant.baseColor
+              : enemy.kind === 'hopper'
+                ? this.retroPalette.safe
+                : this.retroPalette.warm,
       );
       if (enemy.kind === 'charger' && enemy.charger?.state === 'windup') {
-        sprite.setTint(0xffe38a);
+        sprite.setTint(this.retroPalette.warm);
+        sprite.setScale(1.1);
+      }
+      if (enemy.kind === 'turret' && turretVariant && enemy.turret?.telegraphMs) {
+        const progress = 1 - enemy.turret.telegraphMs / Math.max(enemy.turret.telegraphDurationMs, 1);
+        const telegraphStep = Math.min(2, Math.floor(progress * 3));
+        sprite.setTint(turretVariant.telegraphColor);
+        sprite.setScale([1, 1.06, 1.12][telegraphStep] ?? 1);
+        sprite.setAlpha([0.8, 0.9, 1][telegraphStep] ?? 0.8);
       }
     }
   }
@@ -638,47 +831,58 @@ export class GameScene extends Phaser.Scene {
     }
 
     sprite.setPosition(projectile.x, projectile.y);
+    sprite.setTint(projectile.variant ? TURRET_VARIANT_CONFIG[projectile.variant].projectileColor : 0xffc15b);
+    sprite.setScale(projectile.variant ? 1.18 : 1.06);
+    sprite.setAlpha(projectile.variant ? 0.96 : 0.9);
   }
 
   private platformColor(platform: PlatformState): number {
+    if (platform.magnetic) {
+      return platform.magnetic.powered ? this.retroPalette.cool : this.retroPalette.muted;
+    }
+
     if (platform.temporaryBridge) {
-      return 0x8ef2ff;
+      return this.retroPalette.cool;
     }
 
     if (platform.reveal) {
-      return 0xb7dfff;
+      return this.retroPalette.border;
     }
 
     switch (platform.kind) {
       case 'moving':
-        return 0x8faec6;
+        return this.retroPalette.muted;
       case 'falling':
-        return 0xc78f59;
+        return this.retroPalette.alert;
       case 'spring':
-        return 0x8fd37c;
+        return this.retroPalette.safe;
       default:
-        return this.bridge.getSession().getState().stage.palette.ground;
+        return this.retroPalette.panelAlt;
     }
+  }
+
+  private activationNodeColor(node: { activated: boolean }): number {
+    return node.activated ? this.retroPalette.safe : this.retroPalette.muted;
   }
 
   private terrainSurfaceColor(surface: TerrainSurfaceState): number {
     if (surface.kind === 'stickySludge') {
-      return 0x627f2d;
+      return this.retroPalette.panelAlt;
     }
 
     if (isBrittleSurfaceBroken(surface)) {
-      return 0x4a6170;
+      return this.retroPalette.muted;
     }
 
     if (isBrittleSurfaceWarning(surface)) {
-      return 0xffd578;
+      return this.retroPalette.warm;
     }
 
-    return 0xc7f4ff;
+    return this.retroPalette.cool;
   }
 
   private launcherColor(launcherEntry: LauncherState): number {
-    return launcherEntry.kind === 'bouncePod' ? 0x7df2b3 : 0xffc07a;
+    return launcherEntry.kind === 'bouncePod' ? this.retroPalette.safe : this.retroPalette.warm;
   }
 
   private terrainSurfaceAlpha(surface: TerrainSurfaceState): number {
@@ -689,20 +893,28 @@ export class GameScene extends Phaser.Scene {
     return isBrittleSurfaceBroken(surface) ? 0.34 : isBrittleSurfaceWarning(surface) ? 0.92 : 0.8;
   }
 
+  private gravityFieldColor(field: GravityFieldState): number {
+    return field.kind === 'anti-grav-stream' ? this.retroPalette.cool : this.retroPalette.warm;
+  }
+
+  private gravityFieldAlpha(field: GravityFieldState): number {
+    return field.kind === 'anti-grav-stream' ? 0.13 : 0.11;
+  }
+
   private rewardBlockColor(rewardBlock: RewardBlockState): number {
     if (rewardBlock.reward.kind === 'coins') {
-      return 0xf5cf64;
+      return this.retroPalette.warm;
     }
 
     switch (rewardBlock.reward.power) {
       case 'doubleJump':
-        return 0x9df4b4;
+        return 0xdfe8bf;
       case 'shooter':
-        return 0xffb56f;
+        return 0xf0c6a1;
       case 'invincible':
-        return 0x92f7ff;
+        return this.retroPalette.cool;
       case 'dash':
-        return 0xf7f3d6;
+        return this.retroPalette.border;
     }
   }
 
@@ -733,11 +945,11 @@ export class GameScene extends Phaser.Scene {
 
     switch (rewardReveal.reward.power) {
       case 'doubleJump':
-        return '#9df4b4';
+        return '#dfe8bf';
       case 'shooter':
-        return '#ffb56f';
+        return '#f0c6a1';
       case 'invincible':
-        return '#92f7ff';
+        return '#8fdff2';
       case 'dash':
         return '#f7f3d6';
     }
@@ -753,54 +965,54 @@ export class GameScene extends Phaser.Scene {
     switch (variantKey) {
       case 'doubleJump':
         this.playerHeadband
-          .setPosition(centerX, player.y + 10)
-          .setSize(20, 6)
+          .setPosition(centerX, player.y + 8)
+          .setSize(20, 8)
           .setFillStyle(variant.detailColor)
           .setVisible(true);
         this.playerWingLeft
-          .setPosition(player.x - 3, player.y + 21)
-          .setSize(9, 18)
+          .setPosition(player.x - 4, player.y + 19)
+          .setSize(10, 20)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         this.playerWingRight
-          .setPosition(player.x + player.width + 3, player.y + 21)
-          .setSize(9, 18)
+          .setPosition(player.x + player.width + 4, player.y + 19)
+          .setSize(10, 20)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         break;
       case 'shooter':
         this.playerHeadband
           .setPosition(centerX, player.y + 13)
-          .setSize(18, 6)
+          .setSize(18, 8)
           .setFillStyle(variant.detailColor)
           .setVisible(true);
         this.playerAccent
-          .setPosition(centerX + facingOffset * 12, player.y + 22)
-          .setSize(12, 9)
+          .setPosition(centerX + facingOffset * 14, player.y + 22)
+          .setSize(16, 10)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         break;
       case 'invincible':
         this.playerHeadband
           .setPosition(centerX, player.y + 6)
-          .setSize(20, 6)
+          .setSize(22, 8)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         this.playerAccent
           .setPosition(centerX, player.y - 1)
-          .setSize(10, 6)
+          .setSize(12, 8)
           .setFillStyle(variant.detailColor)
           .setVisible(true);
         break;
       case 'dash':
         this.playerHeadband
           .setPosition(centerX, player.y + player.height - 7)
-          .setSize(20, 5)
+          .setSize(20, 6)
           .setFillStyle(variant.detailColor)
           .setVisible(true);
         this.playerAccent
           .setPosition(centerX - facingOffset * 14, player.y + 20)
-          .setSize(player.dashTimerMs > 0 ? 16 : 10, 8)
+          .setSize(player.dashTimerMs > 0 ? 18 : 12, 10)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         break;
