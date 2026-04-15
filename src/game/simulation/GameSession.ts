@@ -1,5 +1,6 @@
 import { stageDefinitions, type StageDefinition } from '../content/stages';
 import type { InputState } from '../input/actions';
+import { AUDIO_CUES, type AudioCue } from '../../audio/audioContract';
 import { clamp } from './math';
 import {
   BRITTLE_WARNING_MS,
@@ -526,9 +527,9 @@ const pointInRect = (point: { x: number; y: number }, rect: Rect): boolean =>
 
 const TERRAIN_SURFACE_TOP_EPSILON = 8;
 
-const LAUNCHER_CONFIG: Record<LauncherState['kind'], { impulse: number; cooldownMs: number; cue: string }> = {
-  bouncePod: { impulse: 980, cooldownMs: 260, cue: 'bounce-pod' },
-  gasVent: { impulse: 820, cooldownMs: 520, cue: 'gas-vent' },
+const LAUNCHER_CONFIG: Record<LauncherState['kind'], { impulse: number; cooldownMs: number; cue: AudioCue }> = {
+  bouncePod: { impulse: 980, cooldownMs: 260, cue: AUDIO_CUES.bouncePod },
+  gasVent: { impulse: 820, cooldownMs: 520, cue: AUDIO_CUES.gasVent },
 };
 
 const terrainSurfaceSupportPoint = (
@@ -621,9 +622,11 @@ const getJumpSpeedForTerrainKind = (surfaceKind: TerrainSurfaceKind | null): num
 export class GameSession {
   private snapshot: SessionSnapshot;
 
-  private cues: string[] = [];
+  private cues: AudioCue[] = [];
 
   private cameraViewBox: Rect | null = null;
+
+  private visibleEnemyIds = new Set<string>();
 
   private checkpointRevealIds: string[] = [];
 
@@ -635,7 +638,7 @@ export class GameSession {
     return this.snapshot;
   }
 
-  consumeCues(): string[] {
+  consumeCues(): AudioCue[] {
     const pending = [...this.cues];
     this.cues.length = 0;
     return pending;
@@ -643,18 +646,24 @@ export class GameSession {
 
   restartStage(): void {
     this.checkpointRevealIds = [];
+    this.cameraViewBox = null;
+    this.visibleEnemyIds.clear();
     this.snapshot = this.createSnapshot(this.snapshot.stageIndex, cloneProgress(this.snapshot.progress));
   }
 
   startStage(index: number): void {
     const clamped = Math.max(0, Math.min(index, this.snapshot.progress.unlockedStageIndex));
     this.checkpointRevealIds = [];
+    this.cameraViewBox = null;
+    this.visibleEnemyIds.clear();
     this.snapshot = this.createSnapshot(clamped, cloneProgress(this.snapshot.progress));
   }
 
   forceStartStage(index: number): void {
     const clamped = Math.max(0, Math.min(index, stageDefinitions.length - 1));
     this.checkpointRevealIds = [];
+    this.cameraViewBox = null;
+    this.visibleEnemyIds.clear();
     this.snapshot = this.createSnapshot(clamped, cloneProgress(this.snapshot.progress));
   }
 
@@ -758,7 +767,7 @@ export class GameSession {
         height: 12,
         alive: true,
       });
-      this.emitCue('shoot');
+      this.emitCue(AUDIO_CUES.shoot);
     }
 
     if (input.dashPressed && this.snapshot.progress.activePowers.dash && player.dashCooldownMs <= 0) {
@@ -767,7 +776,7 @@ export class GameSession {
       player.vx = player.facing * DASH_SPEED;
       player.vy = 0;
       player.supportPlatformId = null;
-      this.emitCue('dash');
+      this.emitCue(AUDIO_CUES.dash);
     }
 
     if (player.dashTimerMs <= 0) {
@@ -807,7 +816,7 @@ export class GameSession {
           player.coyoteMs = 0;
           player.coyoteTerrainSurfaceKind = null;
           player.jumpBufferMs = 0;
-          this.emitCue('jump');
+          this.emitCue(AUDIO_CUES.jump);
         } else if (this.snapshot.progress.activePowers.doubleJump && player.airJumpsRemaining > 0) {
           player.vy = -JUMP_SPEED;
           player.onGround = false;
@@ -815,7 +824,7 @@ export class GameSession {
           player.supportTerrainSurfaceId = null;
           player.airJumpsRemaining -= 1;
           player.jumpBufferMs = 0;
-          this.emitCue('double-jump');
+          this.emitCue(AUDIO_CUES.doubleJump);
         }
       }
 
@@ -915,13 +924,13 @@ export class GameSession {
 
     if (ridingSurface) {
       if (!wasOnGround) {
-        this.emitCue('land');
+        this.emitCue(AUDIO_CUES.land);
       }
 
       if (ridingSurface.kind === 'platform' && ridingSurface.platform.kind === 'falling' && ridingSurface.platform.fall && !ridingSurface.platform.fall.triggered) {
         ridingSurface.platform.fall.triggered = true;
         ridingSurface.platform.fall.timerMs = ridingSurface.platform.fall.triggerDelayMs;
-        this.emitCue('collapse');
+        this.emitCue(AUDIO_CUES.collapse);
       }
 
       if (
@@ -935,7 +944,7 @@ export class GameSession {
         player.vy = -ridingSurface.platform.spring.boost;
         player.onGround = false;
         player.supportPlatformId = null;
-        this.emitCue('spring');
+        this.emitCue(AUDIO_CUES.spring);
       }
     }
 
@@ -1030,9 +1039,11 @@ export class GameSession {
           if (platform.x <= minX) {
             platform.x = minX;
             platform.move.direction = 1;
+            this.emitCue(AUDIO_CUES.movingPlatform);
           } else if (platform.x >= maxX) {
             platform.x = maxX;
             platform.move.direction = -1;
+            this.emitCue(AUDIO_CUES.movingPlatform);
           }
         } else {
           platform.vy = platform.move.direction * platform.move.speed;
@@ -1042,9 +1053,11 @@ export class GameSession {
           if (platform.y <= minY) {
             platform.y = minY;
             platform.move.direction = 1;
+            this.emitCue(AUDIO_CUES.movingPlatform);
           } else if (platform.y >= maxY) {
             platform.y = maxY;
             platform.move.direction = -1;
+            this.emitCue(AUDIO_CUES.movingPlatform);
           }
         }
       }
@@ -1168,6 +1181,7 @@ export class GameSession {
 
     surface.brittle.phase = 'warning';
     surface.brittle.warningMs = BRITTLE_WARNING_MS;
+    this.emitCue(AUDIO_CUES.danger);
   }
 
   private finalizeTerrainSurfaceExpiry(): void {
@@ -1192,8 +1206,19 @@ export class GameSession {
     );
     for (const enemy of stageRuntime.enemies) {
       if (!enemy.alive) {
+        this.visibleEnemyIds.delete(enemy.id);
         continue;
       }
+
+      let emittedCueThisFrame = false;
+      const emitVisibleCue = (cue: AudioCue): void => {
+        if (!this.isEnemyVisible(enemy)) {
+          return;
+        }
+
+        this.emitCue(cue);
+        emittedCueThisFrame = true;
+      };
 
       if (isGroundedEnemy(enemy) && enemy.supportY !== null) {
         enemy.y = enemy.supportY;
@@ -1207,10 +1232,12 @@ export class GameSession {
         if (enemy.x <= laneLeft) {
           enemy.x = laneLeft;
           enemy.direction = 1;
+          emitVisibleCue(AUDIO_CUES.enemyPatrol);
         }
         if (enemy.x >= laneRight) {
           enemy.x = laneRight;
           enemy.direction = -1;
+          emitVisibleCue(AUDIO_CUES.enemyPatrol);
         }
       }
 
@@ -1239,6 +1266,7 @@ export class GameSession {
               enemy.direction = target.vx >= 0 ? 1 : -1;
               enemy.supportPlatformId = null;
               enemy.supportY = null;
+              emitVisibleCue(AUDIO_CUES.enemyHop);
             } else {
               hop.timerMs = Math.min(hop.intervalMs, 220);
               enemy.direction = enemy.direction === 1 ? -1 : 1;
@@ -1317,7 +1345,7 @@ export class GameSession {
           enemy.turret.timerMs = enemy.turret.intervalMs;
           this.spawnTurretProjectile(stageRuntime, enemy);
           enemy.direction = enemy.direction === 1 ? -1 : 1;
-          this.emitCue('turret-fire');
+          this.emitCue(AUDIO_CUES.turretFire);
         }
       }
 
@@ -1342,11 +1370,13 @@ export class GameSession {
             enemy.charger.state = 'windup';
             enemy.charger.timerMs = enemy.charger.windupMs;
             enemy.vx = 0;
+            emitVisibleCue(AUDIO_CUES.danger);
           }
         } else if (enemy.charger.state === 'windup') {
           enemy.charger.timerMs -= deltaMs;
           if (enemy.charger.timerMs <= 0) {
             enemy.charger.state = 'charge';
+            emitVisibleCue(AUDIO_CUES.enemyCharge);
           }
         } else if (enemy.charger.state === 'charge') {
           enemy.vx = enemy.direction * enemy.charger.chargeSpeed;
@@ -1373,12 +1403,16 @@ export class GameSession {
         if (enemy.x <= enemy.flyer.left) {
           enemy.x = enemy.flyer.left;
           enemy.direction = 1;
+          emitVisibleCue(AUDIO_CUES.enemyPatrol);
         }
         if (enemy.x + enemy.width >= enemy.flyer.right) {
           enemy.x = enemy.flyer.right - enemy.width;
           enemy.direction = -1;
+          emitVisibleCue(AUDIO_CUES.enemyPatrol);
         }
       }
+
+      this.emitEnemyViewportEntryCue(enemy, emittedCueThisFrame);
     }
   }
 
@@ -1427,7 +1461,7 @@ export class GameSession {
         enemy.alive = false;
         projectile.alive = false;
         this.setStageMessage('Enemy blasted', 1300);
-        this.emitCue('shoot-hit');
+        this.emitCue(AUDIO_CUES.shootHit);
         break;
       }
     }
@@ -1447,7 +1481,7 @@ export class GameSession {
         this.snapshot.activeCheckpointId = checkpoint.id;
         this.checkpointRevealIds = [...stageRuntime.revealedPlatformIds];
         this.setStageMessage(getCheckpointActivatedMessage(), 1500);
-        this.emitCue('checkpoint');
+        this.emitCue(AUDIO_CUES.checkpoint);
         this.completeStageObjective('checkpoint', checkpoint.id);
       }
     }
@@ -1480,6 +1514,7 @@ export class GameSession {
     }
 
     stageRuntime.revealedPlatformIds = normalizeRevealedPlatformIds(revealedIds);
+    this.emitCue(AUDIO_CUES.unlock);
     if (!objectiveCompleted) {
       this.setStageMessage('Hidden route revealed', 1400);
     }
@@ -1520,6 +1555,7 @@ export class GameSession {
     }
 
     if (changed && !objectiveCompleted) {
+      this.emitCue(AUDIO_CUES.unlock);
       this.setStageMessage('Temporary bridge online', 1300);
     }
   }
@@ -1545,6 +1581,7 @@ export class GameSession {
     }
 
     if (activated) {
+      this.emitCue(AUDIO_CUES.unlock);
       this.setStageMessage('Magnetic platform powered', 1400);
     }
   }
@@ -1596,7 +1633,7 @@ export class GameSession {
         player.onGround = false;
         player.supportPlatformId = null;
         this.setStageMessage('Enemy stomped', 1200);
-        this.emitCue('stomp');
+        this.emitCue(AUDIO_CUES.stomp);
       } else {
         this.damagePlayer();
       }
@@ -1636,7 +1673,7 @@ export class GameSession {
       }
 
       this.spawnTurretProjectile(stageRuntime, enemy, variantConfig.projectileSpeed);
-      this.emitCue('turret-fire');
+      this.emitCue(AUDIO_CUES.turretFire);
       if (turret.pendingShots > 0) {
         turret.pendingShots -= 1;
         turret.burstGapMs = turret.burstGapDurationMs;
@@ -1655,7 +1692,7 @@ export class GameSession {
       }
 
       this.spawnTurretProjectile(stageRuntime, enemy, variantConfig.projectileSpeed);
-      this.emitCue('turret-fire');
+      this.emitCue(AUDIO_CUES.turretFire);
       enemy.direction = enemy.direction === 1 ? -1 : 1;
       resetVariantTurretCycle(turret, enemy.variant);
       return;
@@ -1665,6 +1702,7 @@ export class GameSession {
     if (turret.timerMs <= 0) {
       turret.telegraphMs = turret.telegraphDurationMs;
       turret.pendingShots = Math.max(0, variantConfig.burstShots - 1);
+      this.emitCue(AUDIO_CUES.danger);
     }
   }
 
@@ -1691,7 +1729,7 @@ export class GameSession {
             : 'Portal restored',
         2600,
       );
-      this.emitCue('exit');
+      this.emitCue(AUDIO_CUES.stageClear);
     }
   }
 
@@ -1718,7 +1756,7 @@ export class GameSession {
       player.invulnerableMs = INVULNERABLE_MS;
       player.vy = -260;
       player.vx = player.facing === 1 ? -180 : 180;
-      this.emitCue('hurt');
+      this.emitCue(AUDIO_CUES.hurt);
       this.setStageMessage(
         hitShieldState === 'mixed'
           ? 'Power shield broke - invincibility held'
@@ -1735,10 +1773,10 @@ export class GameSession {
     player.vy = -260;
     player.vx = player.facing === 1 ? -180 : 180;
     this.clearActivePowers();
-    this.emitCue('hurt');
     if (player.health <= 0) {
       this.killPlayer();
     } else {
+      this.emitCue(AUDIO_CUES.hurt);
       this.setStageMessage('You were hit', 1800);
     }
   }
@@ -1752,6 +1790,7 @@ export class GameSession {
     this.clearActivePowers();
     player.dead = true;
     this.snapshot.respawnTimerMs = RESPAWN_DELAY_MS;
+    this.emitCue(AUDIO_CUES.death);
     this.setStageMessage('Respawning...', RESPAWN_DELAY_MS);
   }
 
@@ -1772,7 +1811,7 @@ export class GameSession {
     }
 
     block.hitFlashMs = REWARD_BLOCK_FLASH_MS;
-    this.emitCue('block');
+    this.emitCue(AUDIO_CUES.block);
     if (block.reward.kind === 'coins') {
       block.remainingHits -= 1;
       block.used = block.remainingHits <= 0;
@@ -1809,7 +1848,7 @@ export class GameSession {
         break;
     }
 
-    this.emitCue('power');
+    this.emitCue(AUDIO_CUES.power);
   }
 
   private awardCoins(amount: number, message: string): void {
@@ -1817,7 +1856,7 @@ export class GameSession {
     progress.totalCoins += amount;
     stageRuntime.collectedCoins = Math.min(stageRuntime.totalCoins, stageRuntime.collectedCoins + amount);
     this.setStageMessage(message, 1500);
-    this.emitCue('collect');
+    this.emitCue(AUDIO_CUES.collect);
 
     if (
       stageRuntime.totalCoins > 0 &&
@@ -1827,11 +1866,12 @@ export class GameSession {
       stageRuntime.allCoinsRecovered = true;
       player.health = player.maxHealth;
       this.setStageMessage(getAllCollectiblesRecoveredMessage(), 2200);
-      this.emitCue('heal');
+      this.emitCue(AUDIO_CUES.heal);
     }
   }
 
   private spawnRewardReveal(block: RewardBlockState, reward: RewardRevealState['reward']): void {
+    this.emitCue(AUDIO_CUES.rewardReveal);
     this.snapshot.stageRuntime.rewardReveals.push({
       id: `${block.id}-reveal-${Math.random().toString(36).slice(2, 8)}`,
       reward,
@@ -2008,6 +2048,36 @@ export class GameSession {
         ? expandRect(this.cameraViewBox, TURRET_VIEW_LEAD_MARGIN, 0)
         : this.cameraViewBox;
     return intersectsRect(viewBox, enemyRect(enemy));
+  }
+
+  private emitEnemyViewportEntryCue(enemy: EnemyState, emittedCueThisFrame: boolean): void {
+    const visible = this.isEnemyVisible(enemy);
+    const wasVisible = this.visibleEnemyIds.has(enemy.id);
+
+    if (visible) {
+      this.visibleEnemyIds.add(enemy.id);
+    } else {
+      this.visibleEnemyIds.delete(enemy.id);
+    }
+
+    if (!visible || wasVisible || emittedCueThisFrame) {
+      return;
+    }
+
+    switch (enemy.kind) {
+      case 'walker':
+      case 'flyer':
+        this.emitCue(AUDIO_CUES.enemyPatrol);
+        break;
+      case 'hopper':
+        this.emitCue(AUDIO_CUES.enemyHop);
+        break;
+      case 'charger':
+        this.emitCue(enemy.charger?.state === 'charge' ? AUDIO_CUES.enemyCharge : AUDIO_CUES.danger);
+        break;
+      default:
+        break;
+    }
   }
 
   private setStageMessage(message: string, durationMs = 1600): void {
@@ -2330,7 +2400,7 @@ export class GameSession {
     };
   }
 
-  private emitCue(cue: string): void {
+  private emitCue(cue: AudioCue): void {
     this.cues.push(cue);
   }
 }

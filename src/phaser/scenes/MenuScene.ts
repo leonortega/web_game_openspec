@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { AUDIO_CUES } from '../../audio/audioContract';
 import {
   DIFFICULTY_LABELS,
   ENEMY_PRESSURE_LABELS,
@@ -6,6 +7,8 @@ import {
   getPowerLabel,
 } from '../../game/simulation/state';
 import { SceneBridge } from '../adapters/sceneBridge';
+import { SynthAudio } from '../audio/SynthAudio';
+import { playMenuInteractionCue, runUnlockedAudioAction } from '../audio/sceneAudio';
 import {
   RETRO_FONT_FAMILY,
   createRetroMenuPalette,
@@ -51,6 +54,8 @@ const wrapIndex = (value: number, length: number): number => {
 };
 
 export class MenuScene extends Phaser.Scene {
+  private audio!: SynthAudio;
+
   private mode: MenuMode = 'main';
 
   private view: MenuView = 'root';
@@ -88,6 +93,7 @@ export class MenuScene extends Phaser.Scene {
 
   create(): void {
     const bridge = this.registry.get('bridge') as SceneBridge;
+    this.audio = new SynthAudio(this, () => bridge.getSession().getState().progress.runSettings.masterVolume);
     const retro = createRetroMenuPalette();
     this.view = 'root';
     this.rootSelectedIndex = 0;
@@ -100,6 +106,35 @@ export class MenuScene extends Phaser.Scene {
     const cleanup: Array<() => void> = [];
     const rootTexts = new Map<RootOptionId, Phaser.GameObjects.Text>();
     const optionsTexts = new Map<OptionsOptionId, Phaser.GameObjects.Text>();
+
+    this.audio.startMenuMusic();
+    const unlockSceneAudio = () => {
+      void runUnlockedAudioAction(this.audio, () => {
+        this.audio.startMenuMusic();
+      });
+    };
+    this.input.keyboard?.once('keydown', unlockSceneAudio);
+    this.input.once('pointerdown', unlockSceneAudio);
+
+    const updateRootSelection = (nextIndex: number, playAudio = true): void => {
+      const wrapped = wrapIndex(nextIndex, rootOptions.length);
+      const changed = this.rootSelectedIndex !== wrapped;
+      this.rootSelectedIndex = wrapped;
+      if (changed && playAudio) {
+        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuNavigate);
+      }
+      render();
+    };
+
+    const updateOptionsSelection = (nextIndex: number, playAudio = true): void => {
+      const wrapped = wrapIndex(nextIndex, optionEntries.length);
+      const changed = this.optionsSelectedIndex !== wrapped;
+      this.optionsSelectedIndex = wrapped;
+      if (changed && playAudio) {
+        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuNavigate);
+      }
+      render();
+    };
 
     drawRetroBackdrop(this, 0, 0, width, height, retro, 'transition');
     this.add
@@ -154,11 +189,10 @@ export class MenuScene extends Phaser.Scene {
         .setInteractive({ useHandCursor: true });
 
       text.on('pointerover', () => {
-        this.rootSelectedIndex = index;
-        render();
+        updateRootSelection(index);
       });
       text.on('pointerdown', () => {
-        this.rootSelectedIndex = index;
+        updateRootSelection(index, false);
         activateRootOption(rootOptions[this.rootSelectedIndex]);
       });
 
@@ -179,11 +213,10 @@ export class MenuScene extends Phaser.Scene {
         .setInteractive({ useHandCursor: true });
 
       text.on('pointerover', () => {
-        this.optionsSelectedIndex = index;
-        render();
+        updateOptionsSelection(index);
       });
       text.on('pointerdown', () => {
-        this.optionsSelectedIndex = index;
+        updateOptionsSelection(index, false);
         cycleValue(optionEntries[this.optionsSelectedIndex], 1);
       });
 
@@ -339,16 +372,19 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const startRun = (stageIndex = bridge.getSession().getState().stageIndex): void => {
+      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
       bridge.startStage(stageIndex);
       this.scene.start('stage-intro');
     };
 
     const openView = (nextView: 'options' | 'help'): void => {
+      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
       this.view = nextView;
       render();
     };
 
     const returnToRoot = (): void => {
+      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuBack);
       this.view = 'root';
       setHelpScroll(0);
       render();
@@ -360,6 +396,7 @@ export class MenuScene extends Phaser.Scene {
         const currentIndex = difficultyValues.indexOf(state.progress.runSettings.difficulty);
         const nextIndex = wrapIndex(currentIndex + direction, difficultyValues.length);
         bridge.updateRunSettings({ difficulty: difficultyValues[nextIndex] });
+        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
         render();
         return;
       }
@@ -368,6 +405,7 @@ export class MenuScene extends Phaser.Scene {
         const currentIndex = enemyValues.indexOf(state.progress.runSettings.enemyPressure);
         const nextIndex = wrapIndex(currentIndex + direction, enemyValues.length);
         bridge.updateRunSettings({ enemyPressure: enemyValues[nextIndex] });
+        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
         render();
         return;
       }
@@ -375,6 +413,7 @@ export class MenuScene extends Phaser.Scene {
       bridge.updateRunSettings({
         masterVolume: clamp(state.progress.runSettings.masterVolume + direction * 0.1, 0, 1),
       });
+      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
       render();
     };
 
@@ -495,11 +534,10 @@ export class MenuScene extends Phaser.Scene {
       }
 
       if (this.view === 'root') {
-        this.rootSelectedIndex = wrapIndex(this.rootSelectedIndex - 1, rootOptions.length);
+        updateRootSelection(this.rootSelectedIndex - 1);
       } else {
-        this.optionsSelectedIndex = wrapIndex(this.optionsSelectedIndex - 1, optionEntries.length);
+        updateOptionsSelection(this.optionsSelectedIndex - 1);
       }
-      render();
     });
 
     bindKey('keydown-DOWN', () => {
@@ -509,11 +547,10 @@ export class MenuScene extends Phaser.Scene {
       }
 
       if (this.view === 'root') {
-        this.rootSelectedIndex = wrapIndex(this.rootSelectedIndex + 1, rootOptions.length);
+        updateRootSelection(this.rootSelectedIndex + 1);
       } else {
-        this.optionsSelectedIndex = wrapIndex(this.optionsSelectedIndex + 1, optionEntries.length);
+        updateOptionsSelection(this.optionsSelectedIndex + 1);
       }
-      render();
     });
 
     bindKey('keydown-LEFT', () => {
@@ -581,6 +618,7 @@ export class MenuScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       cleanup.forEach((dispose) => dispose());
       this.visibleTexts = [];
+      this.audio.stopMusic();
     });
 
     refreshHelpOverflow();

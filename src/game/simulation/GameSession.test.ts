@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { AUDIO_CUES } from '../../audio/audioContract';
 import { GameSession } from './GameSession';
 import { defaultInputState } from '../input/actions';
 import { TURRET_VARIANT_CONFIG } from './state';
@@ -327,6 +328,7 @@ describe('GameSession regression coverage', () => {
     state.player.health = 2;
 
     (session as any).damagePlayer();
+    expect(session.consumeCues()).toEqual([AUDIO_CUES.hurt]);
     expect(state.player.health).toBe(1);
     expect(state.player.dead).toBe(false);
     expect(state.stageMessage).toBe('You were hit');
@@ -334,9 +336,254 @@ describe('GameSession regression coverage', () => {
     state.player.invulnerableMs = 0;
     (session as any).damagePlayer();
 
+    expect(session.consumeCues()).toEqual([AUDIO_CUES.death]);
     expect(state.player.dead).toBe(true);
     expect(state.respawnTimerMs).toBeGreaterThan(0);
     expect(state.stageMessage).toBe('Respawning...');
+  });
+
+  it('respawns from the active checkpoint after defeat while keeping death semantics and clearing powers', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+    const checkpoint = state.stageRuntime.checkpoints[0];
+
+    state.player.x = checkpoint.rect.x;
+    state.player.y = checkpoint.rect.y;
+    session.update(16, defaultInputState());
+
+    state.progress.activePowers.doubleJump = true;
+    state.progress.activePowers.dash = true;
+    state.player.health = 1;
+    state.player.invulnerableMs = 0;
+
+    (session as any).damagePlayer();
+
+    expect(state.player.dead).toBe(false);
+    expect(state.stageMessage).toBe('Power shield broke');
+    expect(state.progress.activePowers.doubleJump).toBe(false);
+    expect(state.progress.activePowers.dash).toBe(false);
+
+    state.player.health = 1;
+    state.player.invulnerableMs = 0;
+
+    (session as any).damagePlayer();
+
+    expect(state.player.dead).toBe(true);
+    expect(state.stageMessage).toBe('Respawning...');
+
+    advanceSession(session, state.respawnTimerMs);
+
+    const respawned = getMutableState(session);
+    expect(respawned.activeCheckpointId).toBe(checkpoint.id);
+    expect(respawned.player.dead).toBe(false);
+    expect(respawned.player.health).toBe(3);
+    expect(respawned.player.x).toBe(checkpoint.rect.x + 12);
+    expect(respawned.player.y).toBe(checkpoint.rect.y - respawned.player.height);
+  });
+
+  it('resolves stomp defeats immediately without delaying enemy removal', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+    const enemy = state.stageRuntime.enemies.find((entry: any) => entry.kind === 'hopper');
+    if (!enemy) {
+      throw new Error('Expected a hopper fixture.');
+    }
+
+    state.stageRuntime.enemies = [enemy];
+    state.stageRuntime.hazards = [];
+    state.player.x = enemy.x;
+    state.player.y = enemy.y - state.player.height - 2;
+    state.player.vx = 0;
+    state.player.vy = 320;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+
+    session.update(16, defaultInputState());
+
+    expect(enemy.alive).toBe(false);
+    expect(state.player.dead).toBe(false);
+    expect(session.consumeCues()).toContain(AUDIO_CUES.stomp);
+  });
+
+  it('emits motion and danger cues only on authored movement beats', () => {
+    const session = new GameSession();
+    let state = getMutableState(session);
+
+    const movingPlatform = state.stageRuntime.platforms.find((platform: any) => platform.kind === 'moving');
+    if (!movingPlatform?.move) {
+      throw new Error('Expected a moving platform fixture.');
+    }
+
+    state.stageRuntime.platforms = [movingPlatform];
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+    advanceSession(session, Math.ceil((movingPlatform.move.range / movingPlatform.move.speed) * 1000) + 32);
+    const platformCues = session.consumeCues().filter((cue) => cue === AUDIO_CUES.movingPlatform);
+    expect(platformCues.length).toBeGreaterThan(0);
+    expect(platformCues.length).toBeLessThan(8);
+
+    session.restartStage();
+    state = getMutableState(session);
+    const walker = state.stageRuntime.enemies.find((enemy: any) => enemy.kind === 'walker');
+    if (!walker?.patrol) {
+      throw new Error('Expected a walker fixture.');
+    }
+
+    state.stageRuntime.enemies = [walker];
+    state.stageRuntime.hazards = [];
+    advanceSession(session, 1700);
+    expect(session.consumeCues()).toContain(AUDIO_CUES.enemyPatrol);
+
+    session.restartStage();
+    state = getMutableState(session);
+    const hopper = state.stageRuntime.enemies.find((enemy: any) => enemy.kind === 'hopper');
+    if (!hopper?.hop) {
+      throw new Error('Expected a hopper fixture.');
+    }
+
+    state.stageRuntime.enemies = [hopper];
+    state.stageRuntime.hazards = [];
+    advanceSession(session, hopper.hop.intervalMs + 32);
+    expect(session.consumeCues()).toContain(AUDIO_CUES.enemyHop);
+
+    session.forceStartStage(1);
+    state = getMutableState(session);
+    const charger = state.stageRuntime.enemies.find((enemy: any) => enemy.kind === 'charger');
+    if (!charger?.charger) {
+      throw new Error('Expected a charger fixture.');
+    }
+
+    state.stageRuntime.enemies = [charger];
+    state.stageRuntime.hazards = [];
+    state.player.x = charger.x + 10;
+    state.player.y = charger.y;
+    state.player.vx = 0;
+    state.player.vy = 0;
+
+    session.update(16, defaultInputState());
+    expect(session.consumeCues()).toContain(AUDIO_CUES.danger);
+
+    advanceSession(session, charger.charger.windupMs + 16);
+    expect(session.consumeCues()).toContain(AUDIO_CUES.enemyCharge);
+
+    session.update(16, defaultInputState());
+    expect(session.consumeCues()).not.toContain(AUDIO_CUES.enemyCharge);
+  });
+
+  it('emits reward reveal and stage clear cues for authored progression beats', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+    const coinBlock = getCoinRewardBlock(state);
+
+    (session as any).activateRewardBlock(coinBlock);
+
+    const rewardCues = session.consumeCues();
+    expect(rewardCues).toContain(AUDIO_CUES.block);
+    expect(rewardCues).toContain(AUDIO_CUES.rewardReveal);
+    expect(rewardCues).toContain(AUDIO_CUES.collect);
+
+    state.stageRuntime.platforms = [];
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+    state.stageRuntime.objective = null;
+    state.stageRuntime.exitReached = false;
+    state.player.x = state.stage.exit.x + 4;
+    state.player.y = state.stage.exit.y;
+    state.player.vx = 0;
+    state.player.vy = 0;
+
+    (session as any).handleExit();
+
+    expect(state.levelCompleted).toBe(true);
+    expect(session.consumeCues()).toContain(AUDIO_CUES.stageClear);
+  });
+
+  it('gates non-turret enemy cues by the viewport while preserving the turret lead-margin exception', () => {
+    const session = new GameSession();
+    let state = getMutableState(session);
+    const walker = state.stageRuntime.enemies.find((enemy: any) => enemy.kind === 'walker');
+    const turret = state.stageRuntime.enemies.find((enemy: any) => enemy.kind === 'turret');
+    if (!walker?.patrol || !turret?.turret) {
+      throw new Error('Expected walker and turret fixtures for viewport cue checks.');
+    }
+
+    state.stageRuntime.enemies = [walker];
+    state.stageRuntime.hazards = [];
+    session.setCameraViewBox({ x: walker.x + 420, y: Math.max(0, walker.y - 120), width: 320, height: 240 });
+    advanceSession(session, 1700);
+    expect(session.consumeCues()).not.toContain(AUDIO_CUES.enemyPatrol);
+
+    session.restartStage();
+    state = getMutableState(session);
+    const visibleWalker = state.stageRuntime.enemies.find((enemy: any) => enemy.kind === 'walker');
+    if (!visibleWalker?.patrol) {
+      throw new Error('Expected walker fixture after restart.');
+    }
+    state.stageRuntime.enemies = [visibleWalker];
+    state.stageRuntime.hazards = [];
+    session.setCameraViewBox({ x: visibleWalker.x - 96, y: Math.max(0, visibleWalker.y - 120), width: 320, height: 240 });
+    advanceSession(session, 1700);
+    expect(session.consumeCues()).toContain(AUDIO_CUES.enemyPatrol);
+
+    session.forceStartStage(1);
+    state = getMutableState(session);
+    const charger = state.stageRuntime.enemies.find((enemy: any) => enemy.kind === 'charger');
+    if (!charger?.charger) {
+      throw new Error('Expected charger fixture for viewport cue checks.');
+    }
+    state.stageRuntime.enemies = [charger];
+    state.stageRuntime.hazards = [];
+    state.player.x = charger.x + 12;
+    state.player.y = charger.y;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    session.setCameraViewBox({ x: charger.x + 420, y: Math.max(0, charger.y - 120), width: 320, height: 240 });
+    session.update(16, defaultInputState());
+    expect(session.consumeCues()).not.toContain(AUDIO_CUES.danger);
+    advanceSession(session, charger.charger.windupMs + 16);
+    expect(session.consumeCues()).not.toContain(AUDIO_CUES.enemyCharge);
+
+    session.forceStartStage(0);
+    state = getMutableState(session);
+    const leadMarginTurret = state.stageRuntime.enemies.find((enemy: any) => enemy.kind === 'turret');
+    if (!leadMarginTurret?.turret) {
+      throw new Error('Expected turret fixture after restart.');
+    }
+    state.stageRuntime.enemies = [leadMarginTurret];
+    state.stageRuntime.hazards = [];
+    session.setCameraViewBox({ x: leadMarginTurret.x - 1040, y: Math.max(0, leadMarginTurret.y - 160), width: 960, height: 540 });
+    advanceSession(session, leadMarginTurret.turret.intervalMs + 32);
+    expect(session.consumeCues()).toContain(AUDIO_CUES.turretFire);
+  });
+
+  it('emits unlock feedback for activation and reveal interactions', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+    const { activationNode } = getMagneticFixture(state);
+
+    state.player.x = activationNode.x + 2;
+    state.player.y = activationNode.y + 2;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+    session.update(16, defaultInputState());
+
+    expect(session.consumeCues()).toContain(AUDIO_CUES.unlock);
+
+    session.forceStartStage(2);
+    const revealState = getMutableState(session);
+    const { revealVolume } = getTimedRevealFixture(revealState);
+
+    revealState.player.x = revealVolume.x + 8;
+    revealState.player.y = revealVolume.y + 8;
+    revealState.player.vx = 0;
+    revealState.player.vy = 0;
+    revealState.player.onGround = false;
+    revealState.player.supportPlatformId = null;
+    session.update(16, defaultInputState());
+
+    expect(session.consumeCues()).toContain(AUDIO_CUES.unlock);
   });
 
   it('uses survey-beacon and research-sample copy without changing checkpoint or collectible progression', () => {

@@ -1,0 +1,77 @@
+{
+  "active": [
+    {
+      "assetKey": "music-menu-observing-the-star",
+      "surface": "menu",
+      "title": "Another space background track",
+      "creator": "yd",
+      "license": "CC0",
+      "sourceUrl": "https://opengameart.org/content/another-space-background-track",
+      "originalFileName": "ObservingTheStar.zip",
+      "localAssetPath": "/audio/music/menu-observing-the-star.ogg",
+      "volume": 0.34
+    },
+    {
+      "assetKey": "music-stage-forest-magic-space",
+      "surface": "stage",
+      "stageId": "forest-ruins",
+      "title": "Magic Space",
+      "creator": "CodeManu",
+      "license": "CC0",
+      "sourceUrl": "https://opengameart.org/content/magic-space",
+      "originalFileName": "magic space.mp3",
+      "localAssetPath": "/audio/music/forest-magic-space.mp3",
+      "volume": 0.3
+    },
+    {
+      "assetKey": "music-stage-amber-i-swear-i-saw-it",
+      "surface": "stage",
+      "stageId": "amber-cavern",
+      "title": "I swear I saw it - background track",
+      "creator": "yd",
+      "license": "CC0",
+      "sourceUrl": "https://opengameart.org/content/i-swear-i-saw-it-background-track",
+      "originalFileName": "IswearIsawit.ogg",
+      "localAssetPath": "/audio/music/amber-i-swear-i-saw-it.ogg",
+      "volume": 0.32
+    },
+    {
+      "assetKey": "music-stage-sky-party-sector",
+      "surface": "stage",
+      "stageId": "sky-sanctum",
+      "title": "Party Sector",
+      "creator": "Joth",
+      "license": "CC0",
+      "sourceUrl": "https://opengameart.org/content/party-sector",
+      "originalFileName": "Party Sector.mp3",
+      "localAssetPath": "/audio/music/sky-party-sector.mp3",
+      "volume": 0.28
+    }
+  ],
+  "backups": [
+    {
+      "title": "Galactic Temple",
+      "creator": "yd",
+      "license": "CC0",
+      "sourceUrl": "https://opengameart.org/content/galactic-temple",
+      "originalFileName": "GalacticTemple.zip",
+      "notes": "Ambient fallback if menu or amber-cavern needs a calmer space texture."
+    },
+    {
+      "title": "Space Music: Out There",
+      "creator": "yd",
+      "license": "CC0",
+      "sourceUrl": "https://opengameart.org/content/space-music-out-there",
+      "originalFileName": "OutThere.ogg",
+      "notes": "Long-form background fallback for open-space surfaces if the late-stage mapping changes."
+    },
+    {
+      "title": "Tragic ambient main menu",
+      "creator": "brandon75689",
+      "license": "CC0",
+      "sourceUrl": "https://opengameart.org/content/tragic-ambient-main-menu",
+      "originalFileName": "ambientmain_0.ogg",
+      "notes": "Darker menu-only backup if the title surface needs a more ominous space read."
+    }
+  ]
+}

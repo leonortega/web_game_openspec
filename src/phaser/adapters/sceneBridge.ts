@@ -1,6 +1,7 @@
 import { stageDefinitions } from '../../game/content/stages';
 import { defaultInputState, type InputState } from '../../game/input/actions';
 import { GameSession } from '../../game/simulation/GameSession';
+import type { AudioCue } from '../../audio/audioContract';
 import { formatActivePowerSummary, formatHudCollectibleSummary, formatRunSettings } from '../../game/simulation/state';
 import { updateHud, type HudViewModel } from '../../ui/hud/hud';
 
@@ -131,7 +132,7 @@ export class SceneBridge {
     updateHud(hud, this.getHudModel());
   }
 
-  drainCues(): string[] {
+  drainCues(): AudioCue[] {
     return this.session.consumeCues();
   }
 

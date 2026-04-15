@@ -1,8 +1,7 @@
 import * as Phaser from 'phaser';
 import { stageDefinitions } from '../../game/content/stages';
 import {
-  formatActivePowerSummary,
-  formatCheckpointStatus,
+  getActivePowerLabels,
   formatRunCollectibleSummary,
   formatRunSettings,
   formatStageCollectibleSummary,
@@ -12,12 +11,24 @@ import {
   RETRO_FONT_FAMILY,
   createRetroPresentationPalette,
   drawRetroBackdrop,
+  playRetroTweenPreset,
+  spawnRetroParticleBurst,
 } from '../view/retroPresentation';
+import { SynthAudio } from '../audio/SynthAudio';
+import { runUnlockedAudioAction } from '../audio/sceneAudio';
 
 const AUTO_ADVANCE_MS = 2800;
 
 export class CompleteScene extends Phaser.Scene {
+  private audio?: SynthAudio;
+
   private autoAdvanceEvent?: Phaser.Time.TimerEvent;
+
+  private accentSprite?: Phaser.GameObjects.Sprite;
+
+  private accentBurstCount = 0;
+
+  private accentTweenActive = false;
 
   constructor() {
     super('complete');
@@ -31,9 +42,11 @@ export class CompleteScene extends Phaser.Scene {
     const { width, height } = this.scale;
     let transitioning = false;
     const stagePresentation = state.stage.presentation;
-    const powerSummary = formatActivePowerSummary(state.progress.activePowers, state.progress.powerTimers);
+    const powerSummary = getActivePowerLabels(state.progress.activePowers, state.progress.powerTimers).join(', ') || 'None';
     const activeCheckpointCount = state.stageRuntime.checkpoints.filter((checkpoint) => checkpoint.activated).length;
+    const checkpointSummary = `Survey beacons online: ${activeCheckpointCount}/${state.stageRuntime.checkpoints.length}`;
     const retro = createRetroPresentationPalette(state.stage.palette);
+    this.audio = new SynthAudio(this, () => bridge.getSession().getState().progress.runSettings.masterVolume);
 
     const goToMenu = () => {
       if (transitioning) {
@@ -101,7 +114,7 @@ export class CompleteScene extends Phaser.Scene {
         `${formatRunCollectibleSummary(state.progress.totalCoins)}\n${formatStageCollectibleSummary(
           state.stageRuntime.collectedCoins,
           state.stageRuntime.totalCoins,
-        )}\n${formatCheckpointStatus(activeCheckpointCount, state.stageRuntime.checkpoints.length)}\nLoadout: ${powerSummary}\nRun: ${formatRunSettings(state.progress.runSettings)}`,
+        )}\n${checkpointSummary}\nLoadout: ${powerSummary}\nRun: ${formatRunSettings(state.progress.runSettings)}`,
         {
           align: 'center',
           fontFamily: RETRO_FONT_FAMILY,
@@ -129,6 +142,28 @@ export class CompleteScene extends Phaser.Scene {
       )
       .setOrigin(0.5);
 
+    this.accentSprite = this.add
+      .sprite(width - 176, 284, 'player')
+      .setScale(3.2)
+      .setTint(finalStage ? retro.safe : retro.stageAccent)
+      .setDepth(6);
+    playRetroTweenPreset(this, this.accentSprite, 'transition', { repeat: finalStage ? 2 : 1 });
+    this.accentTweenActive = true;
+    spawnRetroParticleBurst(this, this.accentSprite.x, this.accentSprite.y - 18, retro.safe, 'transition');
+    this.accentBurstCount += 1;
+
+    this.audio.playStageClear(state.stage, finalStage);
+    const retryCompletionAudio = () => {
+      if (!this.audio) {
+        return;
+      }
+      void runUnlockedAudioAction(this.audio, () => {
+        this.audio?.playStageClear(state.stage, finalStage);
+      });
+    };
+    this.input.keyboard?.once('keydown', retryCompletionAudio);
+    this.input.once('pointerdown', retryCompletionAudio);
+
     this.input.keyboard?.once('keydown-R', replayStage);
     this.input.keyboard?.once('keydown-M', goToMenu);
     this.input.keyboard?.once('keydown-N', continueForward);
@@ -140,6 +175,17 @@ export class CompleteScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.autoAdvanceEvent?.remove(false);
       this.autoAdvanceEvent = undefined;
+      this.accentTweenActive = false;
+      this.audio?.stopMusic();
+      this.audio = undefined;
     });
+  }
+
+  getDebugSnapshot(): { accentBurstCount: number; accentTweenActive: boolean; accentVisible: boolean } {
+    return {
+      accentBurstCount: this.accentBurstCount,
+      accentTweenActive: this.accentTweenActive,
+      accentVisible: this.accentSprite?.visible ?? false,
+    };
   }
 }

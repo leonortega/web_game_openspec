@@ -4,17 +4,19 @@
 Define the pre-stage and post-stage transition surfaces so progression status remains readable and consistent across scene changes.
 ## Requirements
 ### Requirement: Transition screens preserve readable player status
-The game SHALL show consistent player progression information across stage intro and stage-clear transition screens using the same authored stage display names, astronaut-themed power labels, research-sample collectible terminology, and survey-beacon checkpoint terminology used elsewhere in the run. Under the Atari 2600-inspired presentation pass, these screens MUST use the same coarse silhouette-first, flat-fill, limited-color visual language as gameplay while keeping text and key status values readable. Under the second-pass tightening, these screens MUST adopt harsher palette quantization and tighter sprite-like visual motion limits than the current baseline presentation. Any displayed stage-local and run-total collectible counts on those screens MUST use the same research-sample noun family rather than switching labels between surfaces. These screens MUST keep the player's current readiness and progress readable without implying new mechanics beyond the supported four powers and existing stage flow. Motion on these screens MUST remain sparse and pose-based rather than relying on polished modern panel animation. This presentation tightening MUST NOT change scene ordering, scene duration, or progression timing semantics.
+The game SHALL show consistent player progression information across stage intro and stage-clear transition screens using the same authored stage display names, astronaut-themed power labels, research-sample collectible terminology, and survey-beacon checkpoint terminology used elsewhere in the run. Under the Atari 2600-inspired presentation pass, these screens MUST use the same coarse silhouette-first, flat-fill, limited-color visual language as gameplay while keeping text and key status values readable. Under the second-pass tightening, these screens MUST adopt harsher palette quantization and tighter sprite-like visual motion limits than the current baseline presentation. Any displayed stage-local and run-total collectible counts on those screens MUST use the same research-sample noun family rather than switching labels between surfaces. These screens MUST keep the player's current readiness and progress readable without implying new mechanics beyond the supported four powers and existing stage flow. Motion on these screens MUST remain sparse and pose-based rather than relying on polished modern panel animation. These screens MUST also trigger short synthesized 8-bit intro, stage-clear, and final-congratulations stingers that match the current transition state when audio is available, and those stingers MUST fit within the existing scene timing semantics while handing off cleanly to or from the designated asset-backed menu or stage music. Transition intro and completion cues MUST remain distinct from moment-to-moment gameplay feedback, MUST NOT change scene ordering, scene duration, or progression timing semantics, and MUST NOT leave multiple sustained loops active or require motif-family matching to the downloaded gameplay tracks.
 
 #### Scenario: Viewing a pre-stage screen
 - **WHEN** the player sees the stage presentation before gameplay
 - **THEN** the screen includes the authored stage identity and current player status using the same research-sample and survey-beacon fiction used during play
 - **AND** the presentation uses the retro-inspired flat-fill style without reducing status readability
+- **AND** a short synthesized intro stinger for that specific stage plays when audio is available and hands off cleanly to the mapped gameplay track once gameplay starts
 
 #### Scenario: Viewing a post-clear screen
 - **WHEN** the player sees the stage results screen
 - **THEN** the screen includes stage-clear context and current progression totals using the same stage, collectible, checkpoint, and power naming shown during play
 - **AND** the screen remains legible within the reduced-palette retro treatment
+- **AND** a synthesized stage-clear cue plays when audio is available without leaving the prior gameplay loop active underneath it
 
 #### Scenario: Reading transition status during sparse animation
 - **WHEN** the transition screen animates between poses or layout states
@@ -24,4 +26,28 @@ The game SHALL show consistent player progression information across stage intro
 - **WHEN** the second-pass retro tightening is applied to the intro and completion scenes
 - **THEN** the screens render with harsher quantization and sprite-like visual motion limits
 - **AND** the existing stage flow order and timing semantics remain unchanged
+- **AND** transition audio cues do not extend durations or require additional player input before the next scene handoff
+
+#### Scenario: Reaching the final congratulations surface
+- **WHEN** the player reaches the final stage results surface after completing the run
+- **THEN** the transition surface plays a recognizable synthesized congratulations cue distinct from the normal stage-clear cue
+- **AND** the congratulations cue still hands off cleanly without restarting or overlapping another sustained loop
+
+### Requirement: Transition surfaces use bounded retro pose and accent animation
+The game SHALL present stage intro and completion surfaces with sparse retro motion that reinforces the current transition state without changing flow semantics. These surfaces MAY animate between a small number of player, stage, or celebration poses and MAY use brief accent bursts or particles, but the motion MUST stay subordinate to readable stage and progression text, MUST fit inside the existing scene durations, and MUST hand off cleanly with the current audio timing.
+
+#### Scenario: Viewing a pre-stage transition surface
+- **WHEN** the player sees a stage intro surface before gameplay begins
+- **THEN** the screen may animate through a bounded pose or accent loop that reinforces the stage identity and player readiness
+- **AND** the animation remains sparse enough that the stage and progression information stays readable
+
+#### Scenario: Viewing a post-clear transition surface
+- **WHEN** the player sees a stage-clear or final-congratulations surface
+- **THEN** the screen may play a brief celebratory pose change or accent burst that matches the current completion state
+- **AND** the effect resolves within the existing surface duration without extending the scene
+
+#### Scenario: Preserving transition timing and audio handoff
+- **WHEN** transition animation plays alongside intro, stage-clear, or final-congratulations audio
+- **THEN** the motion remains synchronized with the existing scene timing semantics
+- **AND** the animation does not delay, duplicate, or conflict with the clean music or stinger handoff rules
 

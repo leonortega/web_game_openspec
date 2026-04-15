@@ -48,25 +48,41 @@ The game SHALL introduce each supported biome-linked turret variant through an a
 - **WHEN** authored stage data assigns a biome-linked turret variant
 - **THEN** that assignment is limited to the supported biome and turret kind combinations for this change and does not broaden into unrelated enemy kinds or unsupported stages
 
+### Requirement: View-relevant enemy audibility preserves fairness and turret exceptions
+The game SHALL make enemy motion, charge, or presence cues audible when the enemy becomes visible in the active camera view or enters an already-supported turret lead-margin that communicates imminent in-view danger. Viewpoint gating MUST remain tied to player-readable threat relevance rather than generic simulation activity, and it MUST NOT change enemy attack cadence, projectile timing, hazard timing, or encounter layout. Enemies that remain off-screen and not yet view-relevant MUST NOT emit repetitive presence audio.
+
+#### Scenario: An enemy enters the camera view
+- **WHEN** an enemy becomes visible in the active camera view while audio is available
+- **THEN** the game may begin that enemy's readable motion, presence, or telegraph cue at that point
+
+#### Scenario: A turret uses the existing lead-margin exception
+- **WHEN** a turret reaches the supported lead-margin state that already warns of imminent in-view fire
+- **THEN** its telegraph or firing cue may become audible before the turret is fully visible
+- **AND** the exception preserves the current fairness semantics rather than becoming generic off-screen enemy audibility
+
+#### Scenario: An enemy remains off-screen and not yet relevant
+- **WHEN** an enemy continues simulating outside the active camera view and outside any supported lead-margin telegraph window
+- **THEN** the game does not emit repetitive motion or presence audio for that enemy
+
 ### Requirement: Enemy and hazard visuals remain readable under the reduced-detail presentation
-The game SHALL preserve enemy and hazard readability under the Atari 2600-inspired presentation pass. Dangerous enemies, hazard sources, active projectiles, and telegraph states MUST remain distinguishable from terrain and non-dangerous scenery through silhouette contrast, reserved accent colors, or explicit state-shape changes rather than subtle shading alone. Under the second-pass tightening, enemy and hazard rendering MUST use harsher palette quantization and tighter sprite-like visual motion limits than the current baseline presentation while keeping routing-critical threat differences readable. This presentation tightening MUST NOT change enemy behavior, projectile cadence, hazard timing, or encounter authoring.
+The game SHALL preserve enemy and hazard readability under the denser 8-bit presentation pass. Dangerous enemies, hazard sources, active projectiles, and telegraph states MUST remain distinguishable from terrain and non-dangerous scenery through silhouette contrast, reserved accent colors, explicit state-shape changes, or bounded internal pixel detail rather than subtle shading alone. Under this pass, enemy and hazard rendering MUST use richer sprite-like pixel structure than the current coarse baseline while keeping routing-critical threat differences readable. This presentation tightening MUST NOT change enemy behavior, projectile cadence, hazard timing, or encounter authoring.
 
 #### Scenario: Reading a hazard against the stage backdrop
-- **WHEN** the player views a damaging enemy or hazard in front of the flatter stage presentation
+- **WHEN** the player views a damaging enemy or hazard in front of the denser stage presentation
 - **THEN** its dangerous silhouette remains distinguishable from the surrounding terrain and props
 
 #### Scenario: Reading a telegraph state
 - **WHEN** an enemy or hazard enters a telegraph or windup state before becoming dangerous
-- **THEN** that state is visible through a clear shape, cadence, or accent change that is readable in the reduced palette
+- **THEN** that state is visible through a clear shape, cadence, accent, or pixel-detail change that remains readable in the bounded palette
 
 #### Scenario: Tightening threat visuals without changing threat timing
-- **WHEN** the second-pass retro tightening is applied to enemies, hazards, and projectiles
-- **THEN** their visuals become more quantized and sprite-like
+- **WHEN** the denser 8-bit pass is applied to enemies, hazards, and projectiles
+- **THEN** their visuals become richer in sprite-like pixel detail without losing readability
 - **AND** their telegraph timing and active danger cadence remain unchanged
 
 #### Scenario: Preserving routing-critical readability under the tighter pass
-- **WHEN** the player compares different enemies or hazards under the harsher palette limits
-- **THEN** the threats remain distinguishable through shape, spacing, motion state, or reserved accent placement rather than fine texture detail alone
+- **WHEN** the player compares different enemies or hazards under the denser pixel treatment
+- **THEN** the threats remain distinguishable through shape, spacing, motion state, reserved accents, or bounded pixel structure rather than fine texture noise alone
 
 ### Requirement: Reduced-palette rendering does not hide routing-critical threat differences
 The game SHALL keep routing-critical threat differences readable even when multiple enemies or hazards share a limited color vocabulary. Threats that require materially different player responses MUST remain distinguishable through shape, spacing, motion state, or reserved accent placement rather than depending only on small texture details.
@@ -78,4 +94,27 @@ The game SHALL keep routing-critical threat differences readable even when multi
 #### Scenario: Reading an active projectile
 - **WHEN** a hazard or enemy projectile crosses the screen
 - **THEN** the projectile remains visually distinct from background decoration and passive props
+
+### Requirement: Enemy and hazard motion feedback stays readable and deterministic
+The game SHALL use bounded retro animation to communicate enemy movement and telegraph state without changing encounter fairness. Repeating enemy states such as idle watch, patrol or hover motion, windup, firing telegraph, and defeat feedback MUST read through deterministic low-frame pose changes, restrained tween accents, local particles, or a bounded combination of those treatments rather than purely static rendering. For this change, grounded foot enemies means the supported grounded walker and hopper enemy kinds only. Grounded walkers MUST expose readable walking or patrol motion while advancing, grounded hoppers MUST expose distinct crouch, launch, airborne, and landing-recovery poses, and ovni or flyer enemies MUST keep a separate hover presentation that uses local sparkling-light accents rather than foot-enemy gait states. Enemy defeat feedback MAY emit a short local dissolve or disappearing-particle burst before the enemy fully vanishes, but that presentation MUST remain subordinate to existing spacing, attack timing, projectile cadence, defeat resolution, and telegraph windows.
+
+#### Scenario: Reading a grounded enemy before committing to an encounter
+- **WHEN** the player approaches a visible grounded walker or hopper enemy on the critical path
+- **THEN** its current patrol, hop-prep, airborne, or recovery state is readable through bounded motion or pose change
+- **AND** the player is not required to infer that state from a fully static sprite alone
+
+#### Scenario: Reading a flyer hover state
+- **WHEN** the player approaches a visible ovni or flyer enemy
+- **THEN** its hover state remains readable through bounded hover motion and local sparkle accents
+- **AND** it does not borrow grounded walk or hop presentation states
+
+#### Scenario: Preserving telegraph fairness under animation
+- **WHEN** an enemy or hazard enters a windup or firing telegraph state
+- **THEN** the animation reinforces the existing dangerous state without shifting the underlying timing window
+- **AND** retries preserve the same authored cadence and readable response window
+
+#### Scenario: Reading enemy defeat feedback in a mixed encounter
+- **WHEN** an enemy is defeated while other enemies, hazards, or projectiles remain active nearby
+- **THEN** the defeated enemy may emit a short local disappearing-particle burst
+- **AND** the added feedback does not obscure the routing-critical threat states that remain active
 

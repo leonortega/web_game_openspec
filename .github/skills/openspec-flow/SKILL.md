@@ -24,7 +24,7 @@ Each stage must be handled by its own spawned custom agent, not by ad hoc prompt
 
 1. Strip the leading `openspec` word from the user's prompt.
 2. Treat the remaining text as the change request or change description.
-3. Spawn the `OpenSpec Explore` agent for `explore`.
+3. Spawn the `OpenSpec Explore` agent for `explore`, and require it to inspect any relevant local skills or best-practice guidance before it settles on exploration findings.
 4. After explore completes, spawn the `OpenSpec Propose` agent for `propose`.
 5. After propose completes, spawn the `OpenSpec Apply` agent for `apply`.
 6. After apply completes, spawn the `OpenSpec Verify` agent for `verify`.
@@ -38,6 +38,7 @@ Each stage must pass a compact structured handoff to the next stage.
 
 - `explore` returns:
   - change decision
+  - relevant skills consulted
   - relevant specs and changes
   - likely code touchpoints
   - current behavior summary
@@ -73,6 +74,8 @@ Each stage must pass a compact structured handoff to the next stage.
 
 - `OpenSpec Explore`:
   - Use the local `openspec-explore` skill behavior as the exploration stance.
+  - Before exploring the codebase in depth, identify and read any relevant local skills that match the requested domain so exploration reflects repo best practices.
+  - If no domain skill applies, say so explicitly in the explore handoff instead of implying a skill review happened.
   - Stay read-only.
   - Produce a proposal-ready context report.
 

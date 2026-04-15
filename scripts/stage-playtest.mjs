@@ -8,10 +8,20 @@ const CHANGE_NAME = process.env.OPENSPEC_CHANGE ?? 'lightweight-stage-objectives
 const REPORT_DIR = path.join(ROOT, 'test_results', CHANGE_NAME);
 const JSON_REPORT = path.join(REPORT_DIR, 'playtest-report.json');
 const MD_REPORT = path.join(REPORT_DIR, 'playtest-report.md');
+const MUSIC_MANIFEST_PATH = path.join(ROOT, 'src', 'audio', 'musicAssetManifest.json');
 const PORT = 4179;
 const BASE_URL = `http://127.0.0.1:${PORT}/?debug=1`;
+const PLAYTEST_VIEWPORT = { width: 1440, height: 900 };
+const MENU_AUDIO_CAPTURE_MS = 8_200;
+const STAGE_GAMEPLAY_CAPTURE_MS = 12_500;
+const COMPLETION_AUDIO_CAPTURE_MS = 900;
+const PLAYABLE_STAGE_IDS = ['forest-ruins', 'amber-cavern', 'sky-sanctum'];
 const CHANGE_RESULT_SCOPE = {
   'activation-node-magnetic-platforms': new Set(['Mechanic Checks']),
+  'replace-synth-music-with-free-space-tracks': new Set(['Audio Asset Checks', 'Flow Checks']),
+  'deepen-stage-and-menu-composition': new Set(['Audio Composition Checks', 'Flow Checks']),
+  'expand-chiptune-audio-coverage': new Set(['Flow Checks']),
+  'strengthen-8bit-audio-identity': new Set(['Flow Checks']),
   'pause-menu-esc-continue-options-help': new Set(['Flow Checks']),
   'pause-menu-visibility-and-help-scroll': new Set(['Flow Checks']),
   'pause-overlay-and-help-panel-sizing': new Set(['Flow Checks']),
@@ -23,9 +33,251 @@ const CHANGE_RESULT_SCOPE = {
   'lightweight-stage-objectives': new Set(['Objective Checks']),
   'atari-2600-inspired-graphics': new Set(['Retro Presentation Checks', 'Flow Checks']),
   'retro-menu-and-presentation-tightening': new Set(['Retro Presentation Checks', 'Flow Checks']),
+  'stage-background-foreground-separation': new Set(['Retro Presentation Checks']),
+  'eightbit-presentation-and-audio-polish': new Set(['Retro Presentation Checks', 'Audio Asset Checks', 'Flow Checks']),
+  'remove-music-and-add-entity-animations': new Set(['Audio Asset Checks', 'Flow Checks', 'Retro Motion Checks']),
+  'stage-variation-and-death-animation-pass': new Set([
+    'Verdant Impact Crater',
+    'Ember Rift Warrens',
+    'Halo Spire Array',
+    'Mechanic Checks',
+    'Retro Motion Checks',
+    'Flow Checks',
+  ]),
 };
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function attachPlaytestPageLogging(page) {
+  page.on('pageerror', (error) => {
+    console.error(`browser page error: ${error.message}`);
+  });
+  page.on('console', (message) => {
+    if (message.type() === 'error') {
+      console.error(`browser console error: ${message.text()}`);
+    }
+  });
+}
+
+async function openPlaytestPage(browserContext) {
+  const page = await browserContext.newPage();
+  attachPlaytestPageLogging(page);
+  await page.setViewportSize(PLAYTEST_VIEWPORT);
+  await page.goto(BASE_URL, { waitUntil: 'networkidle' });
+  await waitForActiveScene(page, 'menu');
+  return page;
+}
+
+async function unlockAudioViaCanvas(page) {
+  await page.locator('canvas').click({ position: { x: 24, y: 24 } });
+}
+
+async function resetAudioDebug(page) {
+  await page.evaluate(() => {
+    window.__CRYSTAL_RUN_AUDIO_DEBUG__ = {
+      activeOwner: null,
+      events: [],
+      lastCue: null,
+      unlockCount: 0,
+    };
+  });
+}
+
+async function readAudioDebug(page) {
+  return page.evaluate(() => window.__CRYSTAL_RUN_AUDIO_DEBUG__ ?? null);
+}
+
+function findLastMusicEvent(audioDebug, phrase) {
+  if (!audioDebug?.events) {
+    return null;
+  }
+
+  const events = audioDebug.events.filter((event) => event.type === 'music' && (phrase ? event.phrase === phrase : true));
+  return events.length > 0 ? events[events.length - 1] : null;
+}
+
+async function readMusicManifest() {
+  const manifest = JSON.parse(await fs.readFile(MUSIC_MANIFEST_PATH, 'utf8'));
+  manifest.active = await Promise.all(
+    manifest.active.map(async (entry) => {
+      const assetDiskPath = path.join(ROOT, 'public', entry.localAssetPath.replace(/^\//, '').replaceAll('/', path.sep));
+      try {
+        await fs.access(assetDiskPath);
+        return { ...entry, localAssetPathExists: true };
+      } catch {
+        return { ...entry, localAssetPathExists: false };
+      }
+    }),
+  );
+  return manifest;
+}
+
+function findSectionEvents(audioDebug, phrase) {
+  if (!audioDebug?.events) {
+    return [];
+  }
+
+  return audioDebug.events.filter((event) => event.type === 'section' && (phrase ? event.phrase === phrase : true));
+}
+
+function firstSuccessfulUnlockIndex(audioDebug) {
+  if (!audioDebug?.events) {
+    return -1;
+  }
+
+  return audioDebug.events.findIndex((event) => event.type === 'unlock' && event.state === 'running');
+}
+
+function firstMusicIndex(audioDebug, phrase) {
+  if (!audioDebug?.events) {
+    return -1;
+  }
+
+  return audioDebug.events.findIndex((event) => event.type === 'music' && (phrase ? event.phrase === phrase : true));
+}
+
+function musicStartsAfterUnlock(audioDebug, phrase) {
+  const unlockIndex = firstSuccessfulUnlockIndex(audioDebug);
+  const musicIndex = firstMusicIndex(audioDebug, phrase);
+  return unlockIndex >= 0 && musicIndex > unlockIndex;
+}
+
+function musicStartsInUnlockedContext(audioDebug, phrase) {
+  const unlockIndex = firstSuccessfulUnlockIndex(audioDebug);
+  if (unlockIndex === -1) {
+    return firstMusicIndex(audioDebug, phrase) >= 0;
+  }
+
+  return musicStartsAfterUnlock(audioDebug, phrase);
+}
+
+function findManifestEntry(manifest, surface, stageId = null) {
+  return manifest.active.find((entry) => entry.surface === surface && (surface === 'menu' || entry.stageId === stageId)) ?? null;
+}
+
+async function captureStageThemeFamily(pageTarget, stageIndex) {
+  const page = await openPlaytestPage(pageTarget);
+
+  try {
+    await resetAudioDebug(page);
+    await page.evaluate((targetStageIndex) => {
+      const bridge = window.__CRYSTAL_RUN_BRIDGE__;
+      const game = window.__CRYSTAL_RUN_GAME__;
+      bridge.forceStartStage(targetStageIndex);
+      ['menu', 'game', 'complete', 'stage-intro'].forEach((sceneKey) => {
+        if (game.scene.getScenes(false).some((scene) => scene.scene.key === sceneKey)) {
+          game.scene.stop(sceneKey);
+        }
+      });
+      game.scene.start('stage-intro');
+    }, stageIndex);
+    await waitForActiveScene(page, 'stage-intro');
+    await unlockAudioViaCanvas(page);
+    await page.waitForTimeout(180);
+    await page.evaluate(() => {
+      const game = window.__CRYSTAL_RUN_GAME__;
+      game.scene.stop('stage-intro');
+      game.scene.start('game');
+    });
+    await waitForActiveScene(page, 'game');
+    await page.waitForTimeout(STAGE_GAMEPLAY_CAPTURE_MS);
+    await page.evaluate(() => {
+      const game = window.__CRYSTAL_RUN_GAME__;
+      game.scene.stop('game');
+      game.scene.start('complete');
+    });
+    await waitForActiveScene(page, 'complete');
+    await page.waitForTimeout(COMPLETION_AUDIO_CAPTURE_MS);
+
+    const audioDebug = await readAudioDebug(page);
+    const introEvent = findLastMusicEvent(audioDebug, 'stage-intro');
+    const gameplayEvent = findLastMusicEvent(audioDebug, 'gameplay-loop');
+    const completionEvent =
+      findLastMusicEvent(audioDebug, 'final-congrats') ?? findLastMusicEvent(audioDebug, 'stage-clear');
+
+    return {
+      stageIndex,
+      audioDebug,
+      introEvent,
+      gameplayEvent,
+      completionEvent,
+    };
+  } finally {
+    await page.close();
+  }
+}
+
+function buildAudioAssetCheck(menuAudio, stageFamilies, manifest) {
+  const menuTrack = findManifestEntry(manifest, 'menu');
+  const menuEvent = findLastMusicEvent(menuAudio, 'menu-loop');
+  const menuTrackMapped =
+    Boolean(menuTrack) &&
+    menuEvent?.playback === 'asset' &&
+    menuEvent.assetKey === menuTrack.assetKey &&
+    menuEvent.assetTitle === menuTrack.title &&
+    menuEvent.assetLicense === menuTrack.license;
+  const menuStartedAfterUnlock = musicStartsAfterUnlock(menuAudio, 'menu-loop');
+  const manifestLicensesAllowed = manifest.active.every(
+    (entry) => entry.license === 'CC0' || entry.license === 'Public Domain',
+  );
+  const backupsListed = Array.isArray(manifest.backups) && manifest.backups.length >= 3;
+  const activePathsPresent = manifest.active.every(
+    (entry) =>
+      typeof entry.localAssetPath === 'string' &&
+      entry.localAssetPath.length > 0 &&
+      entry.localAssetPathExists === true,
+  );
+
+  const stageReports = stageFamilies.map((family) => {
+    const stageId = PLAYABLE_STAGE_IDS[family.stageIndex] ?? `stage-${family.stageIndex}`;
+    const expected = findManifestEntry(manifest, 'stage', stageId);
+    const intro = family.introEvent;
+    const gameplay = family.gameplayEvent;
+    const completion = family.completionEvent;
+    const mappedTrackPassed =
+      Boolean(expected) &&
+      gameplay?.playback === 'asset' &&
+      gameplay.assetKey === expected.assetKey &&
+      gameplay.assetTitle === expected.title &&
+      gameplay.assetLicense === expected.license;
+    const startedAfterUnlock = musicStartsInUnlockedContext(family.audioDebug, 'gameplay-loop');
+    const synthStingersPreserved = intro?.playback === 'synth' && (!completion || completion.playback === 'synth');
+    const singleGameplayLoop =
+      family.audioDebug.events.filter(
+        (event) => event.type === 'music' && event.playback === 'asset' && event.phrase === 'gameplay-loop',
+      ).length === 1;
+
+    return {
+      stageName: stageId,
+      expectedAssetKey: expected?.assetKey ?? 'missing',
+      actualAssetKey: gameplay?.assetKey ?? 'missing',
+      actualTitle: gameplay?.assetTitle ?? 'missing',
+      mappedTrackPassed,
+      startedAfterUnlock,
+      synthStingersPreserved,
+      singleGameplayLoop,
+      passed: Boolean(expected) && mappedTrackPassed && startedAfterUnlock && synthStingersPreserved && singleGameplayLoop,
+    };
+  });
+
+  return {
+    menuAssetKey: menuTrack?.assetKey ?? 'missing',
+    menuTrackMapped,
+    menuStartedAfterUnlock,
+    manifestLicensesAllowed,
+    backupsListed,
+    activePathsPresent,
+    stageReports,
+    passed:
+      menuTrackMapped &&
+      menuStartedAfterUnlock &&
+      manifestLicensesAllowed &&
+      backupsListed &&
+      activePathsPresent &&
+      stageReports.length === 3 &&
+      stageReports.every((report) => report.passed),
+  };
+}
 
 async function waitForServer(url, timeoutMs = 20_000) {
   const deadline = Date.now() + timeoutMs;
@@ -451,6 +703,8 @@ function mechanicReport(result) {
     stickyGroundedTraversalReduced: result.stickyGroundedTraversalReduced,
     stickyAntiGravJumpSequenced: result.stickyAntiGravJumpSequenced,
     powerVariantDistinct: result.powerVariantDistinct,
+    backdropRouteSeparationReadable: result.backdropRouteSeparationReadable,
+    authoredBackdropResponsive: result.authoredBackdropResponsive,
     routingInteractablesReadable: result.routingInteractablesReadable,
     hazardContrastReadable: result.hazardContrastReadable,
     turretTelegraphReadable: result.turretTelegraphReadable,
@@ -501,6 +755,8 @@ function mechanicReport(result) {
       result.stickyGroundedTraversalReduced &&
       result.stickyAntiGravJumpSequenced &&
       result.powerVariantDistinct &&
+      result.backdropRouteSeparationReadable &&
+      result.authoredBackdropResponsive &&
       result.routingInteractablesReadable &&
       result.hazardContrastReadable &&
       result.turretTelegraphReadable &&
@@ -951,6 +1207,7 @@ async function readRuntimeSnapshot(page) {
 }
 
 async function collectFlowResults(page) {
+  const musicManifest = await readMusicManifest();
   await waitForActiveScene(page, 'menu');
   const initialMenu = await readMenuSnapshot(page);
   const menuRootStyle = await page.evaluate(() => {
@@ -987,13 +1244,16 @@ async function collectFlowResults(page) {
       ),
     };
   });
+  await resetAudioDebug(page);
   await page.keyboard.press('ArrowDown');
-  await page.waitForTimeout(120);
+  await page.waitForTimeout(MENU_AUDIO_CAPTURE_MS);
   const mainRootKeyboard = await readMenuSnapshot(page);
+  const menuNavigateAudio = await readAudioDebug(page);
 
   await page.keyboard.press('Enter');
   await page.waitForTimeout(120);
   const mainOptionsMenu = await readMenuSnapshot(page);
+  const menuConfirmAudio = await readAudioDebug(page);
 
   const pointerHoverWorked = await emitMenuPointerOver(page, 'Volume');
   if (!pointerHoverWorked) {
@@ -1077,6 +1337,7 @@ async function collectFlowResults(page) {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(120);
   const mainRootAfterHelp = await readMenuSnapshot(page);
+  const menuBackAudio = await readAudioDebug(page);
 
   await page.keyboard.press('ArrowUp');
   await page.waitForTimeout(120);
@@ -1089,12 +1350,14 @@ async function collectFlowResults(page) {
     state.progress.activePowers.invincible = true;
     state.progress.powerTimers.invincibleMs = 4000;
   });
+  await resetAudioDebug(page);
   await page.keyboard.press('Enter');
 
   await waitForActiveScene(page, 'stage-intro');
   const introCheck = await page.evaluate(() => {
     const game = window.__CRYSTAL_RUN_GAME__;
     const intro = game.scene.getScene('stage-intro');
+    const debug = typeof intro.getDebugSnapshot === 'function' ? intro.getDebugSnapshot() : null;
     const textNodes = intro.children.getChildren().filter((child) => typeof child.text === 'string');
     const textValues = intro.children
       .getChildren()
@@ -1110,9 +1373,80 @@ async function collectFlowResults(page) {
       hasRun: textValues.some((value) => value.includes('Run:')),
       hasRetroFrame: retroRectangles.length >= 4,
       usesRetroFont: textNodes.every((child) => child.style?.fontFamily?.includes('Courier New')),
+      accentAnimated: Boolean(debug?.accentVisible) && debug?.accentTweenActive === true && (debug?.accentBurstCount ?? 0) > 0,
     };
   });
+  const introAudio = await readAudioDebug(page);
   await waitForActiveScene(page, 'game', 12000);
+  const gameplayMusicAudio = await readAudioDebug(page);
+
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(180);
+
+  await page.evaluate(() => {
+    const bridge = window.__CRYSTAL_RUN_BRIDGE__;
+    const state = bridge.getSession().getState();
+    const checkpoint = state.stageRuntime.checkpoints[0];
+    state.player.x = checkpoint.rect.x;
+    state.player.y = checkpoint.rect.y - state.player.height + 4;
+    state.player.vx = 0;
+    state.player.vy = 0;
+  });
+  await page.waitForTimeout(140);
+
+  await page.evaluate(() => {
+    const bridge = window.__CRYSTAL_RUN_BRIDGE__;
+    const state = bridge.getSession().getState();
+    for (let index = 1; index < state.stageRuntime.collectibles.length; index += 1) {
+      state.stageRuntime.collectibles[index].collected = true;
+    }
+    state.stageRuntime.collectedCoins = Math.max(0, state.stageRuntime.totalCoins - 1);
+    state.progress.totalCoins = Math.max(state.progress.totalCoins, state.stageRuntime.collectedCoins);
+    const collectible = state.stageRuntime.collectibles[0];
+    state.player.x = collectible.position.x - state.player.width / 2;
+    state.player.y = collectible.position.y - state.player.height / 2;
+    state.player.vx = 0;
+    state.player.vy = 0;
+  });
+  await page.waitForTimeout(140);
+
+  await page.evaluate(() => {
+    const bridge = window.__CRYSTAL_RUN_BRIDGE__;
+    const state = bridge.getSession().getState();
+    const rewardBlock = state.stageRuntime.rewardBlocks.find((block) => block.reward.kind === 'coins');
+    if (!rewardBlock) {
+      return;
+    }
+    state.player.x = rewardBlock.x + rewardBlock.width / 2 - state.player.width / 2;
+    state.player.y = rewardBlock.y + rewardBlock.height + 2;
+    state.player.vx = 0;
+    state.player.vy = -720;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+  });
+  await page.waitForTimeout(180);
+
+  await page.evaluate(() => {
+    const bridge = window.__CRYSTAL_RUN_BRIDGE__;
+    const state = bridge.getSession().getState();
+    const powerBlock = state.stageRuntime.rewardBlocks.find((block) => block.reward.kind === 'power');
+    if (!powerBlock) {
+      return;
+    }
+    state.player.x = powerBlock.x + powerBlock.width / 2 - state.player.width / 2;
+    state.player.y = powerBlock.y + powerBlock.height + 2;
+    state.player.vx = 0;
+    state.player.vy = -720;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+  });
+  await page.waitForTimeout(200);
+
+  const gameplayFeedbackSnapshot = await page.evaluate(() => {
+    const game = window.__CRYSTAL_RUN_GAME__;
+    const scene = game.scene.getScene('game');
+    return typeof scene.getDebugSnapshot === 'function' ? scene.getDebugSnapshot() : null;
+  });
 
   const runtimeSeed = await page.evaluate(() => {
     const bridge = window.__CRYSTAL_RUN_BRIDGE__;
@@ -1168,6 +1502,54 @@ async function collectFlowResults(page) {
   await page.evaluate(() => {
     const bridge = window.__CRYSTAL_RUN_BRIDGE__;
     const game = window.__CRYSTAL_RUN_GAME__;
+    const idleInput = {
+      left: false,
+      right: false,
+      jumpHeld: false,
+      jumpPressed: false,
+      dashPressed: false,
+      shootPressed: false,
+    };
+
+    bridge.forceStartStage(1);
+    game.scene.stop('complete');
+    game.scene.stop('stage-intro');
+    game.scene.start('game');
+
+    const state = bridge.getSession().getState();
+    const enemy = state.stageRuntime.enemies.find((entry) => entry.kind === 'hopper');
+    if (enemy) {
+      state.stageRuntime.enemies = [enemy];
+      state.stageRuntime.hazards = [];
+      state.player.x = enemy.x;
+      state.player.y = enemy.y - state.player.height - 2;
+      state.player.vx = 0;
+      state.player.vy = 320;
+      state.player.onGround = false;
+      state.player.supportPlatformId = null;
+      bridge.getSession().update(16, idleInput);
+    }
+
+    state.progress.activePowers.doubleJump = false;
+    state.progress.activePowers.shooter = false;
+    state.progress.activePowers.invincible = false;
+    state.progress.activePowers.dash = false;
+    state.progress.powerTimers.invincibleMs = 0;
+    state.player.health = 1;
+    state.player.invulnerableMs = 0;
+    bridge.getSession().damagePlayer();
+  });
+  await page.waitForTimeout(180);
+  const defeatFeedbackSnapshot = await page.evaluate(() => {
+    const game = window.__CRYSTAL_RUN_GAME__;
+    const scene = game.scene.getScene('game');
+    return typeof scene.getDebugSnapshot === 'function' ? scene.getDebugSnapshot() : null;
+  });
+
+  await resetAudioDebug(page);
+  await page.evaluate(() => {
+    const bridge = window.__CRYSTAL_RUN_BRIDGE__;
+    const game = window.__CRYSTAL_RUN_GAME__;
     bridge.forceStartStage(0);
     bridge.getSession().getState().progress.activePowers.doubleJump = true;
     bridge.getSession().getState().progress.activePowers.invincible = true;
@@ -1176,9 +1558,11 @@ async function collectFlowResults(page) {
     game.scene.getScene('game').scene.start('complete');
   });
   await waitForActiveScene(page, 'complete');
+  const completionAudio = await readAudioDebug(page);
   const completeCheck = await page.evaluate(() => {
     const game = window.__CRYSTAL_RUN_GAME__;
     const complete = game.scene.getScene('complete');
+    const debug = typeof complete.getDebugSnapshot === 'function' ? complete.getDebugSnapshot() : null;
     const textNodes = complete.children.getChildren().filter((child) => typeof child.text === 'string');
     const textValues = complete.children
       .getChildren()
@@ -1193,6 +1577,7 @@ async function collectFlowResults(page) {
       hasStageName: textValues.some((value) => value.includes('Verdant Impact Crater')),
       hasRetroFrame: retroRectangles.length >= 4,
       usesRetroFont: textNodes.every((child) => child.style?.fontFamily?.includes('Courier New')),
+      accentAnimated: Boolean(debug?.accentVisible) && debug?.accentTweenActive === true && (debug?.accentBurstCount ?? 0) > 0,
     };
   });
   await waitForActiveScene(page, 'stage-intro', 12000);
@@ -1216,6 +1601,158 @@ async function collectFlowResults(page) {
     return active.includes('complete') && bridge.getSession().getState().stageIndex === 2;
   });
 
+  await resetAudioDebug(page);
+  const gameplayAudioCheck = await page.evaluate(() => {
+    const bridge = window.__CRYSTAL_RUN_BRIDGE__;
+    const game = window.__CRYSTAL_RUN_GAME__;
+    const idleInput = {
+      left: false,
+      right: false,
+      jumpHeld: false,
+      jumpPressed: false,
+      dashPressed: false,
+      shootPressed: false,
+    };
+
+    bridge.forceStartStage(1);
+    game.scene.stop('complete');
+    game.scene.stop('stage-intro');
+    game.scene.start('game');
+
+    const state = bridge.getSession().getState();
+    const checkpoint = state.stageRuntime.checkpoints[0];
+    state.player.x = checkpoint.rect.x;
+    state.player.y = checkpoint.rect.y;
+    bridge.getSession().update(16, idleInput);
+    const checkpointCues = bridge.drainCues();
+
+    const collectible = state.stageRuntime.collectibles[0];
+    state.player.x = collectible.position.x - state.player.width / 2;
+    state.player.y = collectible.position.y - state.player.height / 2;
+    bridge.getSession().update(16, idleInput);
+    const collectCues = bridge.drainCues();
+
+    const powerBlock = state.stageRuntime.rewardBlocks.find((rewardBlock) => rewardBlock.reward.kind === 'power');
+    state.player.x = powerBlock.x + powerBlock.width / 2 - state.player.width / 2;
+    state.player.y = powerBlock.y + powerBlock.height + 2;
+    state.player.vx = 0;
+    state.player.vy = -720;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+    bridge.consumeFrame(16);
+    const powerCues = bridge.drainCues();
+
+    state.progress.activePowers.doubleJump = false;
+    state.progress.activePowers.shooter = false;
+    state.progress.activePowers.invincible = false;
+    state.progress.activePowers.dash = false;
+    state.progress.powerTimers.invincibleMs = 0;
+    state.player.invulnerableMs = 0;
+    state.player.health = 1;
+    bridge.getSession().damagePlayer();
+    const deathCues = bridge.drainCues();
+
+    return { checkpointCues, collectCues, powerCues, deathCues };
+  });
+
+  const motionAudioCheck = await page.evaluate(() => {
+    const session = window.__CRYSTAL_RUN_BRIDGE__.getSession();
+    const idleInput = {
+      left: false,
+      right: false,
+      jumpHeld: false,
+      jumpPressed: false,
+      dashPressed: false,
+      shootPressed: false,
+    };
+
+    session.forceStartStage(1);
+    let state = session.getState();
+    const charger = state.stageRuntime.enemies.find((enemy) => enemy.kind === 'charger');
+    state.stageRuntime.enemies = [charger];
+    state.stageRuntime.hazards = [];
+    state.player.x = charger.x + 10;
+    state.player.y = charger.y;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    session.update(16, idleInput);
+    const dangerCues = session.consumeCues();
+
+    let remainingWindup = charger.charger.windupMs + 16;
+    while (remainingWindup > 0) {
+      const step = Math.min(remainingWindup, 16);
+      session.update(step, idleInput);
+      remainingWindup -= step;
+    }
+    const chargeCues = session.consumeCues();
+
+    session.restartStage();
+    state = session.getState();
+    const hopper = state.stageRuntime.enemies.find((enemy) => enemy.kind === 'hopper');
+    state.stageRuntime.enemies = [hopper];
+    state.stageRuntime.hazards = [];
+    let remainingHop = hopper.hop.intervalMs + 32;
+    while (remainingHop > 0) {
+      const step = Math.min(remainingHop, 16);
+      session.update(step, idleInput);
+      remainingHop -= step;
+    }
+    const hopCues = session.consumeCues();
+
+    session.restartStage();
+    state = session.getState();
+    const movingPlatform = state.stageRuntime.platforms.find((platform) => platform.kind === 'moving');
+    const reverseMs = Math.ceil((movingPlatform.move.range / movingPlatform.move.speed) * 1000) + 32;
+    let remainingReverse = reverseMs;
+    while (remainingReverse > 0) {
+      const step = Math.min(remainingReverse, 16);
+      session.update(step, idleInput);
+      remainingReverse -= step;
+    }
+    const platformCues = session.consumeCues();
+
+    return {
+      dangerCueWorked: dangerCues.includes('danger'),
+      movingEnemyCueWorked: chargeCues.includes('enemy-charge') && hopCues.includes('enemy-hop'),
+      movingPlatformWorked: platformCues.includes('moving-platform'),
+    };
+  });
+
+  await resetAudioDebug(page);
+  await page.evaluate(() => {
+    const bridge = window.__CRYSTAL_RUN_BRIDGE__;
+    const game = window.__CRYSTAL_RUN_GAME__;
+
+    bridge.forceStartStage(2);
+    game.scene.stop('game');
+    game.scene.stop('stage-intro');
+    game.scene.stop('complete');
+    game.scene.start('complete');
+  });
+  await waitForActiveScene(page, 'complete');
+  const finalCompletionAudio = await readAudioDebug(page);
+
+  const stageThemeFamilies = [];
+  for (const stageIndex of [0, 1, 2]) {
+    stageThemeFamilies.push(await captureStageThemeFamily(page.context(), stageIndex));
+  }
+  const audioAssetChecks = buildAudioAssetCheck(menuNavigateAudio, stageThemeFamilies, musicManifest);
+
+  await resetAudioDebug(page);
+  const surfaceDifferentiationCheck = await page.evaluate(() => {
+    const scene = window.__CRYSTAL_RUN_GAME__.scene.getScene('complete') ?? window.__CRYSTAL_RUN_GAME__.scene.getScene('game');
+    scene.audio.playCue('collect');
+    scene.audio.playCue('danger');
+    scene.audio.playCue('death');
+    scene.audio.playCue('final-congrats');
+    const cueEvents = window.__CRYSTAL_RUN_AUDIO_DEBUG__.events.filter((event) => event.type === 'cue');
+
+    return {
+      distinctFamilies: new Set(cueEvents.map((event) => event.family)).size >= 4,
+      distinctSignatures: new Set(cueEvents.map((event) => event.signature)).size >= 4,
+    };
+  });
+
   return {
     mainMenuRootVisible:
       Boolean(initialMenu) &&
@@ -1229,6 +1766,21 @@ async function collectFlowResults(page) {
       Boolean(initialMenu && mainRootKeyboard) &&
       initialMenu.selectedText === 'Start' &&
       mainRootKeyboard.selectedText === 'Options',
+    mainMenuNavigationAudio:
+      Boolean(menuNavigateAudio) &&
+      menuNavigateAudio.activeOwner === 'menu' &&
+      musicStartsAfterUnlock(menuNavigateAudio, 'menu-loop') &&
+      menuNavigateAudio.events.some((event) => event.type === 'cue' && event.cue === 'menu-navigate'),
+    menuGameplayDifferentiated:
+      Boolean(menuNavigateAudio && gameplayMusicAudio) &&
+      menuNavigateAudio.events.some(
+        (event) =>
+          event.type === 'music' &&
+          event.playback === 'asset' &&
+          gameplayMusicAudio.events.some(
+            (next) => next.type === 'music' && next.playback === 'asset' && next.assetKey !== event.assetKey,
+          ),
+      ),
     mainOptionsVisible:
       Boolean(mainOptionsMenu) &&
       mainOptionsMenu.mode === 'main' &&
@@ -1236,6 +1788,9 @@ async function collectFlowResults(page) {
       mainOptionsMenu.joined.includes('Difficulty') &&
       mainOptionsMenu.joined.includes('Enemies') &&
       mainOptionsMenu.joined.includes('Volume'),
+    mainMenuConfirmAudio:
+      Boolean(menuConfirmAudio) &&
+      menuConfirmAudio.events.some((event) => event.type === 'cue' && event.cue === 'menu-confirm'),
     mainMenuPointerUpdate:
       Boolean(mainOptionsPointer) &&
       mainOptionsPointer.selectedText?.startsWith('Volume'),
@@ -1255,6 +1810,9 @@ async function collectFlowResults(page) {
       Boolean(mainRootAfterHelp) &&
       mainRootAfterHelp.mode === 'main' &&
       mainRootAfterHelp.view === 'root',
+    mainMenuBackAudio:
+      Boolean(menuBackAudio) &&
+      menuBackAudio.events.some((event) => event.type === 'cue' && event.cue === 'menu-back'),
     mainMenuRetroStyle:
       menuRootStyle.usesRetroFont &&
       menuRootStyle.hasFlatFrame &&
@@ -1278,6 +1836,10 @@ async function collectFlowResults(page) {
       mainHelpAfterWheelScroll.helpScrollOffset > mainHelpAfterKeyboardScroll.helpScrollOffset,
     mainHelpClippingVerified,
     introVisible: true,
+    introAudioOwned:
+      Boolean(introAudio) &&
+      introAudio.activeOwner === 'transition' &&
+      introAudio.events.some((event) => event.type === 'owner' && event.owner === 'transition'),
     introStatusVisible:
       introCheck.hasStageLabel &&
       introCheck.hasRunSamples &&
@@ -1286,7 +1848,8 @@ async function collectFlowResults(page) {
       introCheck.hasLoadout &&
       introCheck.hasRun &&
       introCheck.hasRetroFrame &&
-      introCheck.usesRetroFont,
+      introCheck.usesRetroFont &&
+      introCheck.accentAnimated,
     completeStatusVisible:
       completeCheck.hasRunSamples &&
       completeCheck.hasSectorSamples &&
@@ -1294,7 +1857,54 @@ async function collectFlowResults(page) {
       completeCheck.hasAstronautLoadout &&
       completeCheck.hasStageName &&
       completeCheck.hasRetroFrame &&
-      completeCheck.usesRetroFont,
+      completeCheck.usesRetroFont &&
+      completeCheck.accentAnimated,
+    gameplayMusicOwned:
+      Boolean(gameplayMusicAudio) &&
+      gameplayMusicAudio.activeOwner === 'gameplay' &&
+      gameplayMusicAudio.events.some(
+        (event) => event.type === 'music' && event.playback === 'asset' && event.phrase === 'gameplay-loop',
+      ) &&
+      gameplayMusicAudio.events.some((event) => event.type === 'owner' && event.owner === 'gameplay'),
+    completionAudioOwned:
+      Boolean(completionAudio) &&
+      completionAudio.activeOwner === 'transition' &&
+      completionAudio.events.some((event) => event.type === 'owner' && event.owner === 'transition'),
+    checkpointAudioWorked:
+      Boolean(gameplayAudioCheck) &&
+      gameplayAudioCheck.checkpointCues.includes('checkpoint'),
+    rewardAudioWorked:
+      Boolean(gameplayAudioCheck) &&
+      gameplayAudioCheck.collectCues.includes('collect') &&
+      gameplayAudioCheck.powerCues.includes('reward-reveal') &&
+      gameplayAudioCheck.powerCues.includes('power'),
+    dangerAudioWorked:
+      Boolean(motionAudioCheck) && motionAudioCheck.dangerCueWorked,
+    movingEntityAudioWorked:
+      Boolean(motionAudioCheck) && motionAudioCheck.movingEnemyCueWorked,
+    movingPlatformAudioWorked:
+      Boolean(motionAudioCheck) && motionAudioCheck.movingPlatformWorked,
+    powerPickupAudioWorked:
+      Boolean(gameplayAudioCheck) &&
+      gameplayAudioCheck.powerCues.includes('block') &&
+      gameplayAudioCheck.powerCues.includes('power'),
+    deathAudioWorked:
+      Boolean(gameplayAudioCheck) &&
+      gameplayAudioCheck.deathCues.includes('death') &&
+      !gameplayAudioCheck.deathCues.includes('hurt'),
+    completionAudioDifferentiated:
+      Boolean(completionAudio && finalCompletionAudio) &&
+      completionAudio.events.some((event) => event.type === 'music' && event.phrase !== 'final-congrats') &&
+      finalCompletionAudio.events.some((event) => event.type === 'music' && event.phrase === 'final-congrats'),
+    finalCongratsAudioWorked:
+      Boolean(finalCompletionAudio) &&
+      finalCompletionAudio.events.some((event) => event.type === 'music' && event.phrase === 'final-congrats'),
+    stageThemeFamilyResolved: audioAssetChecks.stageReports.every((report) => report.synthStingersPreserved),
+    audioAssetChecks,
+    surfaceDifferentiationVerified:
+      Boolean(surfaceDifferentiationCheck) &&
+      surfaceDifferentiationCheck.distinctFamilies &&
+      surfaceDifferentiationCheck.distinctSignatures,
     hudLayoutPassed:
       hudCheck.hasFourCards &&
       hudCheck.hasCornerMeta &&
@@ -1339,6 +1949,19 @@ async function collectFlowResults(page) {
       resumedRuntime.playerY === pauseStableBefore.playerY,
     autoAdvanceWorked: autoAdvanceCheck,
     finalStageStopped: finalStageStayedComplete,
+    gameplayJumpFeedbackWorked:
+      Boolean(gameplayFeedbackSnapshot) &&
+      (gameplayFeedbackSnapshot.feedbackCounts?.jump ?? 0) > 0 &&
+      gameplayFeedbackSnapshot.playerPose !== 'idle',
+    gameplayCheckpointFeedbackWorked: (gameplayFeedbackSnapshot?.feedbackCounts?.checkpoint ?? 0) > 0,
+    gameplayCoinFeedbackWorked: (gameplayFeedbackSnapshot?.feedbackCounts?.coin ?? 0) > 0,
+    gameplayRewardFeedbackWorked: (gameplayFeedbackSnapshot?.feedbackCounts?.reward ?? 0) > 0,
+    gameplayPowerFeedbackWorked: (gameplayFeedbackSnapshot?.feedbackCounts?.power ?? 0) > 0,
+    gameplayHealFeedbackWorked: (gameplayFeedbackSnapshot?.feedbackCounts?.heal ?? 0) > 0,
+    gameplayPlayerDefeatFeedbackWorked: (defeatFeedbackSnapshot?.feedbackCounts?.playerDefeat ?? 0) > 0,
+    gameplayEnemyDefeatFeedbackWorked: (defeatFeedbackSnapshot?.feedbackCounts?.enemyDefeat ?? 0) > 0,
+    introAccentAnimated: introCheck.accentAnimated,
+    completionAccentAnimated: completeCheck.accentAnimated,
   };
 }
 
@@ -1717,6 +2340,50 @@ async function collectStageResults(page) {
     const collectibleTint = firstCollectible ? readabilityScene.collectibleSprites.get(firstCollectible.id)?.tintTopLeft : null;
     const rewardBlockFill = firstRewardBlock ? readabilityScene.rewardBlockSprites.get(firstRewardBlock.id)?.fillColor : null;
     const hazardFill = firstHazard ? readabilityScene.hazardSprites.get(firstHazard.id)?.fillColor : null;
+    const backdropColors = [
+      readabilityScene.retroPalette.background,
+      readabilityScene.retroPalette.skyline,
+      readabilityScene.retroPalette.groundBand,
+      readabilityScene.retroPalette.backdropColumn,
+      readabilityScene.retroPalette.backdropAccent,
+    ];
+    const toRgb = (color) => {
+      if (typeof color === 'number') {
+        return [(color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff];
+      }
+      if (typeof color !== 'string') {
+        return null;
+      }
+      const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+      return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+    };
+    const toLuminance = (color) => {
+      const channels = toRgb(color);
+      if (!channels) {
+        return null;
+      }
+      const [red, green, blue] = channels.map((channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+    };
+    const contrastRatio = (left, right) => {
+      const leftLuminance = toLuminance(left);
+      const rightLuminance = toLuminance(right);
+      if (leftLuminance === null || rightLuminance === null) {
+        return 0;
+      }
+      const lighter = Math.max(leftLuminance, rightLuminance);
+      const darker = Math.min(leftLuminance, rightLuminance);
+      return (lighter + 0.05) / (darker + 0.05);
+    };
+    const backdropRouteSeparationReadable =
+      Boolean(groundFill && rewardBlockFill && hazardFill) &&
+      backdropColors.every(
+        (color) => color !== groundFill && color !== rewardBlockFill && color !== hazardFill && color !== readabilityScene.retroPalette.panelAlt,
+      );
+    const stageZeroBackdropSignature = backdropColors.join(':');
     const routingInteractablesReadable =
       Boolean(groundFill && checkpointTint && collectibleTint && rewardBlockFill && hazardFill) &&
       checkpointTint !== groundFill &&
@@ -1732,16 +2399,26 @@ async function collectStageResults(page) {
     bridge.forceStartStage(1);
     resetToGameScene();
     let turretState = bridge.getSession().getState();
+    const turretScene = game.scene.getScene('game');
+    turretScene.syncView();
+    const stageOneBackdropSignature = [
+      turretScene.retroPalette.background,
+      turretScene.retroPalette.skyline,
+      turretScene.retroPalette.groundBand,
+      turretScene.retroPalette.backdropColumn,
+      turretScene.retroPalette.backdropAccent,
+    ].join(':');
+    const authoredBackdropResponsive = stageOneBackdropSignature !== stageZeroBackdropSignature;
     const variantTurret = turretState.stageRuntime.enemies.find((enemy) => enemy.kind === 'turret' && enemy.variant);
     if (!variantTurret?.turret || !variantTurret.supportPlatformId) {
       throw new Error('Expected biome-linked turret fixture for retro readability checks.');
     }
     variantTurret.turret.telegraphMs = Math.max(1, Math.floor(variantTurret.turret.telegraphDurationMs / 2));
-    gameScene.syncView();
+    turretScene.syncView();
     const turretTelegraphReadable =
-      gameScene.enemySprites.get(variantTurret.id)?.tintTopLeft !==
-        gameScene.platformSprites.get(variantTurret.supportPlatformId)?.fillColor &&
-      (gameScene.enemySprites.get(variantTurret.id)?.scaleX ?? 1) > 1;
+      turretScene.enemySprites.get(variantTurret.id)?.tintTopLeft !==
+        turretScene.platformSprites.get(variantTurret.supportPlatformId)?.fillColor &&
+      (turretScene.enemySprites.get(variantTurret.id)?.scaleX ?? 1) > 1;
     bridge.setCameraViewBox({ x: 0, y: 0, width: 960, height: 540 });
     let offscreenTurretCue = false;
     for (let i = 0; i < 180; i += 1) {
@@ -2327,6 +3004,8 @@ async function collectStageResults(page) {
         stickyGroundedTraversalReduced,
         stickyAntiGravJumpSequenced,
         powerVariantDistinct,
+        backdropRouteSeparationReadable,
+        authoredBackdropResponsive,
         routingInteractablesReadable,
         hazardContrastReadable,
         turretTelegraphReadable,
@@ -2918,21 +3597,15 @@ async function main() {
   try {
     await waitForServer(`http://127.0.0.1:${PORT}`);
     const browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    page.on('pageerror', (error) => {
-      console.error(`browser page error: ${error.message}`);
-    });
-    page.on('console', (message) => {
-      if (message.type() === 'error') {
-        console.error(`browser console error: ${message.text()}`);
-      }
-    });
-    await page.goto(BASE_URL, { waitUntil: 'networkidle' });
+    const context = await browser.newContext({ viewport: PLAYTEST_VIEWPORT });
+    const page = await openPlaytestPage(context);
 
     const flowChecks = await collectFlowResults(page);
+    const audioAssetChecks = flowChecks.audioAssetChecks;
     const objectiveChecks = await collectObjectiveResults(page);
     const rawResults = await collectStageResults(page);
     const turretVariantChecks = buildTurretVariantCheck(rawResults);
+    await context.close();
     await browser.close();
 
     const results = rawResults.map((result) => {
@@ -3058,6 +3731,16 @@ async function main() {
         );
         notes.push(
           mechanics.powerVariantDistinct ? 'power variants are visually distinct' : 'power variants are not visually distinct',
+        );
+        notes.push(
+          mechanics.backdropRouteSeparationReadable
+            ? 'backdrop bands and structures stay in a separate color lane from the playable route'
+            : 'backdrop bands or structures blend into route-critical gameplay colors',
+        );
+        notes.push(
+          mechanics.authoredBackdropResponsive
+            ? 'authored sky and ground palettes produce distinct backdrop treatments across stages'
+            : 'stage-authored sky and ground palettes do not materially change the backdrop treatment',
         );
         notes.push(
           mechanics.routingInteractablesReadable
@@ -3204,7 +3887,15 @@ async function main() {
       const safetyScan = analyzeSafety(result.stage);
       const blockSpacing = analyzeBlockSpacing(result.stage);
       const mechanics = {
-        passed: true,
+        terrainRolloutPresent: result.stage.terrainSurfaces.length > 0,
+        gravityRolloutPresent: result.stage.gravityFields.length > 0,
+        checkpointBeforeExit: result.stage.checkpoints.every(
+          (checkpoint) => checkpoint.rect.x < result.stage.exit.x + result.stage.exit.width,
+        ),
+        passed:
+          result.stage.terrainSurfaces.length > 0 &&
+          result.stage.gravityFields.length > 0 &&
+          result.stage.checkpoints.every((checkpoint) => checkpoint.rect.x < result.stage.exit.x + result.stage.exit.width),
       };
       const notes = [];
 
@@ -3250,6 +3941,9 @@ async function main() {
           ? 'reward blocks keep punchable clearance above stable floors'
           : `reward block spacing failed for [${blockSpacing.invalidBlocks.join(', ')}]`,
       );
+      notes.push(mechanics.terrainRolloutPresent ? 'terrain-surface rollout is authored on the stage' : 'terrain-surface rollout is missing from the stage');
+      notes.push(mechanics.gravityRolloutPresent ? 'gravity-field rollout is authored on the stage' : 'gravity-field rollout is missing from the stage');
+      notes.push(mechanics.checkpointBeforeExit ? 'all checkpoints stay before the terminal exit' : 'a checkpoint is authored beyond the terminal exit');
 
       return {
         stageName: result.stageName,
@@ -3290,11 +3984,15 @@ async function main() {
       safety: { passed: true },
       mechanics: {
         powerVariantDistinct: retroMechanics.powerVariantDistinct === true,
+        backdropRouteSeparationReadable: retroMechanics.backdropRouteSeparationReadable === true,
+        authoredBackdropResponsive: retroMechanics.authoredBackdropResponsive === true,
         routingInteractablesReadable: retroMechanics.routingInteractablesReadable === true,
         hazardContrastReadable: retroMechanics.hazardContrastReadable === true,
         turretTelegraphReadable: retroMechanics.turretTelegraphReadable === true,
         passed:
           retroMechanics.powerVariantDistinct === true &&
+          retroMechanics.backdropRouteSeparationReadable === true &&
+          retroMechanics.authoredBackdropResponsive === true &&
           retroMechanics.routingInteractablesReadable === true &&
           retroMechanics.hazardContrastReadable === true &&
           retroMechanics.turretTelegraphReadable === true,
@@ -3304,6 +4002,12 @@ async function main() {
         retroMechanics.powerVariantDistinct === true
           ? 'player power variants remain distinct through silhouette and accent changes'
           : 'player power variants do not remain distinct through silhouette and accent changes',
+        retroMechanics.backdropRouteSeparationReadable === true
+          ? 'backdrop bands and decorative structures remain visually secondary to the route'
+          : 'backdrop bands or decorative structures compete with route-critical gameplay colors',
+        retroMechanics.authoredBackdropResponsive === true
+          ? 'different authored stage palettes drive visibly different backdrop treatments'
+          : 'different authored stage palettes do not drive visibly different backdrop treatments',
         retroMechanics.routingInteractablesReadable === true
           ? 'routing-critical interactables stay distinct against the flatter gameplay palette'
           : 'routing-critical interactables blend into the flatter gameplay palette',
@@ -3379,6 +4083,110 @@ async function main() {
     });
 
     results.push({
+      stageName: 'Audio Asset Checks',
+      targetDurationMinutes: 0,
+      estimatedMinutes: 0,
+      readability: {
+        segmentCount: 0,
+        collectibleZones: [],
+        maxCheckpointGap: 0,
+        elevatedRoutePlatforms: 0,
+        elevatedRouteRewards: 0,
+        maxMainRouteThreatWindow: 0,
+        optionalThreatCount: 0,
+        segmentPass: true,
+        collectiblePass: true,
+        checkpointPass: true,
+        routePass: true,
+        encounterPass: true,
+      },
+      checkpoint: { passed: true },
+      safety: { passed: true },
+      mechanics: { passed: true },
+      flow: { passed: audioAssetChecks.passed },
+      audioAssets: audioAssetChecks,
+      notes: [
+        audioAssetChecks.menuTrackMapped
+          ? `menu track ${audioAssetChecks.menuAssetKey} matched the approved manifest entry`
+          : 'menu track did not match the approved manifest entry',
+        audioAssetChecks.manifestLicensesAllowed
+          ? 'all active sustained music manifest entries use an allowed CC0 or Public Domain license'
+          : 'one or more active sustained music manifest entries used a disallowed license',
+        audioAssetChecks.backupsListed
+          ? 'backup candidates remained recorded in the source manifest'
+          : 'backup candidates were missing from the source manifest',
+        audioAssetChecks.menuStartedAfterUnlock
+          ? 'menu sustained music started only after a successful unlock'
+          : 'menu sustained music started before a successful unlock',
+        ...audioAssetChecks.stageReports.flatMap((report) => [
+          `${report.stageName}: expected ${report.expectedAssetKey} and heard ${report.actualAssetKey}`,
+          `${report.stageName}: manifest-backed mapping ${report.mappedTrackPassed ? 'passed' : 'failed'}`,
+          `${report.stageName}: synthesized stingers ${report.synthStingersPreserved ? 'stayed in place' : 'were not preserved cleanly'}`,
+          `${report.stageName}: realized gameplay asset startedAfterUnlock=${report.startedAfterUnlock}`,
+          `${report.stageName}: single gameplay loop ownership ${report.singleGameplayLoop ? 'passed' : 'failed'}`,
+        ]),
+      ],
+    });
+
+    results.push({
+      stageName: 'Retro Motion Checks',
+      targetDurationMinutes: 0,
+      estimatedMinutes: 0,
+      readability: {
+        segmentCount: 0,
+        collectibleZones: [],
+        maxCheckpointGap: 0,
+        elevatedRoutePlatforms: 0,
+        elevatedRouteRewards: 0,
+        maxMainRouteThreatWindow: 0,
+        optionalThreatCount: 0,
+        segmentPass: true,
+        collectiblePass: true,
+        checkpointPass: true,
+        routePass: true,
+        encounterPass: true,
+      },
+      checkpoint: { passed: true },
+      safety: { passed: true },
+      mechanics: {
+        jumpFeedbackWorked: flowChecks.gameplayJumpFeedbackWorked,
+        checkpointFeedbackWorked: flowChecks.gameplayCheckpointFeedbackWorked,
+        coinFeedbackWorked: flowChecks.gameplayCoinFeedbackWorked,
+        rewardFeedbackWorked: flowChecks.gameplayRewardFeedbackWorked,
+        powerFeedbackWorked: flowChecks.gameplayPowerFeedbackWorked,
+        healFeedbackWorked: flowChecks.gameplayHealFeedbackWorked,
+          playerDefeatFeedbackWorked: flowChecks.gameplayPlayerDefeatFeedbackWorked,
+          enemyDefeatFeedbackWorked: flowChecks.gameplayEnemyDefeatFeedbackWorked,
+        introAccentAnimated: flowChecks.introAccentAnimated,
+        completionAccentAnimated: flowChecks.completionAccentAnimated,
+        passed:
+          flowChecks.gameplayJumpFeedbackWorked &&
+          flowChecks.gameplayCheckpointFeedbackWorked &&
+          flowChecks.gameplayCoinFeedbackWorked &&
+          flowChecks.gameplayRewardFeedbackWorked &&
+          flowChecks.gameplayPowerFeedbackWorked &&
+          flowChecks.gameplayHealFeedbackWorked &&
+            flowChecks.gameplayPlayerDefeatFeedbackWorked &&
+            flowChecks.gameplayEnemyDefeatFeedbackWorked &&
+          flowChecks.introAccentAnimated &&
+          flowChecks.completionAccentAnimated,
+      },
+      flow: { passed: true },
+      notes: [
+        flowChecks.gameplayJumpFeedbackWorked ? 'jump feedback triggered without losing readable pose changes' : 'jump feedback or airborne pose changes did not trigger',
+        flowChecks.gameplayCheckpointFeedbackWorked ? 'checkpoint feedback triggered once on activation' : 'checkpoint feedback did not trigger on activation',
+        flowChecks.gameplayCoinFeedbackWorked ? 'coin pickup feedback triggered once on collection' : 'coin pickup feedback did not trigger on collection',
+        flowChecks.gameplayRewardFeedbackWorked ? 'reward reveal feedback triggered on a block reveal' : 'reward reveal feedback did not trigger on a block reveal',
+        flowChecks.gameplayPowerFeedbackWorked ? 'power acquisition feedback triggered on gain' : 'power acquisition feedback did not trigger on gain',
+        flowChecks.gameplayHealFeedbackWorked ? 'full-collection recovery feedback triggered on the final sample' : 'full-collection recovery feedback did not trigger on the final sample',
+        flowChecks.gameplayPlayerDefeatFeedbackWorked ? 'player defeat burst triggered on the existing respawn path' : 'player defeat burst did not trigger on the existing respawn path',
+        flowChecks.gameplayEnemyDefeatFeedbackWorked ? 'enemy defeat particles triggered on local defeats' : 'enemy defeat particles did not trigger on local defeats',
+        flowChecks.introAccentAnimated ? 'intro accent animation stayed active inside the existing intro duration' : 'intro accent animation did not stay active inside the intro duration',
+        flowChecks.completionAccentAnimated ? 'completion accent animation stayed active inside the existing results duration' : 'completion accent animation did not stay active inside the results duration',
+      ],
+    });
+
+    results.push({
       stageName: 'Flow Checks',
       targetDurationMinutes: 0,
       estimatedMinutes: 0,
@@ -3403,18 +4211,26 @@ async function main() {
         introVisible: flowChecks.introVisible,
         mainMenuRootVisible: flowChecks.mainMenuRootVisible,
         mainMenuKeyboardUpdate: flowChecks.mainMenuKeyboardUpdate,
+        mainMenuNavigationAudio: flowChecks.mainMenuNavigationAudio,
         mainOptionsVisible: flowChecks.mainOptionsVisible,
+        mainMenuConfirmAudio: flowChecks.mainMenuConfirmAudio,
         mainMenuPointerUpdate: flowChecks.mainMenuPointerUpdate,
         mainOptionsLiveUpdate: flowChecks.mainOptionsLiveUpdate,
         mainHelpVisible: flowChecks.mainHelpVisible,
+        mainMenuBackAudio: flowChecks.mainMenuBackAudio,
         mainMenuRetroStyle: flowChecks.mainMenuRetroStyle,
         mainHelpLargerPanelVisible: flowChecks.mainHelpLargerPanelVisible,
         mainHelpScrollVisible: flowChecks.mainHelpScrollVisible,
         mainHelpKeyboardScrollWorked: flowChecks.mainHelpKeyboardScrollWorked,
         mainHelpWheelScrollWorked: flowChecks.mainHelpWheelScrollWorked,
         mainHelpClippingVerified: flowChecks.mainHelpClippingVerified,
+        introAudioOwned: flowChecks.introAudioOwned,
         introStatusVisible: flowChecks.introStatusVisible,
         completeStatusVisible: flowChecks.completeStatusVisible,
+        gameplayMusicOwned: flowChecks.gameplayMusicOwned,
+        completionAudioOwned: flowChecks.completionAudioOwned,
+        powerPickupAudioWorked: flowChecks.powerPickupAudioWorked,
+        deathAudioWorked: flowChecks.deathAudioWorked,
         hudLayoutPassed: flowChecks.hudLayoutPassed,
         pauseOverlayVisible: flowChecks.pauseOverlayVisible,
         pauseMenuSceneRemoved: flowChecks.pauseMenuSceneRemoved,
@@ -3426,10 +4242,14 @@ async function main() {
         passed:
           flowChecks.mainMenuRootVisible &&
           flowChecks.mainMenuKeyboardUpdate &&
+          flowChecks.mainMenuNavigationAudio &&
+          flowChecks.menuGameplayDifferentiated &&
           flowChecks.mainOptionsVisible &&
+          flowChecks.mainMenuConfirmAudio &&
           flowChecks.mainMenuPointerUpdate &&
           flowChecks.mainOptionsLiveUpdate &&
           flowChecks.mainHelpVisible &&
+          flowChecks.mainMenuBackAudio &&
           flowChecks.mainMenuRetroStyle &&
           flowChecks.mainHelpLargerPanelVisible &&
           flowChecks.mainHelpScrollVisible &&
@@ -3437,8 +4257,22 @@ async function main() {
           flowChecks.mainHelpWheelScrollWorked &&
           flowChecks.mainHelpClippingVerified &&
           flowChecks.introVisible &&
+          flowChecks.introAudioOwned &&
           flowChecks.introStatusVisible &&
           flowChecks.completeStatusVisible &&
+          flowChecks.gameplayMusicOwned &&
+          flowChecks.completionAudioOwned &&
+          flowChecks.checkpointAudioWorked &&
+          flowChecks.rewardAudioWorked &&
+          flowChecks.dangerAudioWorked &&
+          flowChecks.movingEntityAudioWorked &&
+          flowChecks.movingPlatformAudioWorked &&
+          flowChecks.powerPickupAudioWorked &&
+          flowChecks.deathAudioWorked &&
+          flowChecks.completionAudioDifferentiated &&
+          flowChecks.finalCongratsAudioWorked &&
+          flowChecks.stageThemeFamilyResolved &&
+          flowChecks.surfaceDifferentiationVerified &&
           flowChecks.hudLayoutPassed &&
           flowChecks.pauseOverlayVisible &&
           flowChecks.pauseMenuSceneRemoved &&
@@ -3451,10 +4285,14 @@ async function main() {
       notes: [
         flowChecks.mainMenuRootVisible ? 'main menu root actions passed' : 'main menu root actions failed',
         flowChecks.mainMenuKeyboardUpdate ? 'main root keyboard navigation passed' : 'main root keyboard navigation failed',
+        flowChecks.mainMenuNavigationAudio ? 'main root navigation cue passed' : 'main root navigation cue failed',
+        flowChecks.menuGameplayDifferentiated ? 'menu theme stayed distinct from gameplay music' : 'menu theme and gameplay music collapsed together',
         flowChecks.mainOptionsVisible ? 'main options view passed' : 'main options view failed',
+        flowChecks.mainMenuConfirmAudio ? 'menu confirm cue passed' : 'menu confirm cue failed',
         flowChecks.mainMenuPointerUpdate ? 'main options pointer navigation passed' : 'main options pointer navigation failed',
         flowChecks.mainOptionsLiveUpdate ? 'main options live updates passed' : 'main options live updates failed',
         flowChecks.mainHelpVisible ? 'main help view passed' : 'main help view failed',
+        flowChecks.mainMenuBackAudio ? 'menu back cue passed' : 'menu back cue failed',
         flowChecks.mainMenuRetroStyle ? 'main menu retro style passed' : 'main menu retro style failed',
         flowChecks.mainHelpLargerPanelVisible ? 'main help panel sizing passed' : 'main help panel sizing failed',
         flowChecks.mainHelpScrollVisible ? 'main help scrollbar appeared for overflow' : 'main help scrollbar missing',
@@ -3462,8 +4300,22 @@ async function main() {
         flowChecks.mainHelpWheelScrollWorked ? 'main help wheel scroll passed' : 'main help wheel scroll failed',
         flowChecks.mainHelpClippingVerified ? 'main help viewport clipping passed' : 'main help viewport clipping failed',
         flowChecks.introVisible ? 'stage intro scene appeared' : 'stage intro scene missing',
+        flowChecks.introAudioOwned ? 'stage intro audio ownership passed' : 'stage intro audio ownership failed',
         flowChecks.introStatusVisible ? 'intro status summary passed' : 'intro status summary failed',
         flowChecks.completeStatusVisible ? 'results summary uses astronaut naming' : 'results summary uses stale naming',
+        flowChecks.gameplayMusicOwned ? 'gameplay music ownership passed' : 'gameplay music ownership failed',
+        flowChecks.completionAudioOwned ? 'completion audio ownership passed' : 'completion audio ownership failed',
+        flowChecks.checkpointAudioWorked ? 'checkpoint confirmation cue passed' : 'checkpoint confirmation cue failed',
+        flowChecks.rewardAudioWorked ? 'reward pickup and reveal cues passed' : 'reward pickup and reveal cues failed',
+        flowChecks.dangerAudioWorked ? 'danger telegraph cue passed' : 'danger telegraph cue failed',
+        flowChecks.movingEntityAudioWorked ? 'moving enemy cues passed' : 'moving enemy cues failed',
+        flowChecks.movingPlatformAudioWorked ? 'moving platform cadence cue passed' : 'moving platform cadence cue failed',
+        flowChecks.powerPickupAudioWorked ? 'power pickup audio cues passed' : 'power pickup audio cues failed',
+        flowChecks.deathAudioWorked ? 'fatal death audio cue passed' : 'fatal death audio cue failed',
+        flowChecks.completionAudioDifferentiated ? 'stage clear and final congratulations audio stayed distinct' : 'stage clear and final congratulations audio collapsed together',
+        flowChecks.finalCongratsAudioWorked ? 'final congratulations phrase passed' : 'final congratulations phrase failed',
+        flowChecks.stageThemeFamilyResolved ? 'transition stingers stayed synthesized while gameplay loops remained asset-backed' : 'transition stingers or gameplay loop ownership drifted from the approved split audio model',
+        flowChecks.surfaceDifferentiationVerified ? 'menu, reward, danger, death, and completion signatures stayed distinct' : 'major audio surfaces still read as interchangeable',
         flowChecks.hudLayoutPassed ? 'hud layout passed' : 'hud layout failed',
         flowChecks.pauseOverlayVisible ? 'pause overlay visibility passed' : 'pause overlay visibility failed',
         flowChecks.pauseMenuSceneRemoved ? 'pause menu scene no longer launched' : 'pause menu scene still launched',

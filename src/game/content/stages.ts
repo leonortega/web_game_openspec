@@ -12,6 +12,8 @@ import type {
   TurretVariantId,
   Vector2,
 } from '../simulation/state';
+import type { StageAudioThemeMetadata } from '../../audio/audioContract';
+import { STAGE_AUDIO_METADATA } from '../../audio/musicThemes';
 import { GRAVITY_FIELD_KINDS, LAUNCHER_KINDS, TURRET_VARIANT_CONFIG } from '../simulation/state';
 
 export type ActivationNodeDefinition = Rect & {
@@ -127,6 +129,7 @@ export type StageObjectiveDefinition = {
 export type StageDefinition = {
   id: string;
   name: string;
+  audio: StageAudioThemeMetadata;
   presentation: {
     sectorLabel: string;
     biomeLabel: string;
@@ -626,6 +629,7 @@ const routeUsesReadableMechanic = (stage: StageDefinition, route: SecretRouteDef
 };
 
 const LAUNCHER_MAX_DIRECTION_RADIANS = (25 * Math.PI) / 180;
+const MAIN_STAGE_IDS = ['forest-ruins', 'amber-cavern', 'sky-sanctum'] as const;
 const HALO_SPIRE_ARRAY_STAGE_ID = 'sky-sanctum';
 const GRAVITY_FIELD_CHECKPOINT_CLEARANCE = 56;
 const MAGNETIC_PLATFORM_STAGE_ID = 'forest-ruins';
@@ -760,6 +764,22 @@ const validateRewardBlocks = (stage: StageDefinition): StageDefinition => {
         .map((block) => block.id)
         .join(', ')}`,
     );
+  }
+
+  const hasPhraseMetadata = (phrase: StageAudioThemeMetadata['transitionPhrases']['intro']): boolean =>
+    phrase.label.trim().length > 0 && phrase.signature.trim().length > 0 && phrase.relationship.trim().length > 0;
+
+  const audioMetadata = stage.audio;
+  if (audioMetadata.themeId.trim().length === 0 || audioMetadata.signature.trim().length === 0) {
+    throw new Error(`Stage audio metadata must declare a transition theme and signature: ${stage.id}`);
+  }
+
+  if (
+    !hasPhraseMetadata(audioMetadata.transitionPhrases.intro) ||
+    !hasPhraseMetadata(audioMetadata.transitionPhrases.clear) ||
+    !hasPhraseMetadata(audioMetadata.transitionPhrases.final)
+  ) {
+    throw new Error(`Stage audio metadata must declare intro, clear, and final transition labels and relationships: ${stage.id}`);
   }
 
   return stage;
@@ -1113,8 +1133,14 @@ const validateTraversalMechanics = (stage: StageDefinition): StageDefinition => 
     );
   }
 
-  if (stage.gravityFields.length > 0 && stage.id !== HALO_SPIRE_ARRAY_STAGE_ID) {
-    throw new Error(`Gravity-field rollout is limited to ${HALO_SPIRE_ARRAY_STAGE_ID}.`);
+  if (MAIN_STAGE_IDS.includes(stage.id as (typeof MAIN_STAGE_IDS)[number])) {
+    if (stage.terrainSurfaces.length === 0) {
+      throw new Error(`Main stages must author at least one terrain-surface section: ${stage.id}`);
+    }
+
+    if (stage.gravityFields.length === 0) {
+      throw new Error(`Main stages must author at least one bounded gravity-field section: ${stage.id}`);
+    }
   }
 
   if (stage.id === HALO_SPIRE_ARRAY_STAGE_ID && stage.gravityFields.length > 0) {
@@ -1330,6 +1356,15 @@ const validateTraversalMechanics = (stage: StageDefinition): StageDefinition => 
     );
   }
 
+  const postExitCheckpoints = stage.checkpoints.filter(
+    (checkpoint) => checkpoint.rect.x >= stage.exit.x + stage.exit.width,
+  );
+  if (postExitCheckpoints.length > 0) {
+    throw new Error(
+      `Checkpoints must stay before the terminal exit: ${postExitCheckpoints.map((checkpoint) => checkpoint.id).join(', ')}`,
+    );
+  }
+
   return stage;
 };
 
@@ -1431,6 +1466,7 @@ const baseStageDefinitions: StageDefinition[] = [
   {
     id: 'forest-ruins',
     name: 'Verdant Impact Crater',
+    audio: STAGE_AUDIO_METADATA['forest-ruins'],
     presentation: {
       sectorLabel: 'Survey Sector A1',
       biomeLabel: 'Biolume crater basin',
@@ -1583,6 +1619,7 @@ const baseStageDefinitions: StageDefinition[] = [
   {
     id: 'amber-cavern',
     name: 'Ember Rift Warrens',
+    audio: STAGE_AUDIO_METADATA['amber-cavern'],
     presentation: {
       sectorLabel: 'Survey Sector B4',
       biomeLabel: 'Molten resin trench',
@@ -1745,6 +1782,7 @@ const baseStageDefinitions: StageDefinition[] = [
   {
     id: 'sky-sanctum',
     name: 'Halo Spire Array',
+    audio: STAGE_AUDIO_METADATA['sky-sanctum'],
     presentation: {
       sectorLabel: 'Survey Sector C7',
       biomeLabel: 'Ion halo spires',
@@ -1946,6 +1984,11 @@ const forestRuinsExtension: StageExtension = {
     ground(11300, 450, 200),
     ground(11590, 530, 220),
   ],
+  terrainSurfaces: [
+    terrainSurface('forest-sludge-recovery-route', 'stickySludge', 8350, 520, 132),
+    terrainSurface('forest-brittle-canopy-route', 'brittleCrystal', 9920, 540, 132),
+  ],
+  gravityFields: [gravityField('forest-anti-grav-canopy-lift', 'anti-grav-stream', 8860, 130, 230, 320)],
   checkpoints: [
     { id: 'cp-5', rect: { x: 9960, y: 460, width: 24, height: 80 } },
     { id: 'cp-6', rect: { x: 11460, y: 370, width: 24, height: 80 } },
@@ -2070,6 +2113,11 @@ const amberCavernExtension: StageExtension = {
     ground(11670, 560, 220),
     ground(11960, 470, 180),
   ],
+  terrainSurfaces: [
+    terrainSurface('amber-sludge-fissure-route', 'stickySludge', 8160, 520, 128),
+    terrainSurface('amber-brittle-vault-route', 'brittleCrystal', 11370, 500, 128),
+  ],
+  gravityFields: [gravityField('amber-inversion-smelter-column', 'gravity-inversion-column', 10230, 120, 220, 360)],
   checkpoints: [
     { id: 'cp-5', rect: { x: 9220, y: 260, width: 24, height: 80 } },
     { id: 'cp-6', rect: { x: 11710, y: 480, width: 24, height: 80 } },
@@ -2240,7 +2288,6 @@ const skySanctumExtension: StageExtension = {
   scannerVolumes: [scannerVolume('sky-halo-scanner', 12400, 120, 170, 180, ['sky-temporary-bridge-1'])],
   checkpoints: [
     { id: 'cp-5', rect: { x: 10670, y: 400, width: 24, height: 80 } },
-    { id: 'cp-6', rect: { x: 13180, y: 350, width: 24, height: 80 } },
   ],
   collectibles: [
     { id: 'sky-10', position: { x: 8780, y: 510 } },

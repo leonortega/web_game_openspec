@@ -1,22 +1,33 @@
 import * as Phaser from 'phaser';
 import {
-  formatActivePowerSummary,
-  formatCheckpointStatus,
+  getActivePowerLabels,
   formatRunCollectibleSummary,
   formatRunSettings,
   formatStageCollectibleTarget,
 } from '../../game/simulation/state';
 import { SceneBridge } from '../adapters/sceneBridge';
+import { SynthAudio } from '../audio/SynthAudio';
+import { runUnlockedAudioAction } from '../audio/sceneAudio';
 import {
   RETRO_FONT_FAMILY,
   createRetroPresentationPalette,
   drawRetroBackdrop,
+  playRetroTweenPreset,
+  spawnRetroParticleBurst,
 } from '../view/retroPresentation';
 
 const INTRO_DURATION_MS = 2400;
 
 export class StageIntroScene extends Phaser.Scene {
+  private audio?: SynthAudio;
+
   private introEvent?: Phaser.Time.TimerEvent;
+
+  private accentSprite?: Phaser.GameObjects.Sprite;
+
+  private accentBurstCount = 0;
+
+  private accentTweenActive = false;
 
   constructor() {
     super('stage-intro');
@@ -27,9 +38,11 @@ export class StageIntroScene extends Phaser.Scene {
     const state = bridge.getSession().getState();
     const { width, height } = this.scale;
     const stagePresentation = state.stage.presentation;
-    const powerSummary = formatActivePowerSummary(state.progress.activePowers, state.progress.powerTimers);
+    const powerSummary = getActivePowerLabels(state.progress.activePowers, state.progress.powerTimers).join(', ') || 'None';
     const activeCheckpointCount = state.stageRuntime.checkpoints.filter((checkpoint) => checkpoint.activated).length;
+    const checkpointSummary = `Survey beacons online: ${activeCheckpointCount}/${state.stageRuntime.checkpoints.length}`;
     const retro = createRetroPresentationPalette(state.stage.palette);
+    this.audio = new SynthAudio(this, () => bridge.getSession().getState().progress.runSettings.masterVolume);
 
     drawRetroBackdrop(this, 0, 0, width, height, retro, 'transition');
     this.add
@@ -92,7 +105,7 @@ export class StageIntroScene extends Phaser.Scene {
         392,
         `${formatRunCollectibleSummary(state.progress.totalCoins)}\n${formatStageCollectibleTarget(
           state.stageRuntime.totalCoins,
-        )}\n${formatCheckpointStatus(activeCheckpointCount, state.stageRuntime.checkpoints.length)}\nLoadout: ${powerSummary}\nRun: ${formatRunSettings(state.progress.runSettings)}`,
+        )}\n${checkpointSummary}\nLoadout: ${powerSummary}\nRun: ${formatRunSettings(state.progress.runSettings)}`,
         {
           fontFamily: RETRO_FONT_FAMILY,
           fontSize: '18px',
@@ -113,6 +126,28 @@ export class StageIntroScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
+    this.accentSprite = this.add
+      .sprite(width - 164, 310, 'player')
+      .setScale(3)
+      .setTint(retro.stageAccent)
+      .setDepth(6);
+    playRetroTweenPreset(this, this.accentSprite, 'transition', { yoyo: true, repeat: 2 });
+    this.accentTweenActive = true;
+    spawnRetroParticleBurst(this, this.accentSprite.x, this.accentSprite.y - 22, retro.warm, 'transition');
+    this.accentBurstCount += 1;
+
+    this.audio.playStageIntro(state.stage);
+    const retryIntroAudio = () => {
+      if (!this.audio) {
+        return;
+      }
+      void runUnlockedAudioAction(this.audio, () => {
+        this.audio?.playStageIntro(state.stage);
+      });
+    };
+    this.input.keyboard?.once('keydown', retryIntroAudio);
+    this.input.once('pointerdown', retryIntroAudio);
+
     this.introEvent = this.time.delayedCall(INTRO_DURATION_MS, () => {
       this.scene.start('game');
     });
@@ -120,6 +155,17 @@ export class StageIntroScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.introEvent?.remove(false);
       this.introEvent = undefined;
+      this.accentTweenActive = false;
+      this.audio?.stopMusic();
+      this.audio = undefined;
     });
+  }
+
+  getDebugSnapshot(): { accentBurstCount: number; accentTweenActive: boolean; accentVisible: boolean } {
+    return {
+      accentBurstCount: this.accentBurstCount,
+      accentTweenActive: this.accentTweenActive,
+      accentVisible: this.accentSprite?.visible ?? false,
+    };
   }
 }

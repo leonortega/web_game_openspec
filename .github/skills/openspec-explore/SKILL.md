@@ -32,6 +32,12 @@ Enter explore mode. Think deeply. Visualize freely. Follow the conversation wher
 
 Depending on what the user brings, you might:
 
+**Check relevant local skills first**
+- Identify whether the requested change touches a domain with local repo skills or best-practice guides
+- Read the relevant skill files before drawing conclusions about requirements, design direction, or implementation touchpoints
+- Use those skills to sharpen the exploration, not to replace codebase inspection
+- If no relevant skill exists, state that clearly and continue with codebase-first exploration
+
 **Explore the problem space**
 - Ask clarifying questions that emerge from what they said
 - Challenge assumptions
@@ -86,6 +92,8 @@ At the start, quickly check what exists:
 openspec list --json
 ```
 
+Also quickly check whether the request maps to any local repo skills that should inform exploration before you recommend a path.
+
 This tells you:
 - If there are active changes
 - Their names, schemas, and status
@@ -108,11 +116,17 @@ If the user mentions a change or you detect one is relevant:
    - `openspec/changes/<name>/tasks.md`
    - etc.
 
-2. **Reference them naturally in conversation**
+2. **Read relevant local skills for best-practice context**
+     - Check `.github/skills/` for skills that match the requested domain or affected subsystem
+     - Read the applicable skill files before concluding on scope, risks, or recommended approach
+     - Keep note of which skills materially influenced the exploration
+
+3. **Reference them naturally in conversation**
    - "Your design mentions using Redis, but we just realized SQLite fits better..."
    - "The proposal scopes this to premium users, but we're now thinking everyone..."
+     - "The Phaser input skill changes the risk profile here because pointer handling is stricter than the current sketch assumes..."
 
-3. **Offer to capture when decisions are made**
+4. **Offer to capture when decisions are made**
 
    | Insight Type | Where to Capture |
    |--------------|------------------|
@@ -128,7 +142,7 @@ If the user mentions a change or you detect one is relevant:
    - "This is a new requirement. Add it to specs?"
    - "This changes scope. Update the proposal?"
 
-4. **The user decides** - Offer and move on. Don't pressure. Don't auto-capture.
+5. **The user decides** - Offer and move on. Don't pressure. Don't auto-capture.
 
 ---
 

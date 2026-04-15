@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import {
+  ACTIVE_SUSTAINED_MUSIC_MANIFEST,
+  BACKUP_SUSTAINED_MUSIC_MANIFEST,
+  MENU_SUSTAINED_MUSIC,
+  getStageSustainedMusic,
+} from '../../audio/musicAssets';
 import { stageDefinitions, validateStageDefinition, type StageDefinition } from './stages';
 
 const cloneStage = (): StageDefinition => JSON.parse(JSON.stringify(stageDefinitions[0])) as StageDefinition;
@@ -46,6 +52,48 @@ describe('launcher stage validation', () => {
   });
 });
 
+describe('stage audio composition validation', () => {
+  it('maps the current menu and playable stages to the approved CC0 sustained tracks', () => {
+    expect(MENU_SUSTAINED_MUSIC.title).toBe('Another space background track');
+    expect(getStageSustainedMusic('forest-ruins')?.title).toBe('Magic Space');
+    expect(getStageSustainedMusic('amber-cavern')?.title).toBe('I swear I saw it - background track');
+    expect(getStageSustainedMusic('sky-sanctum')?.title).toBe('Party Sector');
+    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.license === 'CC0')).toBe(true);
+    expect(BACKUP_SUSTAINED_MUSIC_MANIFEST.map((entry) => entry.title)).toEqual([
+      'Galactic Temple',
+      'Space Music: Out There',
+      'Tragic ambient main menu',
+    ]);
+  });
+
+  it('authors richer phrase-family metadata for each current playable stage', () => {
+    const stages = ['forest-ruins', 'amber-cavern', 'sky-sanctum']
+      .map((id) => stageDefinitions.find((stage) => stage.id === id))
+      .filter((stage): stage is StageDefinition => Boolean(stage));
+
+    expect(new Set(stages.map((stage) => stage.audio.signature)).size).toBe(3);
+    expect(stages.every((stage) => stage.audio.transitionPhrases.intro.relationship.includes('states'))).toBe(true);
+    expect(stages.every((stage) => stage.audio.transitionPhrases.clear.relationship.includes('resolves'))).toBe(true);
+    expect(stages.every((stage) => stage.audio.transitionPhrases.final.relationship.includes('culminates'))).toBe(true);
+  });
+
+  it('rejects stages missing required transition metadata', () => {
+    const stage = cloneStage();
+    stage.audio.themeId = '';
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Stage audio metadata must declare a transition theme and signature',
+    );
+
+    const missingPhraseFamily = cloneStage();
+    missingPhraseFamily.audio.transitionPhrases.clear.relationship = '';
+
+    expect(() => validateStageDefinition(missingPhraseFamily)).toThrow(
+      'Stage audio metadata must declare intro, clear, and final transition labels and relationships',
+    );
+  });
+});
+
 describe('activation-node magnetic platform stage validation', () => {
   it('accepts the bounded forest rollout with one nearby activation node and one retry-safe magnetic platform', () => {
     const stage = cloneStage();
@@ -84,6 +132,29 @@ describe('activation-node magnetic platform stage validation', () => {
 });
 
 describe('gravity field stage validation', () => {
+  it('requires every main stage to author at least one terrain section and one gravity section', () => {
+    const forest = cloneStage();
+    const amber = cloneAmberStage();
+    const sky = cloneSkyStage();
+
+    expect(validateStageDefinition(forest).terrainSurfaces.length).toBeGreaterThan(0);
+    expect(validateStageDefinition(forest).gravityFields.length).toBeGreaterThan(0);
+    expect(validateStageDefinition(amber).terrainSurfaces.length).toBeGreaterThan(0);
+    expect(validateStageDefinition(amber).gravityFields.length).toBeGreaterThan(0);
+    expect(validateStageDefinition(sky).terrainSurfaces.length).toBeGreaterThan(0);
+    expect(validateStageDefinition(sky).gravityFields.length).toBeGreaterThan(0);
+
+    forest.terrainSurfaces = [];
+    expect(() => validateStageDefinition(forest)).toThrow(
+      'Main stages must author at least one terrain-surface section: forest-ruins',
+    );
+
+    amber.gravityFields = [];
+    expect(() => validateStageDefinition(amber)).toThrow(
+      'Main stages must author at least one bounded gravity-field section: amber-cavern',
+    );
+  });
+
   it('authors exactly one anti-grav stream and one gravity inversion column in Halo Spire Array', () => {
     const stage = cloneSkyStage();
 
@@ -92,14 +163,6 @@ describe('gravity field stage validation', () => {
       'anti-grav-stream',
       'gravity-inversion-column',
     ]);
-  });
-
-  it('rejects gravity-field rollout on unsupported stages', () => {
-    const stage = cloneStage();
-
-    stage.gravityFields = [{ id: 'bad-rollout', kind: 'anti-grav-stream', x: 520, y: 260, width: 160, height: 180 }];
-
-    expect(() => validateStageDefinition(stage)).toThrow('Gravity-field rollout is limited to sky-sanctum.');
   });
 
   it('rejects overlapping gravity fields and nearby checkpoint placement', () => {
@@ -120,6 +183,17 @@ describe('gravity field stage validation', () => {
     };
 
     expect(() => validateStageDefinition(stage)).toThrow('Checkpoints must stay outside immediate gravity-field motion');
+  });
+
+  it('rejects checkpoints authored beyond the terminal exit', () => {
+    const stage = cloneSkyStage();
+
+    stage.checkpoints[stage.checkpoints.length - 1] = {
+      ...stage.checkpoints[stage.checkpoints.length - 1],
+      rect: { x: stage.exit.x + stage.exit.width + 8, y: stage.exit.y - 20, width: 24, height: 80 },
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow('Checkpoints must stay before the terminal exit');
   });
 });
 
