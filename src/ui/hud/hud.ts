@@ -82,5 +82,6 @@ export const updateHud = (hud: HudBindings, model: HudViewModel): void => {
   hud.runValue.textContent = model.runLabel;
   hud.segmentValue.textContent = model.segmentLabel;
   hud.message.textContent = model.message;
+  hud.message.setAttribute('aria-hidden', model.message ? 'false' : 'true');
   hud.message.classList.toggle('visible', Boolean(model.message));
 };

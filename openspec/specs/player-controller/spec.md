@@ -103,7 +103,7 @@ The game SHALL provide a player-controlled character that can run left and right
 - **AND** the gravity inversion affects only the airborne arc after the jump has started
 
 ### Requirement: Player can take damage and recover through respawn
-The game SHALL track player health or hit state, apply damage from enemies and hazards, and return the player to active play through death and respawn rules. When the player collides with a damaging enemy or hazard while one or more active non-invincible powers are present and invincibility is not active, the game MUST clear those active non-invincible powers and MUST NOT reduce health for that hit. When invincibility is active, damaging contact MUST preserve invincibility until its timer expires, MUST keep health unchanged for that hit, and MUST still clear any other active non-invincible powers. When the player has no active powers, damaging contact MUST reduce health as normal. When the player reaches the defeat condition, the game MUST enter a short non-controllable death presentation state that emits a bounded blow-apart particle burst from the player's last position before respawning at the most recently activated checkpoint or level start. That defeat presentation MUST stay local, deterministic, and short enough to preserve the current respawn flow, and it MUST NOT change damage immunity rules, checkpoint semantics, or which respawn point is selected.
+The game SHALL track player health or hit state, apply damage from enemies and hazards, and return the player to active play through death and respawn rules. When the player collides with a damaging enemy or hazard while one or more active non-invincible powers are present and invincibility is not active, the game MUST clear those active non-invincible powers and MUST NOT reduce health for that hit. When invincibility is active, damaging contact MUST preserve invincibility until its timer expires, MUST keep health unchanged for that hit, and MUST still clear any other active non-invincible powers. When the player has no active powers, damaging contact MUST reduce health as normal. When the player reaches the defeat condition, the game MUST enter a short non-controllable death presentation state that emits a bounded blow-apart particle burst from the player's last position before respawning at the most recently activated checkpoint or level start. That defeat presentation MUST stay local, deterministic, and clearly visible above ordinary gameplay objects, it MUST remain visually distinct from stomp and Plasma Blaster enemy-defeat bursts, and it MUST remain short enough to preserve the current respawn flow without changing damage immunity rules, checkpoint semantics, or which respawn point is selected.
 
 #### Scenario: Taking damage from a threat while unpowered
 - **WHEN** the player collides with a damaging enemy or hazard and has no active powers
@@ -123,7 +123,12 @@ The game SHALL track player health or hit state, apply damage from enemies and h
 
 #### Scenario: Losing all health
 - **WHEN** the player reaches the defeat condition
-- **THEN** the game triggers a death state, plays the bounded blow-apart defeat presentation, and then restarts the player from the current respawn point
+- **THEN** the game triggers a death state, plays the bounded blow-apart defeat presentation above ordinary gameplay objects, and then restarts the player from the current respawn point
+
+#### Scenario: Distinguishing player defeat from enemy defeat
+- **WHEN** the player sees a player death and an enemy defeat during active play
+- **THEN** the player-death presentation remains visually distinct from stomp and Plasma Blaster enemy-defeat feedback
+- **AND** the underlying respawn selection and timing stay unchanged
 
 #### Scenario: Respawning from a checkpoint
 - **WHEN** the player has activated a checkpoint before dying

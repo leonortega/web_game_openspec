@@ -401,8 +401,42 @@ describe('GameSession regression coverage', () => {
     session.update(16, defaultInputState());
 
     expect(enemy.alive).toBe(false);
+    expect(enemy.defeatCause).toBe('stomp');
     expect(state.player.dead).toBe(false);
+    expect(state.stageMessage).toBe('Enemy stomped');
     expect(session.consumeCues()).toContain(AUDIO_CUES.stomp);
+  });
+
+  it('marks player projectile defeats as plasma blaster kills without delaying enemy removal', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+    const enemy = state.stageRuntime.enemies.find((entry: any) => entry.kind === 'walker');
+    if (!enemy) {
+      throw new Error('Expected a walker fixture.');
+    }
+
+    state.stageRuntime.enemies = [enemy];
+    state.stageRuntime.hazards = [];
+    state.stageRuntime.projectiles = [
+      {
+        id: 'player-shot-fixture',
+        owner: 'player',
+        x: enemy.x + 4,
+        y: enemy.y + 4,
+        vx: 0,
+        width: 12,
+        height: 12,
+        alive: true,
+      },
+    ];
+
+    session.update(16, defaultInputState());
+
+    expect(enemy.alive).toBe(false);
+    expect(enemy.defeatCause).toBe('plasma-blast');
+    expect(state.stageRuntime.projectiles).toHaveLength(0);
+    expect(state.stageMessage).toBe('Enemy blasted');
+    expect(session.consumeCues()).toContain(AUDIO_CUES.shootHit);
   });
 
   it('emits motion and danger cues only on authored movement beats', () => {

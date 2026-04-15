@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import type { EnemyState, PowerType } from '../../game/simulation/state';
+import type { EnemyDefeatCause, EnemyState, PowerType } from '../../game/simulation/state';
 
 type StagePalette = {
   accent: number;
@@ -421,7 +421,16 @@ export type RetroFeedbackSnapshot = {
   allCoinsRecovered: boolean;
   presentationPower: PowerType | null;
   player: { dead: boolean; x: number; y: number; width: number; height: number };
-  enemies: Array<{ id: string; alive: boolean; x: number; y: number; width: number; height: number; kind: EnemyState['kind'] }>;
+  enemies: Array<{
+    id: string;
+    alive: boolean;
+    defeatCause: EnemyDefeatCause | null;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    kind: EnemyState['kind'];
+  }>;
 };
 
 export type RetroFeedbackEvent =
@@ -431,7 +440,7 @@ export type RetroFeedbackEvent =
   | { kind: 'power'; power: PowerType; x: number; y: number }
   | { kind: 'heal'; x: number; y: number }
   | { kind: 'player-defeat'; x: number; y: number }
-  | { kind: 'enemy-defeat'; id: string; enemyKind: EnemyState['kind']; x: number; y: number };
+  | { kind: 'enemy-defeat'; id: string; cause: EnemyDefeatCause; enemyKind: EnemyState['kind']; x: number; y: number };
 
 export const detectRetroFeedbackEvents = (
   previous: RetroFeedbackSnapshot,
@@ -498,6 +507,7 @@ export const detectRetroFeedbackEvents = (
       events.push({
         kind: 'enemy-defeat',
         id: enemy.id,
+        cause: enemy.defeatCause ?? 'stomp',
         enemyKind: enemy.kind,
         x: prior.x + prior.width / 2,
         y: prior.y + prior.height / 2,
@@ -548,20 +558,36 @@ export type RetroParticlePresetName =
   | 'heal'
   | 'transition'
   | 'player-defeat'
-  | 'enemy-defeat';
+  | 'enemy-defeat-stomp'
+  | 'enemy-defeat-plasma';
 
-const RETRO_PARTICLE_PRESETS: Record<RetroParticlePresetName, { count: number; speed: [number, number]; lifespan: number; angle: [number, number]; scaleStart: number; scaleEnd: number; gravityY?: number; }> = {
-  jump: { count: 5, speed: [22, 58], lifespan: 220, angle: [205, 335], scaleStart: 1.2, scaleEnd: 0.2, gravityY: 140 },
-  land: { count: 6, speed: [20, 66], lifespan: 240, angle: [185, 355], scaleStart: 1.3, scaleEnd: 0.24, gravityY: 160 },
-  checkpoint: { count: 10, speed: [34, 90], lifespan: 320, angle: [0, 360], scaleStart: 1.4, scaleEnd: 0.18 },
-  coin: { count: 6, speed: [28, 68], lifespan: 240, angle: [0, 360], scaleStart: 1.1, scaleEnd: 0.18 },
-  reward: { count: 8, speed: [30, 74], lifespan: 280, angle: [0, 360], scaleStart: 1.2, scaleEnd: 0.2 },
-  power: { count: 12, speed: [32, 96], lifespan: 340, angle: [0, 360], scaleStart: 1.5, scaleEnd: 0.22 },
-  heal: { count: 14, speed: [26, 88], lifespan: 360, angle: [0, 360], scaleStart: 1.6, scaleEnd: 0.18 },
-  transition: { count: 10, speed: [22, 72], lifespan: 320, angle: [0, 360], scaleStart: 1.2, scaleEnd: 0.18 },
-  'player-defeat': { count: 18, speed: [40, 118], lifespan: 360, angle: [0, 360], scaleStart: 1.8, scaleEnd: 0.12, gravityY: 120 },
-  'enemy-defeat': { count: 10, speed: [26, 84], lifespan: 240, angle: [0, 360], scaleStart: 1.2, scaleEnd: 0.1 },
+type RetroParticlePreset = {
+  count: number;
+  speed: [number, number];
+  lifespan: number;
+  angle: [number, number];
+  scaleStart: number;
+  scaleEnd: number;
+  alphaStart: number;
+  depth: number;
+  gravityY?: number;
 };
+
+const RETRO_PARTICLE_PRESETS: Record<RetroParticlePresetName, RetroParticlePreset> = {
+  jump: { count: 5, speed: [22, 58], lifespan: 220, angle: [205, 335], scaleStart: 1.2, scaleEnd: 0.2, alphaStart: 0.86, depth: 8, gravityY: 140 },
+  land: { count: 6, speed: [20, 66], lifespan: 240, angle: [185, 355], scaleStart: 1.3, scaleEnd: 0.24, alphaStart: 0.88, depth: 8, gravityY: 160 },
+  checkpoint: { count: 10, speed: [34, 90], lifespan: 320, angle: [0, 360], scaleStart: 1.4, scaleEnd: 0.18, alphaStart: 0.88, depth: 9 },
+  coin: { count: 6, speed: [28, 68], lifespan: 240, angle: [0, 360], scaleStart: 1.1, scaleEnd: 0.18, alphaStart: 0.84, depth: 9 },
+  reward: { count: 8, speed: [30, 74], lifespan: 280, angle: [0, 360], scaleStart: 1.2, scaleEnd: 0.2, alphaStart: 0.86, depth: 9 },
+  power: { count: 12, speed: [32, 96], lifespan: 340, angle: [0, 360], scaleStart: 1.5, scaleEnd: 0.22, alphaStart: 0.9, depth: 9 },
+  heal: { count: 14, speed: [26, 88], lifespan: 360, angle: [0, 360], scaleStart: 1.6, scaleEnd: 0.18, alphaStart: 0.9, depth: 9 },
+  transition: { count: 10, speed: [22, 72], lifespan: 320, angle: [0, 360], scaleStart: 1.2, scaleEnd: 0.18, alphaStart: 0.9, depth: 12 },
+  'player-defeat': { count: 26, speed: [62, 156], lifespan: 460, angle: [0, 360], scaleStart: 2.3, scaleEnd: 0.18, alphaStart: 1, depth: 14, gravityY: 162 },
+  'enemy-defeat-stomp': { count: 12, speed: [28, 80], lifespan: 280, angle: [205, 335], scaleStart: 1.55, scaleEnd: 0.18, alphaStart: 0.98, depth: 13, gravityY: 156 },
+  'enemy-defeat-plasma': { count: 16, speed: [42, 132], lifespan: 320, angle: [0, 360], scaleStart: 1.42, scaleEnd: 0.12, alphaStart: 0.96, depth: 13 },
+};
+
+export const getRetroParticlePreset = (preset: RetroParticlePresetName): RetroParticlePreset => RETRO_PARTICLE_PRESETS[preset];
 
 export const spawnRetroParticleBurst = (
   scene: Phaser.Scene,
@@ -570,7 +596,7 @@ export const spawnRetroParticleBurst = (
   tint: number,
   preset: RetroParticlePresetName,
 ): Phaser.GameObjects.Particles.ParticleEmitter => {
-  const config = RETRO_PARTICLE_PRESETS[preset];
+  const config = getRetroParticlePreset(preset);
   const emitter = scene.add.particles(x, y, 'retro-particle', {
     emitting: false,
     tint,
@@ -578,9 +604,10 @@ export const spawnRetroParticleBurst = (
     lifespan: config.lifespan,
     angle: { min: config.angle[0], max: config.angle[1] },
     scale: { start: config.scaleStart, end: config.scaleEnd },
-    alpha: { start: 0.86, end: 0 },
+    alpha: { start: config.alphaStart, end: 0 },
     gravityY: config.gravityY ?? 0,
   });
+  emitter.setDepth(config.depth);
   emitter.explode(config.count, x, y);
   scene.time.delayedCall(config.lifespan + 80, () => emitter.destroy());
   return emitter;

@@ -23,6 +23,7 @@ import {
   type CollectibleState,
   type DifficultySetting,
   type EnemyPressureSetting,
+  type EnemyDefeatCause,
   type EnemyState,
   type ActivationNodeState,
   type GravityFieldKind,
@@ -1458,10 +1459,8 @@ export class GameSession {
           continue;
         }
 
-        enemy.alive = false;
         projectile.alive = false;
-        this.setStageMessage('Enemy blasted', 1300);
-        this.emitCue(AUDIO_CUES.shootHit);
+        this.defeatEnemy(enemy, 'plasma-blast', 'Enemy blasted', 1300, AUDIO_CUES.shootHit);
         break;
       }
     }
@@ -1628,12 +1627,10 @@ export class GameSession {
 
       const stompWindow = player.vy > 100 && player.y + player.height <= enemy.y + 14;
       if (stompWindow && enemy.kind !== 'turret') {
-        enemy.alive = false;
+        this.defeatEnemy(enemy, 'stomp', 'Enemy stomped', 1200, AUDIO_CUES.stomp);
         player.vy = -STOMP_BOUNCE;
         player.onGround = false;
         player.supportPlatformId = null;
-        this.setStageMessage('Enemy stomped', 1200);
-        this.emitCue(AUDIO_CUES.stomp);
       } else {
         this.damagePlayer();
       }
@@ -1792,6 +1789,19 @@ export class GameSession {
     this.snapshot.respawnTimerMs = RESPAWN_DELAY_MS;
     this.emitCue(AUDIO_CUES.death);
     this.setStageMessage('Respawning...', RESPAWN_DELAY_MS);
+  }
+
+  private defeatEnemy(
+    enemy: EnemyState,
+    cause: EnemyDefeatCause,
+    message: string,
+    durationMs: number,
+    cue: AudioCue,
+  ): void {
+    enemy.alive = false;
+    enemy.defeatCause = cause;
+    this.setStageMessage(message, durationMs);
+    this.emitCue(cue);
   }
 
   private respawnPlayer(): void {
@@ -2213,6 +2223,7 @@ export class GameSession {
         width,
         height,
         alive: true,
+        defeatCause: null,
         direction: -1,
         supportY,
         supportPlatformId: support?.id ?? null,

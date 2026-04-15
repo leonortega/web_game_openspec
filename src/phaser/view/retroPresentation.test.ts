@@ -10,8 +10,10 @@ import {
   createRetroMenuPalette,
   createRetroPresentationPalette,
   detectRetroFeedbackEvents,
+  getRetroParticlePreset,
   getRetroEnemyPose,
   getRetroPlayerPose,
+  spawnRetroParticleBurst,
 } from './retroPresentation';
 
 const toLuminance = (color: number): number => {
@@ -255,7 +257,10 @@ describe('createRetroPresentationPalette', () => {
       allCoinsRecovered: false,
       presentationPower: null,
       player: { dead: false, x: 80, y: 120, width: 24, height: 40 },
-      enemies: [{ id: 'enemy-a', alive: true, x: 320, y: 160, width: 24, height: 30, kind: 'hopper' as const }],
+      enemies: [
+        { id: 'enemy-a', alive: true, defeatCause: null, x: 320, y: 160, width: 24, height: 30, kind: 'hopper' as const },
+        { id: 'enemy-b', alive: true, defeatCause: null, x: 420, y: 160, width: 24, height: 30, kind: 'walker' as const },
+      ],
     };
     const current = {
       checkpoints: [{ id: 'checkpoint-a', activated: true, x: 100, y: 200, width: 24, height: 80 }],
@@ -264,7 +269,28 @@ describe('createRetroPresentationPalette', () => {
       allCoinsRecovered: true,
       presentationPower: 'dash' as const,
       player: { dead: true, x: 80, y: 120, width: 24, height: 40 },
-      enemies: [{ id: 'enemy-a', alive: false, x: 320, y: 160, width: 24, height: 30, kind: 'hopper' as const }],
+      enemies: [
+        {
+          id: 'enemy-a',
+          alive: false,
+          defeatCause: 'stomp' as const,
+          x: 320,
+          y: 160,
+          width: 24,
+          height: 30,
+          kind: 'hopper' as const,
+        },
+        {
+          id: 'enemy-b',
+          alive: false,
+          defeatCause: 'plasma-blast' as const,
+          x: 420,
+          y: 160,
+          width: 24,
+          height: 30,
+          kind: 'walker' as const,
+        },
+      ],
     };
 
     expect(detectRetroFeedbackEvents(previous, current)).toEqual([
@@ -273,9 +299,59 @@ describe('createRetroPresentationPalette', () => {
       { kind: 'power', power: 'dash', x: 260, y: 160 },
       { kind: 'heal', x: 220, y: 180 },
       { kind: 'player-defeat', x: 92, y: 140 },
-      { kind: 'enemy-defeat', id: 'enemy-a', enemyKind: 'hopper', x: 332, y: 175 },
+      { kind: 'enemy-defeat', id: 'enemy-a', cause: 'stomp', enemyKind: 'hopper', x: 332, y: 175 },
+      { kind: 'enemy-defeat', id: 'enemy-b', cause: 'plasma-blast', enemyKind: 'walker', x: 432, y: 175 },
     ]);
 
     expect(detectRetroFeedbackEvents(current, current)).toEqual([]);
+  });
+
+  it('keeps supported defeat bursts above the gameplay stack while preserving distinct bounded presets', () => {
+    const stomp = getRetroParticlePreset('enemy-defeat-stomp');
+    const plasma = getRetroParticlePreset('enemy-defeat-plasma');
+    const playerDefeat = getRetroParticlePreset('player-defeat');
+
+    expect(stomp.depth).toBeGreaterThan(10);
+    expect(plasma.depth).toBeGreaterThan(10);
+    expect(playerDefeat.depth).toBeGreaterThan(plasma.depth);
+    expect(stomp.angle).toEqual([205, 335]);
+    expect(plasma.angle).toEqual([0, 360]);
+    expect(plasma.count).toBeGreaterThan(stomp.count);
+    expect(playerDefeat.count).toBeGreaterThan(plasma.count);
+    expect(playerDefeat.lifespan).toBeGreaterThan(plasma.lifespan);
+    expect(stomp.alphaStart).toBeGreaterThanOrEqual(0.95);
+    expect(plasma.alphaStart).toBeGreaterThanOrEqual(0.95);
+  });
+
+  it('applies the preset depth and bounded lifetime when spawning defeat bursts', () => {
+    const emitter = {
+      setDepth: vi.fn().mockReturnThis(),
+      explode: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const delayedCall = vi.fn();
+    const scene = {
+      add: {
+        particles: vi.fn(() => emitter),
+      },
+      time: {
+        delayedCall,
+      },
+    } as unknown as Parameters<typeof spawnRetroParticleBurst>[0];
+
+    spawnRetroParticleBurst(scene, 144, 88, 0xf7f3d6, 'enemy-defeat-plasma');
+
+    expect(scene.add.particles).toHaveBeenCalledWith(
+      144,
+      88,
+      'retro-particle',
+      expect.objectContaining({
+        alpha: { start: 0.96, end: 0 },
+        lifespan: 320,
+      }),
+    );
+    expect(emitter.setDepth).toHaveBeenCalledWith(13);
+    expect(emitter.explode).toHaveBeenCalledWith(16, 144, 88);
+    expect(delayedCall).toHaveBeenCalledWith(400, expect.any(Function));
   });
 });

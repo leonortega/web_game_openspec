@@ -1,8 +1,5 @@
-# gameplay-hud Specification
+## MODIFIED Requirements
 
-## Purpose
-Define the active-play HUD layout, terminology, and presentation rules that keep run-critical status readable during gameplay.
-## Requirements
 ### Requirement: Core gameplay HUD information is grouped at the top of the screen
 The game SHALL present core gameplay status such as stage identity, collectible count, health, and active powers in a single horizontal top-aligned HUD band during active play. Under the Atari 2600-inspired presentation pass, that HUD band MUST use a scoreboard-like treatment with flat fills, a very small concurrent color vocabulary, strong text contrast, and minimal decorative chrome. Under the second-pass tightening, the HUD MUST use harsher palette quantization and tighter sprite-like visual motion limits than the current baseline, and it MUST NOT rely on smooth easing, translucent card styling, or other modern panel treatments to remain readable. The collectible count in that HUD band MUST present the current progress as research samples and MUST NOT switch to a different collectible noun between stage-local and run-total displays. The primary stage label in that HUD band MUST show only the authored alien-biome stage name and MUST NOT append duration, distance, or similar planning suffixes. When a power is active, the HUD MUST present its astronaut-themed display name rather than an internal mechanic label. Secondary stage metadata such as run label and segment name SHALL appear as tiny bottom-right text instead of inside the primary HUD band. Transient gameplay and stage-message text used during active play MUST render in a separate lower-left safe-area lane that sits close to the bottom-left edge of the play view rather than in the top-center lane above gameplay. That transient lane MUST remain fully on-screen, keep a small bounded inset from the left and bottom edges on standard and narrow or mobile-sized viewports, and MUST stay clear of the primary top-aligned HUD band and any persistent secondary readouts when both are visible. Tightening the HUD presentation MUST NOT change the timing or cadence of gameplay state updates.
 
@@ -44,4 +41,3 @@ The game SHALL present core gameplay status such as stage identity, collectible 
 - **WHEN** the second-pass retro tightening updates the HUD treatment
 - **THEN** any visual motion remains sprite-like and restrained
 - **AND** the underlying gameplay status values continue updating on the same cadence as before
-

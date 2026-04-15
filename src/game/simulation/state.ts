@@ -182,6 +182,8 @@ export type HazardState = {
   rect: Rect;
 };
 
+export type EnemyDefeatCause = 'stomp' | 'plasma-blast';
+
 export type EnemyState = {
   id: string;
   kind: EnemyKind;
@@ -193,6 +195,7 @@ export type EnemyState = {
   width: number;
   height: number;
   alive: boolean;
+  defeatCause: EnemyDefeatCause | null;
   direction: 1 | -1;
   supportY: number | null;
   supportPlatformId: string | null;

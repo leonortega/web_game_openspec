@@ -64,6 +64,17 @@ The game SHALL make enemy motion, charge, or presence cues audible when the enem
 - **WHEN** an enemy continues simulating outside the active camera view and outside any supported lead-margin telegraph window
 - **THEN** the game does not emit repetitive motion or presence audio for that enemy
 
+### Requirement: Shooter enemies only fire while visible in the camera view
+The game SHALL suppress shooter enemy firing, bullet emission, bullet visuals, and firing audio while the shooter is outside the active camera view beyond a measurable lead margin. Once the shooter becomes visible within that configured lead margin before fully entering the camera or viewbox, the shooter MAY resume normal firing and associated audio or visual cues. The lead margin MUST be consistent and testable in world units or tile units.
+
+#### Scenario: Shooter begins far off-screen
+- **WHEN** a shooter enemy is present but outside the camera or viewbox and outside the lead margin
+- **THEN** it does not emit bullets or play bullet sounds
+
+#### Scenario: Shooter approaches the viewport edge
+- **WHEN** the shooter reaches the configured lead margin before fully entering the camera or viewbox
+- **THEN** bullet projectiles and bullet sound cues can appear for that enemy before its body is fully visible
+
 ### Requirement: Enemy and hazard visuals remain readable under the reduced-detail presentation
 The game SHALL preserve enemy and hazard readability under the denser 8-bit presentation pass. Dangerous enemies, hazard sources, active projectiles, and telegraph states MUST remain distinguishable from terrain and non-dangerous scenery through silhouette contrast, reserved accent colors, explicit state-shape changes, or bounded internal pixel detail rather than subtle shading alone. Under this pass, enemy and hazard rendering MUST use richer sprite-like pixel structure than the current coarse baseline while keeping routing-critical threat differences readable. This presentation tightening MUST NOT change enemy behavior, projectile cadence, hazard timing, or encounter authoring.
 
@@ -96,7 +107,7 @@ The game SHALL keep routing-critical threat differences readable even when multi
 - **THEN** the projectile remains visually distinct from background decoration and passive props
 
 ### Requirement: Enemy and hazard motion feedback stays readable and deterministic
-The game SHALL use bounded retro animation to communicate enemy movement and telegraph state without changing encounter fairness. Repeating enemy states such as idle watch, patrol or hover motion, windup, firing telegraph, and defeat feedback MUST read through deterministic low-frame pose changes, restrained tween accents, local particles, or a bounded combination of those treatments rather than purely static rendering. For this change, grounded foot enemies means the supported grounded walker and hopper enemy kinds only. Grounded walkers MUST expose readable walking or patrol motion while advancing, grounded hoppers MUST expose distinct crouch, launch, airborne, and landing-recovery poses, and ovni or flyer enemies MUST keep a separate hover presentation that uses local sparkling-light accents rather than foot-enemy gait states. Enemy defeat feedback MAY emit a short local dissolve or disappearing-particle burst before the enemy fully vanishes, but that presentation MUST remain subordinate to existing spacing, attack timing, projectile cadence, defeat resolution, and telegraph windows.
+The game SHALL use bounded retro animation to communicate enemy movement and telegraph state without changing encounter fairness. Repeating enemy states such as idle watch, patrol or hover motion, windup, firing telegraph, and defeat feedback MUST read through deterministic low-frame pose changes, restrained tween accents, local particles, or a bounded combination of those treatments rather than purely static rendering. For this change, grounded foot enemies means the supported grounded walker and hopper enemy kinds only. Grounded walkers MUST expose readable walking or patrol motion while advancing, grounded hoppers MUST expose distinct crouch, launch, airborne, and landing-recovery poses, and ovni or flyer enemies MUST keep a separate hover presentation that uses local sparkling-light accents rather than foot-enemy gait states. Enemy defeat feedback MAY emit a short local disappearing-particle burst before the enemy fully vanishes, but that presentation MUST remain subordinate to existing spacing, attack timing, projectile cadence, defeat resolution, and telegraph windows. When an enemy is defeated by a player stomp, the local defeat feedback MUST remain visibly distinct from the feedback used when that enemy is defeated by a Plasma Blaster projectile hit, and both supported enemy-defeat bursts MUST remain clearly visible above ordinary gameplay objects during mixed encounters.
 
 #### Scenario: Reading a grounded enemy before committing to an encounter
 - **WHEN** the player approaches a visible grounded walker or hopper enemy on the critical path
@@ -113,8 +124,13 @@ The game SHALL use bounded retro animation to communicate enemy movement and tel
 - **THEN** the animation reinforces the existing dangerous state without shifting the underlying timing window
 - **AND** retries preserve the same authored cadence and readable response window
 
+#### Scenario: Comparing stomp and projectile defeat feedback
+- **WHEN** the player defeats the same supported enemy kind once by stomping and once by a Plasma Blaster projectile
+- **THEN** each defeat uses a visibly distinct local particle treatment that remains clearly visible above ordinary gameplay objects
+- **AND** both treatments remain brief enough that nearby threats stay readable
+
 #### Scenario: Reading enemy defeat feedback in a mixed encounter
 - **WHEN** an enemy is defeated while other enemies, hazards, or projectiles remain active nearby
-- **THEN** the defeated enemy may emit a short local disappearing-particle burst
+- **THEN** the defeated enemy may emit a short local disappearing-particle burst that matches its defeat cause and stays readable above ordinary gameplay objects
 - **AND** the added feedback does not obscure the routing-critical threat states that remain active
 

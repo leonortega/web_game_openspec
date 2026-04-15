@@ -142,15 +142,20 @@ body {
 
 .message-panel {
   position: absolute;
-  left: 50%;
-  top: 82px;
-  transform: translateX(-50%);
+  left: clamp(8px, 1.8vw, 14px);
+  bottom: max(calc(env(safe-area-inset-bottom, 0px) + 14px), clamp(14px, 3.2vh, 26px));
+  width: fit-content;
+  max-width: min(340px, calc(100% - 188px));
   padding: 8px 14px;
   border: 2px solid #11141b;
   background: #f0b84b;
   color: #11141b;
+  font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.1em;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
   opacity: 0;
 }
 
@@ -191,12 +196,22 @@ body {
 
   .hud-meta {
     right: 10px;
-    bottom: 10px;
-    font-size: 0.64rem;
+    bottom: 76px;
+    font-size: 0.6rem;
+  }
+
+  .hud-meta-line {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
   }
 
   .message-panel {
-    top: 118px;
-    max-width: calc(100% - 24px);
+    left: 8px;
+    bottom: max(calc(env(safe-area-inset-bottom, 0px) + 12px), 12px);
+    max-width: min(184px, calc(100% - 136px));
+    padding: 8px 12px;
+    font-size: 0.76rem;
+    letter-spacing: 0.08em;
   }
 }

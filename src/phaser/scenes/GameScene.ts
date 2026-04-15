@@ -1437,16 +1437,18 @@ export class GameScene extends Phaser.Scene {
           this.triggerPlayerDefeatFeedback(event.x, event.y);
           break;
         case 'enemy-defeat': {
+          const preset = event.cause === 'stomp' ? 'enemy-defeat-stomp' : 'enemy-defeat-plasma';
           const tint =
-            event.enemyKind === 'flyer'
-              ? this.retroPalette.cool
-              : event.enemyKind === 'charger'
-                ? this.retroPalette.alert
-                : event.enemyKind === 'hopper'
-                  ? this.retroPalette.safe
-                  : this.retroPalette.warm;
-          spawnRetroParticleBurst(this, event.x, event.y, tint, 'enemy-defeat');
+            event.cause === 'stomp'
+              ? event.enemyKind === 'hopper'
+                ? this.retroPalette.safe
+                : this.retroPalette.warm
+              : event.enemyKind === 'flyer'
+                ? this.retroPalette.bright
+                : this.retroPalette.cool;
+          spawnRetroParticleBurst(this, event.x, event.y, tint, preset);
           this.recordFeedback('enemyDefeat');
+          this.recordFeedback(event.cause === 'stomp' ? 'enemyDefeatStomp' : 'enemyDefeatPlasma');
           break;
         }
       }
@@ -1490,6 +1492,7 @@ export class GameScene extends Phaser.Scene {
       enemies: state.stageRuntime.enemies.map((enemy) => ({
         id: enemy.id,
         alive: enemy.alive,
+        defeatCause: enemy.defeatCause,
         x: enemy.x,
         y: enemy.y,
         width: enemy.width,
