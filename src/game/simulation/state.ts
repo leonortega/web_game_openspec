@@ -16,6 +16,7 @@ export type TurretVariantId = 'resinBurst' | 'ionPulse';
 export type PlatformKind = 'static' | 'moving' | 'falling' | 'spring';
 export type LauncherKind = 'bouncePod' | 'gasVent';
 export type TerrainSurfaceKind = 'brittleCrystal' | 'stickySludge';
+export type PlatformTerrainVariant = TerrainSurfaceKind;
 export type GravityFieldKind = 'anti-grav-stream' | 'gravity-inversion-column';
 export type StageObjectiveKind = 'restoreBeacon' | 'reactivateRelay' | 'powerLiftTower';
 export type StageObjectiveTargetKind = 'checkpoint' | 'revealVolume' | 'scannerVolume' | 'launcher';
@@ -70,6 +71,25 @@ export type LowGravityZoneState = Rect & {
 export type GravityFieldState = Rect & {
   id: string;
   kind: GravityFieldKind;
+  gravityCapsuleId: string | null;
+};
+
+export type GravityCapsuleButtonState = Rect & {
+  id: string;
+  activated: boolean;
+};
+
+export type GravityCapsuleState = {
+  id: string;
+  fieldId: string;
+  shell: Rect;
+  entryDoor: Rect;
+  exitDoor: Rect;
+  button: GravityCapsuleButtonState;
+  entryRoute: Rect;
+  buttonRoute: Rect;
+  exitRoute: Rect;
+  enabled: boolean;
 };
 
 export type RevealVolumeState = Rect & {
@@ -122,6 +142,7 @@ export type LauncherState = Rect & {
 export type PlatformState = {
   id: string;
   kind: PlatformKind;
+  terrainVariant?: PlatformTerrainVariant;
   x: number;
   y: number;
   width: number;
@@ -273,13 +294,12 @@ export type PlayerState = {
   airJumpsRemaining: number;
   presentationPower: PowerType | null;
   supportPlatformId: string | null;
-  supportTerrainSurfaceId: string | null;
-  coyoteTerrainSurfaceKind: TerrainSurfaceKind | null;
   launcherContactId: string | null;
   lowGravityZoneId: string | null;
   gravityFieldId: string | null;
   gravityFieldKind: GravityFieldKind | null;
   gravityScale: number;
+  suppressPresentation: boolean;
   dead: boolean;
 };
 
@@ -289,6 +309,7 @@ export type StageRuntime = {
   launchers: LauncherState[];
   lowGravityZones: LowGravityZoneState[];
   gravityFields: GravityFieldState[];
+  gravityCapsules: GravityCapsuleState[];
   revealVolumes: RevealVolumeState[];
   scannerVolumes: ScannerVolumeState[];
   activationNodes: ActivationNodeState[];
@@ -324,28 +345,28 @@ export const POWER_PRESENTATION: Record<PowerType, PowerPresentation> = {
     shortLabel: 'TB',
     revealLabel: 'THRUSTER BURST',
     helpSummary: 'Grants one extra mid-air burn for course correction or a late recovery jump.',
-    gainMessage: 'Power gained: Thruster Burst',
+    gainMessage: 'Thruster Burst online',
   },
   shooter: {
     label: 'Plasma Blaster',
     shortLabel: 'PB',
     revealLabel: 'PLASMA BLASTER',
     helpSummary: 'Fires forward plasma shots that clear a lane before you commit to the approach.',
-    gainMessage: 'Power gained: Plasma Blaster',
+    gainMessage: 'Plasma Blaster online',
   },
   invincible: {
     label: 'Shield Field',
     shortLabel: 'SF',
     revealLabel: 'SHIELD FIELD',
     helpSummary: 'Projects a 10 second shield field that ignores hit loss while the timer is live.',
-    gainMessage: 'Power gained: Shield Field for 10s',
+    gainMessage: 'Shield Field online',
   },
   dash: {
     label: 'Booster Dash',
     shortLabel: 'BD',
     revealLabel: 'BOOSTER DASH',
     helpSummary: 'Triggers a fast booster surge that helps clear long gaps and timing windows.',
-    gainMessage: 'Power gained: Booster Dash',
+    gainMessage: 'Booster Dash online',
   },
 };
 
@@ -439,7 +460,6 @@ export const TERRAIN_SURFACE_KINDS: TerrainSurfaceKind[] = ['brittleCrystal', 's
 export const BRITTLE_WARNING_MS = 420;
 export const SLUDGE_GROUND_ACCEL_MULTIPLIER = 0.48;
 export const SLUDGE_MAX_SPEED_MULTIPLIER = 0.58;
-export const SLUDGE_JUMP_MULTIPLIER = 0.84;
 
 export const COLLECTIBLE_PRESENTATION = {
   singular: 'research sample',
@@ -459,17 +479,17 @@ const STAGE_OBJECTIVE_PRESENTATION: Record<
   { briefing: string; completion: string; reminder: string }
 > = {
   restoreBeacon: {
-    briefing: 'Objective: restore the survey beacon',
+    briefing: 'Restore survey beacon',
     completion: 'Survey beacon restored',
-    reminder: 'Restore the survey beacon before exit',
+    reminder: 'Restore survey beacon before exit',
   },
   reactivateRelay: {
-    briefing: 'Objective: reactivate the relay',
+    briefing: 'Reactivate relay',
     completion: 'Relay reactivated',
     reminder: 'Reactivate the relay before exit',
   },
   powerLiftTower: {
-    briefing: 'Objective: power the lift tower',
+    briefing: 'Power lift tower',
     completion: 'Lift tower powered',
     reminder: 'Power the lift tower before exit',
   },
@@ -551,7 +571,7 @@ export const getCollectibleRewardMessage = (remainingHits: number): string =>
     : `${capitalize(COLLECTIBLE_PRESENTATION.singular)} gained`;
 
 export const getAllCollectiblesRecoveredMessage = (): string =>
-  `All ${COLLECTIBLE_PRESENTATION.plural} recovered - energy restored`;
+  `All ${COLLECTIBLE_PRESENTATION.plural} recovered. Health restored`;
 
 export const getCollectibleRewardRevealLabel = (): string => COLLECTIBLE_PRESENTATION.rewardRevealLabel;
 
@@ -598,6 +618,25 @@ export const isTopSurfaceOnlyPlatform = (
   platform: Pick<PlatformState, 'magnetic'>,
 ): boolean => Boolean(platform.magnetic);
 
+export const createTerrainSurfaceState = (
+  platform: Pick<PlatformState, 'id' | 'x' | 'y' | 'width' | 'height'> & { terrainVariant: TerrainSurfaceKind },
+): TerrainSurfaceState => ({
+  id: platform.id,
+  kind: platform.terrainVariant,
+  x: platform.x,
+  y: platform.y,
+  width: platform.width,
+  height: platform.height,
+  supportPlatformId: platform.id,
+  brittle:
+    platform.terrainVariant === 'brittleCrystal'
+      ? {
+          phase: 'intact',
+          warningMs: BRITTLE_WARNING_MS,
+        }
+      : undefined,
+});
+
 export const isTimedRevealBridgeLegible = (
   bridge: Pick<TemporaryBridgeState, 'revealId'>,
   revealedPlatformIds: readonly string[],
@@ -617,6 +656,25 @@ export const createInactiveActivationNodeState = (
 ): ActivationNodeState => ({
   ...node,
   activated: false,
+});
+
+export const createResetGravityCapsuleState = (
+  capsule: Pick<GravityCapsuleState, 'id' | 'fieldId' | 'shell' | 'entryDoor' | 'exitDoor' | 'entryRoute' | 'buttonRoute' | 'exitRoute'> & {
+    button: Pick<GravityCapsuleButtonState, 'id' | 'x' | 'y' | 'width' | 'height'>;
+  },
+): GravityCapsuleState => ({
+  ...capsule,
+  shell: { ...capsule.shell },
+  entryDoor: { ...capsule.entryDoor },
+  exitDoor: { ...capsule.exitDoor },
+  entryRoute: { ...capsule.entryRoute },
+  buttonRoute: { ...capsule.buttonRoute },
+  exitRoute: { ...capsule.exitRoute },
+  button: {
+    ...capsule.button,
+    activated: false,
+  },
+  enabled: true,
 });
 
 export const createInactiveTemporaryBridgeState = (

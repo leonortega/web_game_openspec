@@ -4,11 +4,32 @@
 TBD - created by archiving change mvp-platform-game. Update Purpose after archive.
 ## Requirements
 ### Requirement: Stages have a clear start-to-exit completion flow
-The game SHALL organize play into discrete stages with a defined start position, traversable route, intermediate gameplay segments, and completion exit. A stage MUST begin with a short pre-play presentation step before active control starts, and completion MUST flow through a readable stage-clear results step before continuing. A stage MUST only be marked complete when the player reaches the exit in a valid active state and any authored lightweight stage objective for that stage is already complete. Stages without an authored lightweight stage objective MUST continue to complete immediately on valid exit contact. Stages with an authored lightweight stage objective MUST keep the route to that exit readable and MUST provide immediate in-stage feedback if the player touches the exit before the required objective is complete.
+The game SHALL organize play into discrete stages with a defined start position, traversable route, intermediate gameplay segments, and completion exit. A stage MUST begin with a short pre-play presentation step followed by a short bounded in-world capsule-arrival appearance beat before active control starts. Fresh stage starts, including direct stage entry from the menu or replay flow and automatic advance into the next stage after a normal results handoff, MUST use that arrival beat. The stage-start arrival MUST present the same grounded capsule design used by the completion exit, MUST place that start cabin at a fixed grounded stage position separate from the player body, MUST reverse the exit-style disappearance language into an appearance or rematerialization beat, MUST keep the player non-interactive during that beat, and MUST continue into a short scripted walk-out from the cabin before the cabin resolves through a short door-close animation and active control begins. The fixed start cabin MUST remain in the world afterward as a non-interactive grounded prop at that same stage position. Checkpoint respawns within the same stage attempt MUST NOT replay the pre-play presentation or the stage-start capsule arrival sequence. Completion MUST flow through a readable in-world capsule-entry finish before continuing into the stage-clear results step. A stage MUST only be marked complete when the player reaches the exit in a valid active state and any authored lightweight stage objective for that stage is already complete. Stages without an authored lightweight stage objective MUST continue to accept valid exit contact immediately, but that accepted contact MUST start a short bounded exit-finish sequence before the normal stage-clear handoff. Stages with an authored lightweight stage objective MUST keep the route to that exit readable and MUST provide immediate in-stage feedback if the player touches the exit before the required objective is complete. The authored completion exit MUST remain a route-grounded endpoint with readable supporting footing or base geometry rather than a floating unsupported rectangle, and authored validation MUST reject exit placement that lacks that local support. The exit-finish sequence MUST keep the player non-interactive, MUST begin from that same grounded exit-cabin position, MUST play a short independent door-open animation on the exit cabin before the finish fully resolves, MUST visually resolve the capsule-entry or dematerialization moment before the player disappears, MUST NOT restore normal player visibility after that disappearance begins, and MUST hand off to the normal stage-clear flow without changing stage ordering, unlock behavior, or objective gating semantics.
 
 #### Scenario: Beginning a stage
-- **WHEN** the player enters a level
+- **WHEN** the player enters a fresh stage attempt
 - **THEN** the game shows a short stage presentation before gameplay begins in an active state
+- **AND** that presentation hands off into a short capsule-arrival appearance beat anchored to a fixed grounded start-cabin position before player control starts
+
+#### Scenario: Auto-advancing into the next stage
+- **WHEN** the player completes a non-final stage and the game advances into the next stage
+- **THEN** the next stage still begins through the normal pre-play presentation flow
+- **AND** the new stage uses the same bounded fixed-cabin arrival and scripted walk-out before active control starts
+
+#### Scenario: Respawning from a checkpoint
+- **WHEN** the player dies after activating a checkpoint and respawns within the same stage attempt
+- **THEN** the game restores play from the active checkpoint without replaying the pre-stage presentation
+- **AND** the checkpoint respawn does not trigger the stage-start fixed-cabin arrival sequence or scripted walk-out
+
+#### Scenario: Walking out from the start cabin
+- **WHEN** the stage-start arrival finishes materializing the player inside the fixed grounded start cabin
+- **THEN** the player automatically performs a short deterministic walk-out from that cabin while remaining non-interactive
+- **AND** normal active play does not begin until that walk-out and the following cabin close beat resolve
+
+#### Scenario: Closing the persistent start cabin
+- **WHEN** the scripted start-cabin walk-out completes on a fresh stage start
+- **THEN** the remaining start cabin plays a short bounded door-close animation before active control begins
+- **AND** the cabin stays in the world afterward as a non-interactive grounded prop at its fixed stage position
 
 #### Scenario: Advancing through a long stage
 - **WHEN** the player moves from one major stage segment to the next
@@ -16,7 +37,8 @@ The game SHALL organize play into discrete stages with a defined start position,
 
 #### Scenario: Reaching the exit on a standard stage
 - **WHEN** the player reaches the exit while alive on a stage without an authored lightweight objective
-- **THEN** the stage is marked complete and the stage-clear flow begins
+- **THEN** the stage is marked complete and the bounded capsule-entry finish begins
+- **AND** the normal stage-clear flow begins after that finish resolves
 
 #### Scenario: Reaching the exit before completing the objective
 - **WHEN** the player reaches the exit while alive on a stage whose authored lightweight objective is still incomplete
@@ -25,14 +47,31 @@ The game SHALL organize play into discrete stages with a defined start position,
 
 #### Scenario: Reaching the exit after completing the objective
 - **WHEN** the player reaches the exit while alive on a stage whose authored lightweight objective is complete
-- **THEN** the stage is marked complete and the stage-clear flow begins
+- **THEN** the stage is marked complete and the bounded capsule-entry finish begins
+- **AND** the normal stage-clear flow begins after that finish resolves
+
+#### Scenario: Watching the exit finish resolve
+- **WHEN** a valid stage exit overlap starts the capsule-entry finish
+- **THEN** player control stops and the player disappears through a short in-world teleport or dematerialization beat
+- **AND** the grounded exit cabin performs a short independent door-open beat during that finish window
+- **AND** normal player-part visibility does not resume before the results handoff
+- **AND** the game does not create an alternate completion branch or require extra player input before the results handoff
+
+#### Scenario: Rejecting an unsupported exit endpoint
+- **WHEN** authored stage validation evaluates a completion exit whose rectangle lacks readable supporting footing or base geometry on the intended route
+- **THEN** validation rejects that stage data before runtime use
 
 ### Requirement: Selected stages can author lightweight mission objectives
-The game SHALL allow a bounded subset of stages to author one lightweight mission objective using existing contact, volume, checkpoint, or activation patterns instead of a separate mission system. For this change, supported objective fiction MUST be limited to restoring a beacon, reactivating a relay, or powering a lift tower. Each objective-authored stage MUST track a single stage-local objective that starts incomplete on a fresh attempt, becomes complete when its authored target interaction succeeds, and remains complete for the rest of that stage attempt including later checkpoint respawns. Manual restart or a fresh stage start MUST reset that objective to incomplete. The game MUST communicate objective briefing and incomplete-exit reminders through the existing transient stage-message flow rather than requiring a new mission screen or separate persistent HUD panel. During active play, that transient stage-message flow MUST use the lower-left HUD safe-area lane close to the bottom-left edge so briefings and reminders stay readable without displacing the primary top HUD band or colliding with persistent readouts.
+The game SHALL allow a bounded subset of stages to author one lightweight mission objective using existing contact, volume, checkpoint, or activation patterns instead of a separate mission system. For this change, supported objective fiction MUST be limited to restoring a beacon, reactivating a relay, or powering a lift tower. Each objective-authored stage MUST track a single stage-local objective that starts incomplete on a fresh attempt, becomes complete when its authored target interaction succeeds, and remains complete for the rest of that stage attempt including later checkpoint respawns. Manual restart or a fresh stage start MUST reset that objective to incomplete. The game MUST communicate objective briefing and incomplete-exit reminders through the existing transient stage-message flow rather than requiring a new mission screen or separate persistent HUD panel. During active play, that transient stage-message flow MUST use the lower-left HUD safe-area lane close to the bottom-left edge so briefings and reminders stay readable without displacing the primary top HUD band or colliding with persistent readouts. That same transient flow MAY also communicate checkpoint activation, route reveal, temporary bridge activation, power pickup, and major collectible milestone feedback, but it MUST NOT be seeded with long authored stage hints or segment-focus text on stage start and MUST NOT narrate generic combat outcomes that do not change player decisions.
 
 #### Scenario: Starting an objective-authored stage
 - **WHEN** the player begins a stage that authors a lightweight mission objective
 - **THEN** the game communicates the current objective through the existing lower-left stage-message flow near the bottom-left edge at the start of active play
+
+#### Scenario: Starting a non-objective stage
+- **WHEN** the player begins a stage without an authored lightweight mission objective
+- **THEN** the transient message lane does not open with a long authored route summary
+- **AND** the player still gets persistent stage and segment context from the existing HUD labels
 
 #### Scenario: Completing an authored objective target
 - **WHEN** the player triggers the authored contact, volume, checkpoint, or activation target bound to that stage objective
@@ -50,6 +89,11 @@ The game SHALL allow a bounded subset of stages to author one lightweight missio
 #### Scenario: Starting a fresh attempt after prior objective progress
 - **WHEN** the player manually restarts the stage or begins a new attempt after previously completing its lightweight objective
 - **THEN** the objective resets to incomplete for that new attempt
+
+#### Scenario: Reaching a new authored segment
+- **WHEN** the player crosses into a later authored segment during active play
+- **THEN** the persistent segment label continues updating
+- **AND** the transient message lane does not show the segment focus as a separate banner
 
 ### Requirement: Checkpoints update respawn progress within a stage
 The game SHALL support in-level checkpoints that update the player's respawn location after activation. Stages targeting the long-form duration requirement MUST include enough checkpoint coverage that a late-stage failure does not force the player to replay most of the stage. Player-facing gameplay and stage messaging for those checkpoints MUST present them as survey beacons while preserving the existing checkpoint activation, respawn, and persistence behavior. A checkpoint MUST appear on an intended reachable route before the terminal exit it serves and MUST NOT be positioned past the stage exit door or other stage-completion trigger. A checkpoint respawn within the same stage run MUST preserve already collected finite level coins and the current stage coin total, while fresh stage starts or manual restarts MUST rebuild collectible state normally.
@@ -258,6 +302,32 @@ The game SHALL treat activation-node magnetic platforms as live traversal power 
 - **WHEN** the player triggers an activation node, powers its linked magnetic platform, and then dies before finishing the route
 - **THEN** the next life restores the node and platform to their dormant, non-solid baseline until retriggered
 
+### Requirement: Main-stage special terrain rollout stays validated and route-relevant
+The game SHALL validate broadened `brittleCrystal` and `stickySludge` rollout across the current main stages before those stages are accepted for runtime use. Validation MUST reject any current main stage that contains fewer than two authored brittle crystal surfaces, fewer than two authored sticky sludge surfaces, or places those added surfaces only in unreadable dead-end space disconnected from the intended route or an optional reconnecting branch. Automated authored-data coverage MUST assert these per-kind minimums for Verdant Impact Crater, Ember Rift Warrens, and Halo Spire Array.
+
+#### Scenario: Rejecting a main stage with insufficient brittle rollout
+- **WHEN** a current main stage is authored with fewer than two brittle crystal surfaces
+- **THEN** validation rejects that stage before runtime use
+
+#### Scenario: Rejecting a main stage with insufficient sticky rollout
+- **WHEN** a current main stage is authored with fewer than two sticky sludge surfaces
+- **THEN** validation rejects that stage before runtime use
+
+#### Scenario: Running campaign terrain rollout coverage
+- **WHEN** authored-data coverage runs for the current three-stage campaign
+- **THEN** it asserts that each main stage satisfies the brittle and sticky per-kind rollout minimums
+
+### Requirement: Terrain readability cues remain covered by the verification path
+The game SHALL keep regression coverage for the readability of existing special terrain surfaces. The documented verification path for terrain rollout changes MUST include scripted or automated coverage that exercises at least one brittle crystal section and one sticky sludge section while confirming their distinct in-stage presentation cues remain visible during traversal. That coverage MUST also confirm that brittle warning and post-break presentation resets back to the intact readable baseline on retry, checkpoint respawn, or fresh attempts.
+
+#### Scenario: Verifying readable terrain cues in scripted coverage
+- **WHEN** scripted or automated terrain coverage runs
+- **THEN** it exercises at least one brittle crystal section and one sticky sludge section and confirms those sections are visually distinguishable in play
+
+#### Scenario: Verifying brittle readability after retry
+- **WHEN** coverage triggers a brittle crystal warning or break and then retries from a respawn or fresh attempt
+- **THEN** the brittle surface returns to its intact readable baseline presentation for that new attempt
+
 #### Scenario: Respawning from a later checkpoint after platform activation
 - **WHEN** the player powers a magnetic platform, later reaches a checkpoint, and then dies afterward in the same stage
 - **THEN** respawning from that checkpoint does not preserve the powered state and requires the route to follow its authored retry-safe behavior
@@ -285,20 +355,27 @@ The game SHALL treat brittle crystal floor breakage as live traversal state rath
 - **WHEN** the player restarts the stage or begins a new attempt after previously triggering a brittle crystal floor
 - **THEN** every brittle crystal floor starts again as intact and untriggered until top-surface contact triggers it
 
-### Requirement: Authored terrain-surface metadata stays valid and verifiable
-The game SHALL validate authored brittle crystal and sticky sludge surface metadata before runtime setup. Each authored surface annotation MUST use a supported surface kind, MUST define a positive bounded rectangular footprint, and MUST align to existing solid walkable stage support instead of floating independently. Brittle crystal floors MUST map to real supporting tiles so their warning, support, and break states remain readable. The authored surface extents used by simulation MUST match the extents rendered in-stage, and regression coverage MUST include at least one brittle-floor traversal fixture and one sticky-sludge traversal fixture in automated or scripted playtest coverage.
+### Requirement: Authored brittle and sticky data migrates to platform variants only
+The game SHALL migrate authored brittle crystal and sticky sludge content away from separate `terrainSurfaces` overlays and onto full-platform variant data before runtime setup. Supported stage data for these terrain types MUST identify the variant on the platform itself, MUST use that one platform record as the source of truth for validation, runtime, and rendering, and MUST reject legacy overlay authoring for brittle or sticky terrain. This migration MUST include authored stage catalog data, builders, validation fixtures, runtime fixtures, and scripted playtest fixtures that currently assume overlay rectangles.
 
-#### Scenario: Loading malformed terrain-surface metadata
-- **WHEN** a stage contains an authored brittle or sticky surface with an unknown kind, invalid rectangle, or no valid supporting terrain
-- **THEN** stage validation rejects that authored data before the stage is accepted for runtime use
+#### Scenario: Loading legacy overlay-authored brittle or sticky terrain
+- **WHEN** a stage still defines brittle crystal or sticky sludge through separate terrain-surface overlays
+- **THEN** authored validation rejects that stage data before runtime use
 
-#### Scenario: Loading valid terrain-surface metadata
-- **WHEN** a stage contains valid authored brittle crystal and sticky sludge surface annotations
-- **THEN** the stage accepts those annotations for both simulation and rendering using the same authored extents
+#### Scenario: Loading migrated platform-variant terrain
+- **WHEN** a stage defines brittle crystal or sticky sludge as full-platform variant data on supported platforms
+- **THEN** the stage accepts that data for validation, runtime, and rendering from the same authored source
 
-#### Scenario: Running surface traversal regression coverage
-- **WHEN** automated tests or scripted playtest coverage run for the new terrain surfaces
-- **THEN** the suite exercises at least one brittle-floor route and one sticky-sludge route instead of relying only on manual inspection
+### Requirement: Terrain-variant migration remains covered by regression verification
+The game SHALL keep brittle and sticky platform-variant migration verifiable through automated tests and scripted playtest coverage. Regression coverage MUST include validation checks for legacy overlay rejection, runtime checks for brittle state transitions on full-platform variants, controller checks that sticky no longer modifies jump strength, and scripted or automated stage coverage that confirms migrated authored data appears with matching runtime and rendering extents.
+
+#### Scenario: Running automated regression coverage for migrated terrain variants
+- **WHEN** automated tests run after brittle and sticky have been migrated to platform variants
+- **THEN** the suite verifies brittle state behavior, sticky grounded drag behavior, and rejection of legacy overlay authoring
+
+#### Scenario: Running scripted stage coverage for migrated terrain variants
+- **WHEN** scripted playtest coverage evaluates a stage with brittle or sticky platform variants
+- **THEN** the coverage confirms the migrated stage data, runtime behavior, and rendered platform footprint stay aligned
 
 ### Requirement: Authored launcher metadata stays valid and resets cleanly across attempts
 The game SHALL validate authored bounce pod and gas vent launcher metadata before runtime setup and SHALL treat launcher readiness as transient traversal state. Each launcher annotation MUST use a supported launcher kind, MUST define a positive bounded top-contact footprint aligned to existing solid walkable support, and MAY define an optional upward-biased launch direction no more than 25 degrees off vertical. Launcher annotations MUST remain distinct from spring-platform metadata, low-gravity zones, sticky-sludge surface annotations, and other traversal annotations used for different mechanics. A launcher annotation MUST NOT overlap another launcher or spring footprint in a way that makes first-contact launch behavior ambiguous. Every launcher MUST begin ready on a fresh attempt, and death, checkpoint respawn, or manual stage restart MUST rebuild launcher readiness from that ready baseline instead of preserving any remaining cooldown timer. Regression coverage MUST include at least one bounce-pod fixture, one gas-vent fixture, one suppression-or-cooldown fixture, and one scripted or automated traversal probe that exercises launcher composition with low gravity or sticky sludge.
@@ -353,4 +430,29 @@ The game SHALL author every current main stage with at least one terrain-surface
 - **WHEN** scripted or automated playtest coverage runs for the current three-stage campaign
 - **THEN** the suite exercises one terrain-surface beat and one gravity-field beat in each main stage
 - **AND** it confirms those sections remain completable after retry or respawn
+
+### Requirement: Gravity capsule activation resets on retry and stays authorably reachable
+The game SHALL treat enclosed gravity room disable buttons and linked room sections as live traversal activation state rather than checkpoint-persistent route discovery. Every enclosed gravity room MUST begin with its linked field active on a fresh attempt, and death, checkpoint respawn, or manual stage restart MUST rebuild that room from the same active baseline instead of preserving prior disabled state. A checkpoint snapshot MUST NOT restore a previously disabled enclosed gravity room, even if the checkpoint was reached after the room had been disabled. Authored validation MUST accept an enclosed gravity room only when its bottom entry and bottom exit openings lie on intended reachable route segments, its interior disable button is reachable after entering the room while the field is still active, its shell fully contains the linked field and all authored room-local content, and the intended room route remains reachable and not cut off in authored play space.
+
+#### Scenario: Dying after disabling an enclosed gravity room
+- **WHEN** the player disables an enclosed gravity room and then dies before finishing the route it gates
+- **THEN** the next life restores that room to its active baseline until the interior button is triggered again
+
+#### Scenario: Respawning from a later checkpoint after room disable
+- **WHEN** the player disables an enclosed gravity room, later reaches a checkpoint, and then dies afterward in the same stage
+- **THEN** respawning from that checkpoint does not preserve the disabled room state
+
+#### Scenario: Rejecting an unreachable or cut-off enclosed gravity room
+- **WHEN** authored validation evaluates an enclosed gravity room whose interior disable button is unreachable, whose bottom entry or exit opening is not on the intended route, or whose shell cuts off linked room content or route geometry
+- **THEN** validation rejects that stage data before runtime use
+
+#### Scenario: Accepting a contained enclosed gravity room
+- **WHEN** authored validation evaluates an enclosed gravity room with separate bottom entry and exit openings, a reachable interior disable button, and fully contained reachable room content
+- **THEN** validation accepts that section as a valid bounded traversal segment
+
+
+
+
+
+
 

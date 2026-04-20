@@ -11,6 +11,10 @@ metadata:
 
 Archive a completed change in the experimental workflow.
 
+Important execution rule: file edits and shell commands must stay separate. Use the edit tool for file changes, and never send tool identifiers such as `apply_patch` to the terminal.
+
+On Windows workspaces, prefer PowerShell-native commands for archive steps instead of bash-style snippets.
+
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
@@ -68,8 +72,8 @@ Archive a completed change in the experimental workflow.
 5. **Perform the archive**
 
    Create the archive directory if it doesn't exist:
-   ```bash
-   mkdir -p openspec/changes/archive
+   ```powershell
+   if (-not (Test-Path 'openspec/changes/archive')) { New-Item -ItemType Directory -Path 'openspec/changes/archive' | Out-Null }
    ```
 
    Generate target name using current date: `YYYY-MM-DD-<change-name>`
@@ -78,8 +82,8 @@ Archive a completed change in the experimental workflow.
    - If yes: Fail with error, suggest renaming existing archive or using different date
    - If no: Move the change directory to archive
 
-   ```bash
-   mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
+   ```powershell
+   Move-Item -Path "openspec/changes/<name>" -Destination "openspec/changes/archive/YYYY-MM-DD-<name>"
    ```
 
 6. **Display summary**
@@ -112,3 +116,4 @@ All artifacts complete. All tasks complete.
 - Show clear summary of what happened
 - If sync is requested, use openspec-sync-specs approach (agent-driven)
 - If delta specs exist, always run the sync assessment and show the combined summary before prompting
+- Do not run tool names or pseudocode in the terminal; only execute real PowerShell commands.

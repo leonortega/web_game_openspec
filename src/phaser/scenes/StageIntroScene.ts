@@ -12,8 +12,6 @@ import {
   RETRO_FONT_FAMILY,
   createRetroPresentationPalette,
   drawRetroBackdrop,
-  playRetroTweenPreset,
-  spawnRetroParticleBurst,
 } from '../view/retroPresentation';
 
 const INTRO_DURATION_MS = 2400;
@@ -22,8 +20,6 @@ export class StageIntroScene extends Phaser.Scene {
   private audio?: SynthAudio;
 
   private introEvent?: Phaser.Time.TimerEvent;
-
-  private accentSprite?: Phaser.GameObjects.Sprite;
 
   private accentBurstCount = 0;
 
@@ -49,8 +45,8 @@ export class StageIntroScene extends Phaser.Scene {
       .rectangle(width / 2, height / 2, width - 104, height - 112, retro.panel, 0.96)
       .setStrokeStyle(4, retro.border, 0.9);
     this.add.rectangle(width / 2, 92, width - 136, 36, retro.stageAccent, 0.9).setStrokeStyle(2, retro.ink, 1);
-    this.add.rectangle(width / 2, 388, width - 196, 118, retro.panelAlt, 0.98).setStrokeStyle(3, retro.border, 0.8);
-    this.add.rectangle(width / 2, 512, width - 196, 44, retro.skyline, 0.96).setStrokeStyle(2, retro.border, 0.6);
+    this.add.rectangle(width / 2, 388, width - 168, 118, retro.panelAlt, 0.98).setStrokeStyle(3, retro.border, 0.8);
+    this.add.rectangle(width / 2, 512, width - 168, 44, retro.skyline, 0.96).setStrokeStyle(2, retro.border, 0.6);
 
     this.add
       .text(width / 2, 104, stagePresentation.sectorLabel, {
@@ -95,7 +91,7 @@ export class StageIntroScene extends Phaser.Scene {
         fontSize: '16px',
         color: retro.text,
         align: 'center',
-        wordWrap: { width: width - 240 },
+        wordWrap: { width: width - 216 },
       })
       .setOrigin(0.5);
 
@@ -122,19 +118,9 @@ export class StageIntroScene extends Phaser.Scene {
         fontSize: '16px',
         color: retro.dimText,
         align: 'center',
-        wordWrap: { width: width - 260 },
+        wordWrap: { width: width - 224 },
       })
       .setOrigin(0.5);
-
-    this.accentSprite = this.add
-      .sprite(width - 164, 310, 'player')
-      .setScale(3)
-      .setTint(retro.stageAccent)
-      .setDepth(6);
-    playRetroTweenPreset(this, this.accentSprite, 'transition', { yoyo: true, repeat: 2 });
-    this.accentTweenActive = true;
-    spawnRetroParticleBurst(this, this.accentSprite.x, this.accentSprite.y - 22, retro.warm, 'transition');
-    this.accentBurstCount += 1;
 
     this.audio.playStageIntro(state.stage);
     const retryIntroAudio = () => {
@@ -161,11 +147,12 @@ export class StageIntroScene extends Phaser.Scene {
     });
   }
 
-  getDebugSnapshot(): { accentBurstCount: number; accentTweenActive: boolean; accentVisible: boolean } {
+  getDebugSnapshot(): { accentBurstCount: number; accentTweenActive: boolean; accentVisible: boolean; accentMode: string } {
     return {
       accentBurstCount: this.accentBurstCount,
       accentTweenActive: this.accentTweenActive,
-      accentVisible: this.accentSprite?.visible ?? false,
+      accentVisible: false,
+      accentMode: 'none',
     };
   }
 }

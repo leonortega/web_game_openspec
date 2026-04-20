@@ -18,6 +18,7 @@ export const AUDIO_CUES = {
   enemyHop: 'enemy-hop',
   enemyCharge: 'enemy-charge',
   exit: 'exit',
+  capsuleTeleport: 'capsule-teleport',
   stageClear: 'stage-clear',
   finalCongrats: 'final-congrats',
   unlock: 'unlock',

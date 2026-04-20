@@ -4,13 +4,23 @@
 Define the pre-stage and post-stage transition surfaces so progression status remains readable and consistent across scene changes.
 ## Requirements
 ### Requirement: Transition screens preserve readable player status
-The game SHALL show consistent player progression information across stage intro and stage-clear transition screens using the same authored stage display names, astronaut-themed power labels, research-sample collectible terminology, and survey-beacon checkpoint terminology used elsewhere in the run. Under the Atari 2600-inspired presentation pass, these screens MUST use the same coarse silhouette-first, flat-fill, limited-color visual language as gameplay while keeping text and key status values readable. Under the second-pass tightening, these screens MUST adopt harsher palette quantization and tighter sprite-like visual motion limits than the current baseline presentation. Any displayed stage-local and run-total collectible counts on those screens MUST use the same research-sample noun family rather than switching labels between surfaces. These screens MUST keep the player's current readiness and progress readable without implying new mechanics beyond the supported four powers and existing stage flow. Motion on these screens MUST remain sparse and pose-based rather than relying on polished modern panel animation. These screens MUST also trigger short synthesized 8-bit intro, stage-clear, and final-congratulations stingers that match the current transition state when audio is available, and those stingers MUST fit within the existing scene timing semantics while handing off cleanly to or from the designated asset-backed menu or stage music. Transition intro and completion cues MUST remain distinct from moment-to-moment gameplay feedback, MUST NOT change scene ordering, scene duration, or progression timing semantics, and MUST NOT leave multiple sustained loops active or require motif-family matching to the downloaded gameplay tracks.
+The game SHALL show consistent player progression information across stage intro and stage-clear transition screens using the same authored stage display names, astronaut-themed power labels, research-sample collectible terminology, and survey-beacon checkpoint terminology used elsewhere in the run. Under the Atari 2600-inspired presentation pass, these screens MUST use the same coarse silhouette-first, flat-fill, limited-color visual language as gameplay while keeping text and key status values readable. Under the second-pass tightening, these screens MUST adopt harsher palette quantization and tighter sprite-like visual motion limits than the current baseline presentation. Any displayed stage-local and run-total collectible counts on those screens MUST use the same research-sample noun family rather than switching labels between surfaces. These screens MUST keep the player's current readiness and progress readable without implying new mechanics beyond the supported four powers and existing stage flow. Motion on these screens MUST remain sparse and pose-based rather than relying on polished modern panel animation. These screens MUST also trigger short synthesized 8-bit intro, stage-clear, and final-congratulations stingers that match the current transition state when audio is available, and those stingers MUST fit within the existing scene timing semantics while handing off cleanly to or from the designated asset-backed menu or stage music. Pre-stage transition flow MAY hand off into a short in-world capsule-arrival appearance beat before active control starts, and that handoff MUST preserve the same stage-status readability, automatic scene flow, and bounded timing semantics while now covering the full deterministic sequence of fixed-cabin arrival, scripted walk-out, and cabin close before control begins. The gameplay-to-results handoff after valid stage completion MUST continue to use the existing stage-clear flow and timing semantics, but it MUST wait for the bounded in-world exit-cabin door-open and teleport finish to resolve first. Transition intro and completion cues MUST remain distinct from moment-to-moment gameplay feedback, MUST NOT change scene ordering, scene duration, or progression timing semantics beyond that bounded stage-start appearance step and bounded exit-finish step, and MUST NOT leave multiple sustained loops active or require motif-family matching to the downloaded gameplay tracks.
 
 #### Scenario: Viewing a pre-stage screen
 - **WHEN** the player sees the stage presentation before gameplay
 - **THEN** the screen includes the authored stage identity and current player status using the same research-sample and survey-beacon fiction used during play
 - **AND** the presentation uses the retro-inspired flat-fill style without reducing status readability
-- **AND** a short synthesized intro stinger for that specific stage plays when audio is available and hands off cleanly to the mapped gameplay track once gameplay starts
+- **AND** a short synthesized intro stinger for that specific stage plays when audio is available and hands off cleanly once the in-world fixed-cabin arrival, scripted walk-out, and cabin close beat resolve and gameplay begins
+
+#### Scenario: Handing off from the pre-stage screen into gameplay
+- **WHEN** the pre-stage transition surface finishes its bounded presentation
+- **THEN** the game may hand off into a short in-world capsule-arrival appearance beat before player control starts
+- **AND** that automatic handoff now includes the fixed-cabin arrival, scripted walk-out, and cabin close sequence without requiring extra player input or hiding current stage-status context
+
+#### Scenario: Handing off from gameplay into the post-clear screen
+- **WHEN** a valid exit completion starts during active play
+- **THEN** the game keeps the normal stage-clear transition order and status presentation
+- **AND** the post-clear screen does not begin until the bounded in-world exit door-open and teleport finish resolves
 
 #### Scenario: Viewing a post-clear screen
 - **WHEN** the player sees the stage results screen
@@ -25,7 +35,7 @@ The game SHALL show consistent player progression information across stage intro
 #### Scenario: Tightening transitions without changing scene flow timing
 - **WHEN** the second-pass retro tightening is applied to the intro and completion scenes
 - **THEN** the screens render with harsher quantization and sprite-like visual motion limits
-- **AND** the existing stage flow order and timing semantics remain unchanged
+- **AND** the existing stage flow order and timing semantics remain unchanged apart from an optional bounded fixed-cabin arrival, scripted walk-out, and cabin close beat after the intro surface plus the bounded in-world exit finish before the results surface
 - **AND** transition audio cues do not extend durations or require additional player input before the next scene handoff
 
 #### Scenario: Reaching the final congratulations surface
@@ -34,20 +44,32 @@ The game SHALL show consistent player progression information across stage intro
 - **AND** the congratulations cue still hands off cleanly without restarting or overlapping another sustained loop
 
 ### Requirement: Transition surfaces use bounded retro pose and accent animation
-The game SHALL present stage intro and completion surfaces with sparse retro motion that reinforces the current transition state without changing flow semantics. These surfaces MAY animate between a small number of player, stage, or celebration poses and MAY use brief accent bursts or particles, but the motion MUST stay subordinate to readable stage and progression text, MUST fit inside the existing scene durations, and MUST hand off cleanly with the current audio timing.
+The game SHALL present stage intro and completion surfaces with sparse retro motion that reinforces the current transition state without changing flow semantics. These surfaces MAY animate stage, backdrop, text, or celebration accents, and the stage intro surface MAY also omit a dedicated accent entirely when stage identity and player status remain readable. These surfaces MUST NOT render a decorative astronaut or other player-figure accent on the intro or completion layout. Any remaining accent motion on those layouts MUST stay non-figurative and MUST NOT imply a helmeted astronaut, player idle pose, or other character-like silhouette even in abstracted form. Any remaining motion MUST stay subordinate to readable stage and progression text, MUST fit inside the existing scene durations, and MUST hand off cleanly with the current audio timing.
 
-#### Scenario: Viewing a pre-stage transition surface
+#### Scenario: Viewing a pre-stage transition surface without a decorative accent
 - **WHEN** the player sees a stage intro surface before gameplay begins
-- **THEN** the screen may animate through a bounded pose or accent loop that reinforces the stage identity and player readiness
+- **THEN** the screen may present stage identity and player readiness without any dedicated intro accent motion
+- **AND** the layout does not include a decorative astronaut or player-figure accent
+- **AND** stage and progression information remains readable within the existing scene duration and timing semantics
+
+#### Scenario: Viewing a pre-stage transition surface with bounded abstract motion
+- **WHEN** the player sees a stage intro surface before gameplay begins and the layout includes bounded motion
+- **THEN** the motion reinforces the stage identity and player readiness without requiring a separate right-side accent treatment
+- **AND** any intro accent remains abstract and non-character-like
 - **AND** the animation remains sparse enough that the stage and progression information stays readable
 
 #### Scenario: Viewing a post-clear transition surface
 - **WHEN** the player sees a stage-clear or final-congratulations surface
-- **THEN** the screen may play a brief celebratory pose change or accent burst that matches the current completion state
+- **THEN** the screen may play a brief celebratory accent that matches the current completion state
+- **AND** the layout does not include a decorative astronaut or player-figure accent
 - **AND** the effect resolves within the existing surface duration without extending the scene
 
 #### Scenario: Preserving transition timing and audio handoff
 - **WHEN** transition animation plays alongside intro, stage-clear, or final-congratulations audio
 - **THEN** the motion remains synchronized with the existing scene timing semantics
 - **AND** the animation does not delay, duplicate, or conflict with the clean music or stinger handoff rules
+
+
+
+
 

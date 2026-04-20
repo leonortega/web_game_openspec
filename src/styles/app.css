@@ -1,4 +1,6 @@
 :root {
+  --app-shell-gap: clamp(12px, 2.4vw, 32px);
+  --game-shell-max-width: 1480px;
   font-family: "Courier New", monospace;
   color: #f7f3d6;
   background:
@@ -26,13 +28,27 @@ body {
 #app {
   display: grid;
   place-items: center;
-  padding: 24px;
+  min-height: 100vh;
+  padding: var(--app-shell-gap);
+}
+
+.game-shell-frame {
+  position: relative;
+  width: min(
+    calc(100vw - (var(--app-shell-gap) * 2)),
+    calc((100vh - (var(--app-shell-gap) * 2)) * 16 / 9),
+    var(--game-shell-max-width)
+  );
+  max-width: 100%;
+  max-height: calc(100vh - (var(--app-shell-gap) * 2));
+  aspect-ratio: 16 / 9;
+  margin: auto;
 }
 
 .game-shell {
   position: relative;
-  width: min(100%, 1080px);
-  aspect-ratio: 16 / 9;
+  width: 100%;
+  height: 100%;
   border: 4px solid #f7f3d6;
   border-radius: 0;
   overflow: hidden;
@@ -165,12 +181,15 @@ body {
 
 @media (max-width: 720px) {
   #app {
-    padding: 12px;
+    padding: var(--app-shell-gap);
   }
 
-  .game-shell {
-    aspect-ratio: auto;
-    min-height: 88vh;
+  .game-shell-frame {
+    width: min(
+      calc(100vw - (var(--app-shell-gap) * 2)),
+      calc((100vh - (var(--app-shell-gap) * 2)) * 16 / 9)
+    );
+    max-height: calc(100vh - (var(--app-shell-gap) * 2));
   }
 
   .hud-layer {

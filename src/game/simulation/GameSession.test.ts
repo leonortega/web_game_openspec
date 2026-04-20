@@ -3,9 +3,19 @@ import { describe, expect, it } from 'vitest';
 import { AUDIO_CUES } from '../../audio/audioContract';
 import { GameSession } from './GameSession';
 import { defaultInputState } from '../input/actions';
-import { TURRET_VARIANT_CONFIG } from './state';
+import { TURRET_VARIANT_CONFIG, createTerrainSurfaceState } from './state';
 
 const getMutableState = (session: GameSession) => session.getState() as any;
+
+const createTerrainVariantFixture = (platform: any, kind: 'brittleCrystal' | 'stickySludge') =>
+  createTerrainSurfaceState({
+    id: platform.id,
+    x: platform.x,
+    y: platform.y,
+    width: platform.width,
+    height: platform.height,
+    terrainVariant: kind,
+  });
 
 const advanceSession = (session: GameSession, totalMs: number, stepMs = 16) => {
   let remainingMs = totalMs;
@@ -45,7 +55,6 @@ const placePlayerAboveLauncher = (state: any, launcherEntry: any, supportPlatfor
   state.player.vy = vy;
   state.player.onGround = false;
   state.player.supportPlatformId = null;
-  state.player.supportTerrainSurfaceId = null;
 };
 
 const placePlayerOnSupportOutsideLauncher = (state: any, supportPlatform: any) => {
@@ -55,16 +64,28 @@ const placePlayerOnSupportOutsideLauncher = (state: any, supportPlatform: any) =
   state.player.vy = 0;
   state.player.onGround = true;
   state.player.supportPlatformId = supportPlatform.id;
-  state.player.supportTerrainSurfaceId = null;
 };
 
-const getGravityField = (state: any, kind: 'anti-grav-stream' | 'gravity-inversion-column') => {
-  const field = state.stageRuntime.gravityFields.find((candidate: any) => candidate.kind === kind);
-  if (!field) {
-    throw new Error(`Expected stage to include a ${kind} gravity field.`);
+const getGravityCapsuleFixture = (state: any) => {
+  const capsule = state.stageRuntime.gravityCapsules.find((entry: any) => entry.id === 'sky-anti-grav-capsule');
+  const antiGravField = state.stageRuntime.gravityFields.find((entry: any) => entry.id === 'sky-anti-grav-stream');
+
+  if (!capsule || !antiGravField) {
+    throw new Error('Expected sky gravity capsule fixture.');
   }
 
-  return field;
+  return { capsule, antiGravField };
+};
+
+const getNamedGravityCapsuleFixture = (state: any, capsuleId: string, fieldId: string) => {
+  const capsule = state.stageRuntime.gravityCapsules.find((entry: any) => entry.id === capsuleId);
+  const field = state.stageRuntime.gravityFields.find((entry: any) => entry.id === fieldId);
+
+  if (!capsule || !field) {
+    throw new Error(`Expected gravity capsule fixture ${capsuleId}/${fieldId}.`);
+  }
+
+  return { capsule, field };
 };
 
 const placePlayerInsideField = (state: any, field: any, vy = 0) => {
@@ -74,7 +95,27 @@ const placePlayerInsideField = (state: any, field: any, vy = 0) => {
   state.player.vy = vy;
   state.player.onGround = false;
   state.player.supportPlatformId = null;
-  state.player.supportTerrainSurfaceId = null;
+};
+
+const touchGravityCapsuleButton = (state: any, capsule: any) => {
+  const supportPlatform = state.stageRuntime.platforms.find((platform: any) => {
+    const overlap = Math.max(
+      0,
+      Math.min(capsule.button.x + capsule.button.width, platform.x + platform.width) - Math.max(capsule.button.x, platform.x),
+    );
+    return overlap >= Math.min(capsule.button.width * 0.55, platform.width) && Math.abs(capsule.button.y + capsule.button.height - platform.y) <= 24;
+  });
+
+  if (!supportPlatform) {
+    throw new Error('Expected grounded support beneath the sky gravity-room button.');
+  }
+
+  state.player.x = capsule.button.x + capsule.button.width / 2 - state.player.width / 2;
+  state.player.y = supportPlatform.y - state.player.height;
+  state.player.vx = 0;
+  state.player.vy = 0;
+  state.player.onGround = true;
+  state.player.supportPlatformId = supportPlatform.id;
 };
 
 const getTimedRevealFixture = (state: any) => {
@@ -103,6 +144,66 @@ const getMagneticFixture = (state: any) => {
 };
 
 describe('GameSession regression coverage', () => {
+  it('rebuilds fresh starts and auto-advance from stage spawn while checkpoint respawn stays on the checkpoint path', () => {
+    const session = new GameSession();
+    const initial = getMutableState(session);
+    initial.progress.unlockedStageIndex = Math.max(initial.progress.unlockedStageIndex, initial.stageIndex + 1);
+    const firstCheckpoint = initial.stageRuntime.checkpoints[0];
+
+    initial.player.x = firstCheckpoint.rect.x;
+    initial.player.y = firstCheckpoint.rect.y;
+    session.update(16, defaultInputState());
+
+    expect(initial.activeCheckpointId).toBe(firstCheckpoint.id);
+
+    const startedFromMenu = session.getState();
+    session.startStage(initial.stageIndex);
+    const freshStart = session.getState();
+    expect(freshStart).not.toBe(startedFromMenu);
+    expect(freshStart.stageIndex).toBe(initial.stageIndex);
+    expect(freshStart.activeCheckpointId).toBeNull();
+    expect(freshStart.player.x).toBe(freshStart.stage.playerSpawn.x);
+    expect(freshStart.player.y).toBe(freshStart.stage.playerSpawn.y);
+
+    const replaySource = session.getState();
+    session.restartStage();
+    const replayStart = session.getState();
+    expect(replayStart).not.toBe(replaySource);
+    expect(replayStart.stageIndex).toBe(initial.stageIndex);
+    expect(replayStart.activeCheckpointId).toBeNull();
+    expect(replayStart.player.x).toBe(replayStart.stage.playerSpawn.x);
+    expect(replayStart.player.y).toBe(replayStart.stage.playerSpawn.y);
+
+    const autoAdvanceSource = session.getState();
+    session.advanceToNextStage();
+    const autoAdvance = session.getState();
+    expect(autoAdvance).not.toBe(autoAdvanceSource);
+    expect(autoAdvance.stageIndex).toBe(initial.stageIndex + 1);
+    expect(autoAdvance.activeCheckpointId).toBeNull();
+    expect(autoAdvance.player.x).toBe(autoAdvance.stage.playerSpawn.x);
+    expect(autoAdvance.player.y).toBe(autoAdvance.stage.playerSpawn.y);
+
+    const respawnSession = new GameSession();
+    const respawnState = getMutableState(respawnSession);
+    const respawnCheckpoint = respawnState.stageRuntime.checkpoints[0];
+    respawnState.player.x = respawnCheckpoint.rect.x;
+    respawnState.player.y = respawnCheckpoint.rect.y;
+    respawnSession.update(16, defaultInputState());
+    const checkpointRun = respawnSession.getState();
+
+    respawnState.player.health = 1;
+    (respawnSession as any).damagePlayer();
+    (respawnSession as any).respawnPlayer();
+    const afterRespawn = respawnSession.getState();
+
+    expect(afterRespawn).not.toBe(checkpointRun);
+    expect(afterRespawn.stageIndex).toBe(checkpointRun.stageIndex);
+    expect(afterRespawn.activeCheckpointId).toBe(respawnCheckpoint.id);
+    expect(afterRespawn.player.dead).toBe(false);
+    expect(afterRespawn.player.x).toBe(respawnCheckpoint.rect.x + 12);
+    expect(afterRespawn.player.y).toBe(respawnCheckpoint.rect.y - afterRespawn.player.height);
+  });
+
   it('powers the authored magnetic platform on activation-node contact and resets it on restart', () => {
     const session = new GameSession();
     const state = getMutableState(session);
@@ -267,6 +368,7 @@ describe('GameSession regression coverage', () => {
   it('consumes non-invincible active powers without reducing health on a damaging hit', () => {
     const session = new GameSession();
     const state = getMutableState(session);
+    const initialMessage = state.stageMessage;
 
     state.player.health = 3;
     state.progress.activePowers.doubleJump = true;
@@ -277,12 +379,13 @@ describe('GameSession regression coverage', () => {
     expect(state.player.health).toBe(3);
     expect(state.player.invulnerableMs).toBeGreaterThan(0);
     expect(Object.values(state.progress.activePowers).every((active) => active === false)).toBe(true);
-    expect(state.stageMessage).toBe('Power shield broke');
+    expect(state.stageMessage).toBe(initialMessage);
   });
 
   it('preserves invincibility on a damaging hit while its timer is active', () => {
     const session = new GameSession();
     const state = getMutableState(session);
+    const initialMessage = state.stageMessage;
 
     state.player.health = 3;
     state.progress.activePowers.invincible = true;
@@ -294,12 +397,13 @@ describe('GameSession regression coverage', () => {
     expect(state.player.invulnerableMs).toBeGreaterThan(0);
     expect(state.progress.activePowers.invincible).toBe(true);
     expect(state.progress.powerTimers.invincibleMs).toBe(5000);
-    expect(state.stageMessage).toBe('Invincibility held');
+    expect(state.stageMessage).toBe(initialMessage);
   });
 
   it('preserves invincibility while clearing other powers on a mixed-power damaging hit', () => {
     const session = new GameSession();
     const state = getMutableState(session);
+    const initialMessage = state.stageMessage;
 
     state.player.health = 3;
     state.progress.activePowers.invincible = true;
@@ -318,12 +422,13 @@ describe('GameSession regression coverage', () => {
     expect(state.progress.activePowers.dash).toBe(false);
     expect(state.player.airJumpsRemaining).toBe(0);
     expect(state.player.dashCooldownMs).toBe(0);
-    expect(state.stageMessage).toBe('Power shield broke - invincibility held');
+    expect(state.stageMessage).toBe(initialMessage);
   });
 
   it('preserves unpowered damage and death behavior', () => {
     const session = new GameSession();
     const state = getMutableState(session);
+    const initialMessage = state.stageMessage;
 
     state.player.health = 2;
 
@@ -331,15 +436,20 @@ describe('GameSession regression coverage', () => {
     expect(session.consumeCues()).toEqual([AUDIO_CUES.hurt]);
     expect(state.player.health).toBe(1);
     expect(state.player.dead).toBe(false);
-    expect(state.stageMessage).toBe('You were hit');
+    expect(state.stageMessage).toBe(initialMessage);
 
     state.player.invulnerableMs = 0;
     (session as any).damagePlayer();
 
     expect(session.consumeCues()).toEqual([AUDIO_CUES.death]);
     expect(state.player.dead).toBe(true);
-    expect(state.respawnTimerMs).toBeGreaterThan(0);
-    expect(state.stageMessage).toBe('Respawning...');
+    expect(state.respawnTimerMs).toBe(900);
+    expect(state.stageMessage).toBe(initialMessage);
+
+    session.update(120, defaultInputState());
+
+    expect(state.player.dead).toBe(true);
+    expect(state.respawnTimerMs).toBe(780);
   });
 
   it('respawns from the active checkpoint after defeat while keeping death semantics and clearing powers', () => {
@@ -355,11 +465,12 @@ describe('GameSession regression coverage', () => {
     state.progress.activePowers.dash = true;
     state.player.health = 1;
     state.player.invulnerableMs = 0;
+    const checkpointMessage = state.stageMessage;
 
     (session as any).damagePlayer();
 
     expect(state.player.dead).toBe(false);
-    expect(state.stageMessage).toBe('Power shield broke');
+    expect(state.stageMessage).toBe(checkpointMessage);
     expect(state.progress.activePowers.doubleJump).toBe(false);
     expect(state.progress.activePowers.dash).toBe(false);
 
@@ -369,7 +480,7 @@ describe('GameSession regression coverage', () => {
     (session as any).damagePlayer();
 
     expect(state.player.dead).toBe(true);
-    expect(state.stageMessage).toBe('Respawning...');
+    expect(state.stageMessage).toBe(checkpointMessage);
 
     advanceSession(session, state.respawnTimerMs);
 
@@ -403,8 +514,11 @@ describe('GameSession regression coverage', () => {
     expect(enemy.alive).toBe(false);
     expect(enemy.defeatCause).toBe('stomp');
     expect(state.player.dead).toBe(false);
-    expect(state.stageMessage).toBe('Enemy stomped');
-    expect(session.consumeCues()).toContain(AUDIO_CUES.stomp);
+    expect(state.stageMessage).toBe('Restore survey beacon');
+    const cues = session.consumeCues();
+    expect(cues).toContain(AUDIO_CUES.stomp);
+    expect(cues).not.toContain(AUDIO_CUES.shootHit);
+    expect(cues).not.toContain(AUDIO_CUES.death);
   });
 
   it('marks player projectile defeats as plasma blaster kills without delaying enemy removal', () => {
@@ -435,8 +549,11 @@ describe('GameSession regression coverage', () => {
     expect(enemy.alive).toBe(false);
     expect(enemy.defeatCause).toBe('plasma-blast');
     expect(state.stageRuntime.projectiles).toHaveLength(0);
-    expect(state.stageMessage).toBe('Enemy blasted');
-    expect(session.consumeCues()).toContain(AUDIO_CUES.shootHit);
+    expect(state.stageMessage).toBe('Restore survey beacon');
+    const cues = session.consumeCues();
+    expect(cues).toContain(AUDIO_CUES.shootHit);
+    expect(cues).not.toContain(AUDIO_CUES.stomp);
+    expect(cues).not.toContain(AUDIO_CUES.death);
   });
 
   it('emits motion and danger cues only on authored movement beats', () => {
@@ -527,6 +644,12 @@ describe('GameSession regression coverage', () => {
     state.player.vy = 0;
 
     (session as any).handleExit();
+
+    expect(state.levelCompleted).toBe(false);
+    expect(state.exitFinish.active).toBe(true);
+    expect(session.consumeCues()).toContain(AUDIO_CUES.capsuleTeleport);
+
+    advanceSession(session, state.exitFinish.durationMs);
 
     expect(state.levelCompleted).toBe(true);
     expect(session.consumeCues()).toContain(AUDIO_CUES.stageClear);
@@ -639,7 +762,7 @@ describe('GameSession regression coverage', () => {
 
     expect(state.progress.totalCoins).toBe(1);
     expect(state.stageRuntime.collectedCoins).toBe(1);
-    expect(state.stageMessage).toBe('Research sample recovered');
+    expect(state.stageMessage).toBe('Survey beacon activated');
   });
 
   it('preserves collected coins and blocks duplicate full-clear rewards across checkpoint respawns', () => {
@@ -721,7 +844,7 @@ describe('GameSession regression coverage', () => {
       target: { kind: 'checkpoint', id: 'cp-6' },
       completed: false,
     });
-    expect(state.stageMessage).toBe('Objective: restore the survey beacon');
+    expect(state.stageMessage).toBe('Restore survey beacon');
   });
 
   it('completes checkpoint-authored objectives when the authored beacon checkpoint activates', () => {
@@ -767,8 +890,79 @@ describe('GameSession regression coverage', () => {
     state.player.y = state.stage.exit.y;
     session.update(16, defaultInputState());
 
-    expect(state.levelCompleted).toBe(true);
+    expect(state.levelCompleted).toBe(false);
     expect(state.stageRuntime.exitReached).toBe(true);
+    expect(state.exitFinish.active).toBe(true);
+
+    advanceSession(session, state.exitFinish.durationMs);
+
+    expect(state.levelCompleted).toBe(true);
+  });
+
+  it('ignores repeated exit overlap while the capsule finish is already running', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+
+    state.stageRuntime.platforms = [];
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+    state.stageRuntime.objective = null;
+    state.player.x = state.stage.exit.x + 4;
+    state.player.y = state.stage.exit.y;
+
+    session.update(16, defaultInputState());
+    const initialCues = session.consumeCues();
+
+    expect(state.exitFinish.active).toBe(true);
+    expect(initialCues.filter((cue: string) => cue === AUDIO_CUES.capsuleTeleport)).toHaveLength(1);
+
+    session.update(16, defaultInputState());
+
+    expect(session.consumeCues()).toEqual([]);
+    expect(state.exitFinish.active).toBe(true);
+  });
+
+  it('hands off to level completion only after the capsule finish window elapses', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+
+    state.stageRuntime.platforms = [];
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+    state.stageRuntime.objective = null;
+    state.player.x = state.stage.exit.x + 4;
+    state.player.y = state.stage.exit.y;
+    state.player.vx = 140;
+    state.player.vy = -48;
+
+    session.update(16, defaultInputState());
+    session.consumeCues();
+
+    expect(state.levelCompleted).toBe(false);
+    expect(state.exitFinish.active).toBe(true);
+    expect(state.player.vx).toBe(0);
+    expect(state.player.vy).toBe(0);
+
+    const hideAdvanceMs = Math.ceil(state.exitFinish.durationMs * 0.35);
+    advanceSession(session, hideAdvanceMs);
+
+    expect(state.exitFinish.suppressPresentation).toBe(true);
+    expect(state.player.suppressPresentation).toBe(true);
+
+    advanceSession(session, state.exitFinish.durationMs - 16 - hideAdvanceMs);
+
+    expect(state.levelCompleted).toBe(false);
+    expect(state.exitFinish.active).toBe(true);
+    expect(session.consumeCues()).toEqual([]);
+
+    session.update(16, defaultInputState());
+
+    expect(state.exitFinish.active).toBe(false);
+    expect(state.levelCompleted).toBe(true);
+    expect(state.levelJustCompleted).toBe(true);
+    expect(state.exitFinish.suppressPresentation).toBe(true);
+    expect(state.player.suppressPresentation).toBe(true);
+    expect(session.consumeCues()).toContain(AUDIO_CUES.stageClear);
   });
 
   it('persists completed stage objectives through same-attempt checkpoint respawns', () => {
@@ -816,7 +1010,33 @@ describe('GameSession regression coverage', () => {
 
     const restarted = getMutableState(session);
     expect(restarted.stageRuntime.objective.completed).toBe(false);
-    expect(restarted.stageMessage).toBe('Objective: restore the survey beacon');
+    expect(restarted.stageMessage).toBe('Restore survey beacon');
+  });
+
+  it('starts non-objective stages without a long transient route summary', () => {
+    const session = new GameSession();
+
+    session.forceStartStage(1);
+
+    const state = getMutableState(session);
+    expect(state.stageRuntime.objective).toBeNull();
+    expect(state.stageMessage).toBe('');
+    expect(state.stageMessageTimerMs).toBe(0);
+  });
+
+  it('updates the persistent segment id without showing a separate transient segment banner', () => {
+    const session = new GameSession();
+
+    session.forceStartStage(1);
+
+    const state = getMutableState(session);
+    expect(state.currentSegmentId).toBe('mouth');
+
+    state.player.x = 1500;
+    (session as any).updateCurrentSegment();
+
+    expect(state.currentSegmentId).toBe('lifts');
+    expect(state.stageMessage).toBe('');
   });
 
   it('persists revealed platforms only when the checkpoint is activated after the reveal', () => {
@@ -1292,7 +1512,80 @@ describe('GameSession regression coverage', () => {
     expect(state.player.supportPlatformId).toBeNull();
   });
 
-  it('keeps spring boosts, launcher impulses, sludge jumps, and falling-platform escape timing intact inside gravity fields', () => {
+  it('keeps gravity-room fields active until button contact disables them without changing dash priority', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    let state = getMutableState(session);
+    const { capsule, antiGravField } = getGravityCapsuleFixture(state);
+
+    placePlayerInsideField(state, antiGravField);
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.stageRuntime.gravityCapsules[0].enabled).toBe(true);
+    expect(state.player.gravityFieldId).toBe(antiGravField.id);
+    expect(state.player.gravityFieldKind).toBe('anti-grav-stream');
+
+    touchGravityCapsuleButton(state, capsule);
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.stageRuntime.gravityCapsules[0].enabled).toBe(false);
+    expect(state.stageRuntime.gravityCapsules[0].button.activated).toBe(true);
+
+    placePlayerInsideField(state, antiGravField, 0);
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.player.gravityFieldId).toBeNull();
+    expect(state.player.gravityFieldKind).toBeNull();
+    expect(state.player.gravityScale).toBe(1);
+
+    state.progress.activePowers.dash = true;
+    placePlayerInsideField(state, antiGravField, 60);
+    session.update(16, { ...defaultInputState(), dashPressed: true });
+
+    state = getMutableState(session);
+    expect(state.player.dashTimerMs).toBeGreaterThan(0);
+    expect(state.player.gravityFieldId).toBeNull();
+    expect(state.player.gravityScale).toBe(1);
+  });
+
+  it('blocks gravity room shell walls outside the authored door openings while leaving the entry opening traversable', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    let state = getMutableState(session);
+    const { capsule } = getGravityCapsuleFixture(state);
+    const shellBottom = capsule.shell.y + capsule.shell.height;
+    const sealedBottomMidpoint = capsule.entryDoor.x + capsule.entryDoor.width + (capsule.exitDoor.x - (capsule.entryDoor.x + capsule.entryDoor.width)) / 2;
+
+    state.player.x = sealedBottomMidpoint - state.player.width / 2;
+    state.player.y = shellBottom + 2;
+    state.player.vx = 0;
+    state.player.vy = -400;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.player.y).toBeGreaterThanOrEqual(shellBottom);
+    expect(state.player.vy).toBe(0);
+
+    state.player.x = capsule.entryDoor.x + capsule.entryDoor.width / 2 - state.player.width / 2;
+    state.player.y = shellBottom + 2;
+    state.player.vx = 0;
+    state.player.vy = -400;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.player.y).toBeLessThanOrEqual(shellBottom);
+  });
+
+  it('keeps spring boosts, launcher impulses, full sticky jumps, and falling-platform escape timing intact inside gravity fields', () => {
     const session = new GameSession();
     let state = getMutableState(session);
     const springPlatform = state.stageRuntime.platforms.find((platform: any) => platform.kind === 'spring');
@@ -1319,7 +1612,7 @@ describe('GameSession regression coverage', () => {
     state = getMutableState(session);
     const { launcherEntry: gasVent, supportPlatform } = getLauncher(state, 'gasVent');
     const stickySurface = state.stageRuntime.terrainSurfaces.find((surface: any) => surface.kind === 'stickySludge');
-    const antiGravField = getGravityField(state, 'anti-grav-stream');
+    const { capsule, antiGravField } = getGravityCapsuleFixture(state);
 
     expect(stickySurface.supportPlatformId).toBe(gasVent.supportPlatformId);
     expect(antiGravField.x).toBeLessThan(gasVent.x + gasVent.width);
@@ -1330,9 +1623,22 @@ describe('GameSession regression coverage', () => {
     expect(state.player.vx).toBeCloseTo(gasVent.direction.x * gasVent.impulse, 5);
     expect(state.player.vy).toBeCloseTo(gasVent.direction.y * gasVent.impulse, 5);
 
+    placePlayerInsideField(state, antiGravField);
     session.update(16, defaultInputState());
     state = getMutableState(session);
     expect(state.player.gravityFieldId).toBe(antiGravField.id);
+
+    touchGravityCapsuleButton(state, capsule);
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.stageRuntime.gravityCapsules[0].enabled).toBe(false);
+
+    placePlayerInsideField(state, antiGravField);
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.player.gravityFieldId).toBeNull();
 
     state.player.x = stickySurface.x + 20;
     state.player.y = supportPlatform.y - state.player.height;
@@ -1340,13 +1646,11 @@ describe('GameSession regression coverage', () => {
     state.player.vy = 0;
     state.player.onGround = true;
     state.player.supportPlatformId = supportPlatform.id;
-    state.player.supportTerrainSurfaceId = stickySurface.id;
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
 
     state = getMutableState(session);
-    expect(state.player.gravityFieldId).toBe(antiGravField.id);
-    expect(state.player.vy).toBeLessThan(0);
-    expect(state.player.vy).toBeGreaterThan(-640);
+    expect(state.player.gravityFieldId).toBeNull();
+    expect(state.player.vy).toBeCloseTo(-640 + state.stage.world.gravity * 0.016, 4);
 
     session.forceStartStage(0);
     state = getMutableState(session);
@@ -1378,12 +1682,17 @@ describe('GameSession regression coverage', () => {
     expect(state.player.supportPlatformId).toBeNull();
   });
 
-  it('keeps gravity fields stateless across respawn, checkpoint respawn, and manual restart', () => {
+  it('resets gravity capsule activation on respawn, checkpoint respawn, and manual restart', () => {
     const session = new GameSession();
     session.forceStartStage(2);
 
     let state = getMutableState(session);
-    const antiGravField = getGravityField(state, 'anti-grav-stream');
+    const { capsule, antiGravField } = getGravityCapsuleFixture(state);
+    const { capsule: inversionCapsule, field: inversionField } = getNamedGravityCapsuleFixture(
+      state,
+      'sky-gravity-inversion-capsule',
+      'sky-gravity-inversion-column',
+    );
     const checkpoint = state.stageRuntime.checkpoints.find((entry: any) => entry.id === 'cp-5');
     if (!checkpoint) {
       throw new Error('Expected Halo Spire checkpoint fixture.');
@@ -1393,6 +1702,26 @@ describe('GameSession regression coverage', () => {
     session.update(16, defaultInputState());
     state = getMutableState(session);
     expect(state.player.gravityFieldId).toBe(antiGravField.id);
+
+    touchGravityCapsuleButton(state, capsule);
+    session.update(16, defaultInputState());
+    state = getMutableState(session);
+    expect(state.stageRuntime.gravityCapsules.find((entry: any) => entry.id === capsule.id).enabled).toBe(false);
+
+    placePlayerInsideField(state, antiGravField);
+    session.update(16, defaultInputState());
+    state = getMutableState(session);
+    expect(state.player.gravityFieldId).toBeNull();
+
+    touchGravityCapsuleButton(state, inversionCapsule);
+    session.update(16, defaultInputState());
+    state = getMutableState(session);
+    expect(state.stageRuntime.gravityCapsules.find((entry: any) => entry.id === inversionCapsule.id).enabled).toBe(false);
+
+    placePlayerInsideField(state, inversionField);
+    session.update(16, defaultInputState());
+    state = getMutableState(session);
+    expect(state.player.gravityFieldId).toBeNull();
 
     state.player.x = checkpoint.rect.x;
     state.player.y = checkpoint.rect.y;
@@ -1413,6 +1742,10 @@ describe('GameSession regression coverage', () => {
       'sky-anti-grav-stream',
       'sky-gravity-inversion-column',
     ]);
+    expect(state.stageRuntime.gravityCapsules.map((entry: any) => ({ id: entry.id, enabled: entry.enabled, button: entry.button.activated }))).toEqual([
+      { id: 'sky-anti-grav-capsule', enabled: true, button: false },
+      { id: 'sky-gravity-inversion-capsule', enabled: true, button: false },
+    ]);
     expect(state.player.gravityFieldId).toBeNull();
     expect(state.player.gravityFieldKind).toBeNull();
     expect(state.player.gravityScale).toBe(1);
@@ -1423,9 +1756,28 @@ describe('GameSession regression coverage', () => {
       'sky-anti-grav-stream',
       'sky-gravity-inversion-column',
     ]);
+    expect(state.stageRuntime.gravityCapsules.map((entry: any) => ({ id: entry.id, enabled: entry.enabled, button: entry.button.activated }))).toEqual([
+      { id: 'sky-anti-grav-capsule', enabled: true, button: false },
+      { id: 'sky-gravity-inversion-capsule', enabled: true, button: false },
+    ]);
     expect(state.player.gravityFieldId).toBeNull();
     expect(state.player.gravityFieldKind).toBeNull();
     expect(state.player.gravityScale).toBe(1);
+  });
+
+  it('keeps every sky gravity field mapped to its own room controller after stage load', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    const state = getMutableState(session);
+    expect(state.stageRuntime.gravityFields.map((field: any) => ({ id: field.id, gravityCapsuleId: field.gravityCapsuleId }))).toEqual([
+      { id: 'sky-anti-grav-stream', gravityCapsuleId: 'sky-anti-grav-capsule' },
+      { id: 'sky-gravity-inversion-column', gravityCapsuleId: 'sky-gravity-inversion-capsule' },
+    ]);
+    expect(state.stageRuntime.gravityCapsules.map((capsule: any) => capsule.fieldId).sort()).toEqual([
+      'sky-anti-grav-stream',
+      'sky-gravity-inversion-column',
+    ]);
   });
 
   it('arms brittle floors on first support, allows an expiry jump, and breaks after contact ends', () => {
@@ -1442,7 +1794,6 @@ describe('GameSession regression coverage', () => {
     state.player.vy = 0;
     state.player.onGround = true;
     state.player.supportPlatformId = supportPlatform.id;
-    state.player.supportTerrainSurfaceId = brittleSurface.id;
 
     session.update(16, defaultInputState());
 
@@ -1457,11 +1808,10 @@ describe('GameSession regression coverage', () => {
     const brokenSurface = state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id);
     expect(state.player.vy).toBeLessThan(0);
     expect(state.player.supportPlatformId).toBeNull();
-    expect(state.player.supportTerrainSurfaceId).toBeNull();
     expect(brokenSurface.brittle.phase).toBe('broken');
   });
 
-  it('resets brittle floors on death respawn, checkpoint respawn, and manual restart', () => {
+  it('resets brittle floors from warning or broken back to the intact baseline on death respawn, checkpoint respawn, and manual restart', () => {
     const session = new GameSession();
     session.forceStartStage(2);
 
@@ -1469,30 +1819,35 @@ describe('GameSession regression coverage', () => {
     const brittleSurface = state.stageRuntime.terrainSurfaces.find((surface: any) => surface.kind === 'brittleCrystal');
     const checkpoint = state.stageRuntime.checkpoints[0];
 
-    brittleSurface.brittle.phase = 'broken';
+    brittleSurface.brittle.phase = 'warning';
+    brittleSurface.brittle.warningMs = 1;
     state.player.health = 1;
     (session as any).damagePlayer();
     (session as any).respawnPlayer();
 
     state = getMutableState(session);
     expect(state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.phase).toBe('intact');
+    expect(state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.warningMs).toBeGreaterThan(1);
 
     state.player.x = checkpoint.rect.x;
     state.player.y = checkpoint.rect.y;
     session.update(16, defaultInputState());
-    state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.phase = 'broken';
+    state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.phase = 'warning';
+    state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.warningMs = 1;
     (session as any).respawnPlayer();
 
     state = getMutableState(session);
     expect(state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.phase).toBe('intact');
+    expect(state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.warningMs).toBeGreaterThan(1);
 
     state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.phase = 'broken';
     session.restartStage();
     state = getMutableState(session);
     expect(state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.phase).toBe('intact');
+    expect(state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.warningMs).toBeGreaterThan(1);
   });
 
-  it('reduces sticky grounded acceleration and keeps buffered and coyote jumps sourced from sludge reduced', () => {
+  it('reduces sticky grounded acceleration while leaving buffered and coyote jumps unchanged', () => {
     const session = new GameSession();
     session.forceStartStage(0);
 
@@ -1507,7 +1862,6 @@ describe('GameSession regression coverage', () => {
     state.player.vy = 0;
     state.player.onGround = true;
     state.player.supportPlatformId = support.id;
-    state.player.supportTerrainSurfaceId = null;
     for (let index = 0; index < 5; index += 1) {
       session.update(16, { ...defaultInputState(), right: true });
     }
@@ -1518,15 +1872,7 @@ describe('GameSession regression coverage', () => {
     state.stageRuntime.enemies = [];
     state.stageRuntime.hazards = [];
     state.stageRuntime.terrainSurfaces = [
-      {
-        id: 'sticky-ground-test',
-        kind: 'stickySludge',
-        x: support.x,
-        y: support.y,
-        width: 140,
-        height: 12,
-        supportPlatformId: support.id,
-      },
+      createTerrainVariantFixture(support, 'stickySludge'),
     ];
     state.player.x = support.x + 32;
     state.player.y = support.y - state.player.height;
@@ -1534,7 +1880,6 @@ describe('GameSession regression coverage', () => {
     state.player.vy = 0;
     state.player.onGround = true;
     state.player.supportPlatformId = support.id;
-    state.player.supportTerrainSurfaceId = 'sticky-ground-test';
     for (let index = 0; index < 5; index += 1) {
       session.update(16, { ...defaultInputState(), right: true });
     }
@@ -1546,15 +1891,7 @@ describe('GameSession regression coverage', () => {
     state.stageRuntime.enemies = [];
     state.stageRuntime.hazards = [];
     state.stageRuntime.terrainSurfaces = [
-      {
-        id: 'sticky-buffer-test',
-        kind: 'stickySludge',
-        x: support.x,
-        y: support.y,
-        width: 140,
-        height: 12,
-        supportPlatformId: support.id,
-      },
+      createTerrainVariantFixture(support, 'stickySludge'),
     ];
     state.player.x = support.x + 32;
     state.player.y = support.y - state.player.height - 8;
@@ -1568,22 +1905,21 @@ describe('GameSession regression coverage', () => {
       }
     }
     state = getMutableState(session);
+    const expectedBufferedJumpVy = -(640 - state.stage.world.gravity * 0.016);
     expect(state.player.vy).toBeLessThan(0);
-    expect(state.player.vy).toBeGreaterThan(-640);
+    expect(state.player.vy).toBeCloseTo(expectedBufferedJumpVy, 4);
 
     state.player.onGround = false;
     state.player.supportPlatformId = null;
-    state.player.supportTerrainSurfaceId = null;
     state.player.coyoteMs = 100;
-    state.player.coyoteTerrainSurfaceKind = 'stickySludge';
     state.player.vy = 0;
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
     state = getMutableState(session);
     expect(state.player.vy).toBeLessThan(0);
-    expect(state.player.vy).toBeGreaterThan(-640);
+    expect(state.player.vy).toBeCloseTo(expectedBufferedJumpVy, 4);
   });
 
-  it('keeps dash normal on sticky sludge and applies low gravity after the reduced jump impulse', () => {
+  it('keeps dash normal on sticky sludge and applies low gravity after the normal jump impulse', () => {
     const session = new GameSession();
     session.forceStartStage(0);
 
@@ -1594,15 +1930,7 @@ describe('GameSession regression coverage', () => {
 
     state.progress.activePowers.dash = true;
     state.stageRuntime.terrainSurfaces = [
-      {
-        id: 'sticky-dash-test',
-        kind: 'stickySludge',
-        x: stickySupport.x,
-        y: stickySupport.y,
-        width: 140,
-        height: 12,
-        supportPlatformId: stickySupport.id,
-      },
+      createTerrainVariantFixture(stickySupport, 'stickySludge'),
     ];
     state.player.x = stickySupport.x + 32;
     state.player.y = stickySupport.y - state.player.height;
@@ -1610,7 +1938,6 @@ describe('GameSession regression coverage', () => {
     state.player.vy = 0;
     state.player.onGround = true;
     state.player.supportPlatformId = stickySupport.id;
-    state.player.supportTerrainSurfaceId = 'sticky-dash-test';
     state.player.facing = 1;
     session.update(16, { ...defaultInputState(), dashPressed: true });
     state = getMutableState(session);
@@ -1622,15 +1949,7 @@ describe('GameSession regression coverage', () => {
     state.stageRuntime.enemies = [];
     state.stageRuntime.hazards = [];
     state.stageRuntime.terrainSurfaces = [
-      {
-        id: 'sticky-low-gravity-test',
-        kind: 'stickySludge',
-        x: stickySupport.x,
-        y: stickySupport.y,
-        width: 140,
-        height: 12,
-        supportPlatformId: stickySupport.id,
-      },
+      createTerrainVariantFixture(stickySupport, 'stickySludge'),
     ];
     state.stageRuntime.lowGravityZones = [
       {
@@ -1649,12 +1968,11 @@ describe('GameSession regression coverage', () => {
     state.player.vy = 0;
     state.player.onGround = true;
     state.player.supportPlatformId = stickySupport.id;
-    state.player.supportTerrainSurfaceId = 'sticky-low-gravity-test';
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
     state = getMutableState(session);
     expect(state.player.gravityScale).toBe(lowGravityZone.gravityScale);
     expect(state.player.vy).toBeLessThan(0);
-    expect(state.player.vy).toBeGreaterThan(-640);
+    expect(state.player.vy).toBeCloseTo(-(640 - state.stage.world.gravity * lowGravityZone.gravityScale * 0.016), 4);
   });
 
   it('launches from bounce pods and gas vents with distinct impulse and cooldown values', () => {

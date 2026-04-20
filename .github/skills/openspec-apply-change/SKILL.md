@@ -147,6 +147,8 @@ What would you like to do?
 - Update task checkbox immediately after completing each task
 - Pause on errors, blockers, or unclear requirements - don't guess
 - Use contextFiles from CLI output, don't assume specific file names
+- Use the file editing tool for artifact or code edits; never try to run tool names like `apply_patch` in the terminal.
+- When a step also needs shell execution, keep that terminal command limited to real shell syntax only.
 
 **Fluid Workflow Integration**
 

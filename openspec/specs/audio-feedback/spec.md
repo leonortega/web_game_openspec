@@ -35,7 +35,7 @@ The game SHALL use the synthesized audio system for menu navigation and non-game
 - **AND** the stinger does not change the existing scene duration or auto-advance timing
 
 ### Requirement: Core player and threat events produce sound feedback
-The game SHALL play synthesized sound effects for major gameplay events so player actions, powers, interactive objects, moving gameplay objects, and threats feel readable, responsive, and intentionally authored in a recognizable 8-bit style.
+The game SHALL play synthesized sound effects for major gameplay events so player actions, powers, interactive objects, moving gameplay objects, and threats feel readable, responsive, and intentionally authored in a recognizable 8-bit style. Enemy-defeat and player-death interactions MUST continue to use the synthesized audio path unless another already-established repository path is explicitly required during apply. Stomp defeats, projectile-based enemy defeats, survivable player damage, and fatal player death MUST remain audibly distinct from one another through cue shape, pitch contour, layering, envelope, or equivalent synthesized identity choices. Fatal player death MUST play a dedicated synthesized death cue once for that death event, and that cue MUST read as more final than the survivable damage cue without blocking the existing death or respawn flow.
 
 #### Scenario: Performing a core movement or power action
 - **WHEN** the player jumps, double-jumps, lands, dashes, or fires an equipped attack power
@@ -49,6 +49,7 @@ The game SHALL play synthesized sound effects for major gameplay events so playe
 #### Scenario: Resolving a threat interaction
 - **WHEN** the player stomps an enemy, hits with a projectile, is hit by a threat, or a turret fires
 - **THEN** the game plays a synthesized cue that matches the event outcome
+- **AND** stomp defeats, projectile defeats, and survivable player-hit cues remain audibly distinct from one another
 
 #### Scenario: Hearing moving threats and moving objects
 - **WHEN** an enemy, hazard, platform, or comparable gameplay object enters an authored movement or attack state that players need to read
@@ -59,8 +60,13 @@ The game SHALL play synthesized sound effects for major gameplay events so playe
 - **THEN** the game plays a dedicated synthesized death cue once for that death event
 - **AND** the survivable damage cue is not replayed as the death cue
 
+#### Scenario: Comparing defeat and death interactions
+- **WHEN** a reviewer compares stomp defeat, projectile defeat, survivable player damage, and fatal player death during active play
+- **THEN** each interaction produces a recognizable synthesized cue with its own readable identity
+- **AND** the stronger fatal-death cue remains compatible with the current synthesized audio path
+
 ### Requirement: Reward and progression events are reinforced by sound
-The game SHALL use synthesized sound to emphasize research-sample pickups, power acquisition, survey-beacon activation, stage completion, and final-run congratulations. These cues MUST read as positive, authored 8-bit feedback rather than generic copies of one another. The fiction rename MUST NOT change which collectible, checkpoint, power, or completion events trigger those cues.
+The game SHALL use synthesized sound to emphasize research-sample pickups, power acquisition, survey-beacon activation, stage completion, and final-run congratulations. These cues MUST read as positive, authored 8-bit feedback rather than generic copies of one another. The fiction rename MUST NOT change which collectible, checkpoint, power, or completion events trigger those cues. When a stage exit accepts a valid completion overlap, the game MUST play a dedicated synthesized capsule-entry teleport cue at the start of that exit-finish sequence. That cue MUST remain distinct from pickup, power, checkpoint, damage, and results-surface celebration audio, and it MUST NOT block the bounded finish animation, the later stage-clear handoff, or the results-surface stinger.
 
 #### Scenario: Collecting a reward
 - **WHEN** the player collects a research sample or equivalent reward pickup
@@ -75,8 +81,9 @@ The game SHALL use synthesized sound to emphasize research-sample pickups, power
 - **THEN** the game plays a recognizable checkpoint confirmation cue
 
 #### Scenario: Reaching the stage exit
-- **WHEN** the player completes a stage
-- **THEN** the game plays a stage-completion transition cue before gameplay hands off to the results surface
+- **WHEN** the player completes a stage by entering a valid exit
+- **THEN** the game plays a dedicated capsule-entry teleport cue as the exit-finish sequence starts
+- **AND** that cue resolves without preventing the later completion handoff
 
 #### Scenario: Clearing the final stage
 - **WHEN** the player reaches the final stage results surface
@@ -185,3 +192,4 @@ The game SHALL keep synthesized audio only for menu interaction cues, gameplay f
 - **WHEN** automated audio validation reviews a playable build after this cleanup pass
 - **THEN** it confirms that sustained music remains asset-backed and non-overlapping across scene changes
 - **AND** it separately confirms that synthesized cues and transition stingers still trigger on their expected surfaces
+

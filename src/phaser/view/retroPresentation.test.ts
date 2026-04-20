@@ -7,12 +7,18 @@ vi.mock('phaser', () => ({
 }));
 
 import {
+  ENEMY_DEFEAT_VISIBLE_HOLD_MS,
+  PLAYER_DEFEAT_VISIBLE_HOLD_MS,
+  RETRO_DEFEAT_PRESENTATION_MAX_MS,
+  createRetroBackdropMotifPalette,
   createRetroMenuPalette,
   createRetroPresentationPalette,
   detectRetroFeedbackEvents,
+  getRetroDefeatTweenPreset,
   getRetroParticlePreset,
   getRetroEnemyPose,
   getRetroPlayerPose,
+  resetRetroPresentationTargets,
   spawnRetroParticleBurst,
 } from './retroPresentation';
 
@@ -151,6 +157,28 @@ describe('createRetroPresentationPalette', () => {
     expect(backdropColors).not.toContain(retro.border);
   });
 
+  it('derives extraterrestrial motif colors that stay secondary to route-facing colors', () => {
+    const retro = createRetroPresentationPalette({
+      skyTop: 0x2b5f86,
+      skyBottom: 0x09111f,
+      accent: 0x9ee8ff,
+      ground: 0x7daccb,
+    });
+
+    const motif = createRetroBackdropMotifPalette(retro);
+    const motifColors = Object.values(motif);
+    const reservedForegroundColors = [retro.cool, retro.warm, retro.safe, retro.alert, retro.border, retro.panel, retro.panelAlt];
+    const textColor = Number.parseInt(retro.text.slice(1), 16);
+    const backgroundTextContrast = contrastRatio(textColor, retro.background);
+
+    expect(new Set(motifColors).size).toBe(motifColors.length);
+    for (const color of motifColors) {
+      expect(reservedForegroundColors).not.toContain(color);
+      expect(contrastRatio(textColor, color)).toBeGreaterThanOrEqual(1.1);
+      expect(contrastRatio(textColor, color)).toBeLessThanOrEqual(backgroundTextContrast);
+    }
+  });
+
   it('selects bounded retro player poses for grounded movement, jumps, and dashes', () => {
     expect(getRetroPlayerPose({ timeMs: 0, velocityX: 0, velocityY: 0, onGround: true, dashTimerMs: 0 }).state).toBe('idle');
     expect(getRetroPlayerPose({ timeMs: 120, velocityX: 120, velocityY: 0, onGround: true, dashTimerMs: 0 }).state).toBe('run-b');
@@ -184,18 +212,19 @@ describe('createRetroPresentationPalette', () => {
         0,
       ).state,
     ).toBe('windup');
-    expect(
-      getRetroEnemyPose(
-        {
-          kind: 'flyer',
-          vx: 0,
-          vy: 0,
-          x: 420,
-          flyer: { left: 0, right: 0, speed: 0, bobAmp: 0, bobSpeed: 0, bobPhase: 0, originY: 0 },
-        },
-        140,
-      ).state,
-    ).toBe('hover');
+    const flyerPose = getRetroEnemyPose(
+      {
+        kind: 'flyer',
+        vx: 0,
+        vy: 0,
+        x: 420,
+        flyer: { left: 0, right: 0, speed: 0, bobAmp: 0, bobSpeed: 0, bobPhase: 0, originY: 0 },
+      },
+      140,
+    );
+    expect(flyerPose.state).toBe('hover');
+    expect(flyerPose.accentOffsetY).toBeGreaterThan(0);
+    expect(flyerPose.accentAlpha).toBeGreaterThan(0.7);
     expect(
       getRetroEnemyPose(
         {
@@ -310,17 +339,30 @@ describe('createRetroPresentationPalette', () => {
     const stomp = getRetroParticlePreset('enemy-defeat-stomp');
     const plasma = getRetroParticlePreset('enemy-defeat-plasma');
     const playerDefeat = getRetroParticlePreset('player-defeat');
+    const stompTween = getRetroDefeatTweenPreset('stomp');
+    const plasmaTween = getRetroDefeatTweenPreset('plasma-blast');
+    const playerTween = getRetroDefeatTweenPreset('player-death');
 
-    expect(stomp.depth).toBeGreaterThan(10);
-    expect(plasma.depth).toBeGreaterThan(10);
+    expect(stomp.depth).toBeGreaterThan(12);
+    expect(plasma.depth).toBeGreaterThan(12);
     expect(playerDefeat.depth).toBeGreaterThan(plasma.depth);
-    expect(stomp.angle).toEqual([205, 335]);
+    expect(stomp.angle).toEqual([198, 342]);
     expect(plasma.angle).toEqual([0, 360]);
     expect(plasma.count).toBeGreaterThan(stomp.count);
     expect(playerDefeat.count).toBeGreaterThan(plasma.count);
     expect(playerDefeat.lifespan).toBeGreaterThan(plasma.lifespan);
-    expect(stomp.alphaStart).toBeGreaterThanOrEqual(0.95);
-    expect(plasma.alphaStart).toBeGreaterThanOrEqual(0.95);
+    expect(stomp.alphaStart).toBe(1);
+    expect(plasma.alphaStart).toBe(1);
+    expect(stomp.cleanupDelayMs).toBeLessThanOrEqual(RETRO_DEFEAT_PRESENTATION_MAX_MS);
+    expect(plasma.cleanupDelayMs).toBeLessThanOrEqual(RETRO_DEFEAT_PRESENTATION_MAX_MS);
+    expect(playerDefeat.cleanupDelayMs).toBeLessThanOrEqual(RETRO_DEFEAT_PRESENTATION_MAX_MS);
+    expect(stompTween.holdMs).toBe(ENEMY_DEFEAT_VISIBLE_HOLD_MS);
+    expect(plasmaTween.holdMs).toBe(ENEMY_DEFEAT_VISIBLE_HOLD_MS);
+    expect(playerTween.holdMs).toBe(PLAYER_DEFEAT_VISIBLE_HOLD_MS);
+    expect(stompTween.tween.scaleY).not.toBe(plasmaTween.tween.scaleY);
+    expect(stompTween.tween.scaleY).toBeLessThan(0.3);
+    expect(plasmaTween.tween.scaleX).toBeLessThan(0.4);
+    expect(playerTween.tween.duration).toBeGreaterThan(plasmaTween.tween.duration as number);
   });
 
   it('applies the preset depth and bounded lifetime when spawning defeat bursts', () => {
@@ -344,14 +386,56 @@ describe('createRetroPresentationPalette', () => {
     expect(scene.add.particles).toHaveBeenCalledWith(
       144,
       88,
-      'retro-particle',
+      'retro-particle-burst',
       expect.objectContaining({
-        alpha: { start: 0.96, end: 0 },
-        lifespan: 320,
+        alpha: { start: 1, end: 0 },
+        lifespan: 272,
       }),
     );
-    expect(emitter.setDepth).toHaveBeenCalledWith(13);
-    expect(emitter.explode).toHaveBeenCalledWith(16, 144, 88);
-    expect(delayedCall).toHaveBeenCalledWith(400, expect.any(Function));
+    expect(emitter.setDepth).toHaveBeenCalledWith(15);
+    expect(emitter.explode).toHaveBeenCalledWith(32, 144, 88);
+    expect(delayedCall).toHaveBeenCalledWith(320, expect.any(Function));
+  });
+
+  it('resets presentation targets through one bounded cleanup path', () => {
+    const firstTarget = {
+      setScale: vi.fn().mockReturnThis(),
+      setRotation: vi.fn().mockReturnThis(),
+      setAngle: vi.fn().mockReturnThis(),
+      setAlpha: vi.fn().mockReturnThis(),
+      setVisible: vi.fn().mockReturnThis(),
+      setDepth: vi.fn().mockReturnThis(),
+      clearTint: vi.fn().mockReturnThis(),
+    };
+    const secondTarget = {
+      setScale: vi.fn().mockReturnThis(),
+      setRotation: vi.fn().mockReturnThis(),
+      setAngle: vi.fn().mockReturnThis(),
+      setAlpha: vi.fn().mockReturnThis(),
+      setVisible: vi.fn().mockReturnThis(),
+      setDepth: vi.fn().mockReturnThis(),
+    };
+    const scene = {
+      tweens: {
+        killTweensOf: vi.fn(),
+      },
+    } as unknown as Parameters<typeof resetRetroPresentationTargets>[0];
+
+    resetRetroPresentationTargets(scene, [
+      { target: firstTarget as any, depth: 7, visible: false, alpha: 0.25 },
+      { target: secondTarget as any, depth: 5 },
+    ]);
+
+    expect(scene.tweens.killTweensOf).toHaveBeenCalledTimes(2);
+    expect(firstTarget.setScale).toHaveBeenCalledWith(1, 1);
+    expect(firstTarget.setRotation).toHaveBeenCalledWith(0);
+    expect(firstTarget.setAngle).toHaveBeenCalledWith(0);
+    expect(firstTarget.setAlpha).toHaveBeenCalledWith(0.25);
+    expect(firstTarget.setVisible).toHaveBeenCalledWith(false);
+    expect(firstTarget.setDepth).toHaveBeenCalledWith(7);
+    expect(firstTarget.clearTint).toHaveBeenCalled();
+    expect(secondTarget.setVisible).toHaveBeenCalledWith(true);
+    expect(secondTarget.setAlpha).toHaveBeenCalledWith(1);
+    expect(secondTarget.setDepth).toHaveBeenCalledWith(5);
   });
 });

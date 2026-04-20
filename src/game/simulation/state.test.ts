@@ -51,7 +51,7 @@ describe('astronaut presentation mappings', () => {
     expect(getPowerShortLabel('dash')).toBe('BD');
 
     expect(getPowerRevealLabel('invincible')).toBe('SHIELD FIELD');
-    expect(getPowerGainMessage('dash')).toBe('Power gained: Booster Dash');
+    expect(getPowerGainMessage('dash')).toBe('Booster Dash online');
     expect(getPowerHelpSummary('shooter')).toContain('plasma shots');
   });
 
@@ -92,13 +92,13 @@ describe('astronaut presentation mappings', () => {
     expect(getCollectibleRecoveredMessage()).toBe('Research sample recovered');
     expect(getCollectibleRewardMessage(2)).toBe('Research sample gained - 2 left');
     expect(getCollectibleRewardMessage(0)).toBe('Research sample gained');
-    expect(getAllCollectiblesRecoveredMessage()).toBe('All research samples recovered - energy restored');
+    expect(getAllCollectiblesRecoveredMessage()).toBe('All research samples recovered. Health restored');
     expect(getCollectibleRewardRevealLabel()).toBe('SAMPLE');
     expect(getCollectibleRewardBlockLabel(2)).toBe('RS2');
   });
 
   it('formats lightweight objective messages through the transient stage-message copy', () => {
-    expect(getStageObjectiveBriefing('restoreBeacon')).toBe('Objective: restore the survey beacon');
+    expect(getStageObjectiveBriefing('restoreBeacon')).toBe('Restore survey beacon');
     expect(getStageObjectiveCompletionMessage('reactivateRelay')).toBe('Relay reactivated');
     expect(getStageObjectiveExitReminder('powerLiftTower')).toBe('Power the lift tower before exit');
   });

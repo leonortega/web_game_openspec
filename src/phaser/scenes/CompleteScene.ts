@@ -24,7 +24,7 @@ export class CompleteScene extends Phaser.Scene {
 
   private autoAdvanceEvent?: Phaser.Time.TimerEvent;
 
-  private accentSprite?: Phaser.GameObjects.Sprite;
+  private accentPanel?: Phaser.GameObjects.Rectangle;
 
   private accentBurstCount = 0;
 
@@ -77,8 +77,8 @@ export class CompleteScene extends Phaser.Scene {
     drawRetroBackdrop(this, 0, 0, width, height, retro, 'transition');
     this.add.rectangle(width / 2, height / 2, width - 104, height - 112, retro.panel, 0.96).setStrokeStyle(4, retro.border, 0.9);
     this.add.rectangle(width / 2, 96, width - 140, 34, retro.stageAccent, 0.9).setStrokeStyle(2, retro.ink, 1);
-    this.add.rectangle(width / 2, 320, width - 220, 126, retro.panelAlt, 0.98).setStrokeStyle(3, retro.border, 0.78);
-    this.add.rectangle(width / 2, 470, width - 220, 56, retro.skyline, 0.98).setStrokeStyle(2, retro.border, 0.6);
+    this.add.rectangle(width / 2, 320, width - 188, 126, retro.panelAlt, 0.98).setStrokeStyle(3, retro.border, 0.78);
+    this.add.rectangle(width / 2, 470, width - 188, 56, retro.skyline, 0.98).setStrokeStyle(2, retro.border, 0.6);
     this.add
       .text(width / 2, 118, stagePresentation.sectorLabel, {
         fontFamily: RETRO_FONT_FAMILY,
@@ -142,14 +142,17 @@ export class CompleteScene extends Phaser.Scene {
       )
       .setOrigin(0.5);
 
-    this.accentSprite = this.add
-      .sprite(width - 176, 284, 'player')
-      .setScale(3.2)
-      .setTint(finalStage ? retro.safe : retro.stageAccent)
+    const accentTint = finalStage ? retro.safe : retro.stageAccent;
+    this.accentPanel = this.add
+      .rectangle(width - 176, 288, 104, 118, retro.panelAlt, 0.82)
+      .setStrokeStyle(3, retro.border, 0.9)
       .setDepth(6);
-    playRetroTweenPreset(this, this.accentSprite, 'transition', { repeat: finalStage ? 2 : 1 });
+    this.add.rectangle(width - 176, 258, 58, 12, accentTint, 0.96).setDepth(7);
+    this.add.rectangle(width - 176, 288, 72, 16, retro.warm, 0.94).setDepth(7);
+    this.add.rectangle(width - 176, 320, 48, 10, accentTint, 0.92).setDepth(7);
+    playRetroTweenPreset(this, this.accentPanel, 'transition', { repeat: finalStage ? 2 : 1 });
     this.accentTweenActive = true;
-    spawnRetroParticleBurst(this, this.accentSprite.x, this.accentSprite.y - 18, retro.safe, 'transition');
+    spawnRetroParticleBurst(this, width - 176, 272, finalStage ? retro.safe : retro.warm, 'transition');
     this.accentBurstCount += 1;
 
     this.audio.playStageClear(state.stage, finalStage);
@@ -185,7 +188,7 @@ export class CompleteScene extends Phaser.Scene {
     return {
       accentBurstCount: this.accentBurstCount,
       accentTweenActive: this.accentTweenActive,
-      accentVisible: this.accentSprite?.visible ?? false,
+      accentVisible: this.accentPanel?.visible ?? false,
     };
   }
 }

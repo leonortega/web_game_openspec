@@ -176,6 +176,7 @@ describe('SynthAudio', () => {
     audio.playCue(AUDIO_CUES.menuNavigate);
     audio.playCue(AUDIO_CUES.collect);
     audio.playCue(AUDIO_CUES.danger);
+    audio.playCue(AUDIO_CUES.capsuleTeleport);
     audio.playCue(AUDIO_CUES.finalCongrats);
 
     const debugEvents = getSharedSynthAudioDebugStateForTests().events.filter((event) => event.type === 'cue');
@@ -183,9 +184,37 @@ describe('SynthAudio', () => {
     expect(new Set(debugEvents.map((event) => event.family))).toEqual(
       new Set(['menu-ui', 'reward', 'danger', 'completion']),
     );
-    expect(new Set(debugEvents.map((event) => event.signature)).size).toBe(4);
-    expect(fakeContext.createOscillator).toHaveBeenCalledTimes(8);
-    expect(fakeContext.createGain).toHaveBeenCalledTimes(8);
+    expect(new Set(debugEvents.map((event) => event.signature)).size).toBe(5);
+    expect(fakeContext.createOscillator).toHaveBeenCalledTimes(12);
+    expect(fakeContext.createGain).toHaveBeenCalledTimes(12);
+    expect(debugEvents.find((event) => event.cue === AUDIO_CUES.capsuleTeleport)?.signature).toBe(
+      'capsule dematerialization sweep',
+    );
+  });
+
+  it('keeps stomp, projectile, hurt, and death cues distinct on the shared synth path', () => {
+    const fakeContext = new FakeAudioContext();
+    vi.stubGlobal('AudioContext', vi.fn(() => fakeContext as unknown as AudioContext));
+    const audio = new SynthAudio(createScene(), () => 1);
+
+    audio.playCue(AUDIO_CUES.stomp);
+    audio.playCue(AUDIO_CUES.shootHit);
+    audio.playCue(AUDIO_CUES.hurt);
+    audio.playCue(AUDIO_CUES.death);
+
+    const cueEvents = getSharedSynthAudioDebugStateForTests().events.filter(
+      (event): event is Extract<DebugEvent, { type: 'cue' }> => event.type === 'cue',
+    );
+
+    expect(cueEvents.map((event) => event.cue)).toEqual([
+      AUDIO_CUES.stomp,
+      AUDIO_CUES.shootHit,
+      AUDIO_CUES.hurt,
+      AUDIO_CUES.death,
+    ]);
+    expect(new Set(cueEvents.map((event) => event.signature)).size).toBe(4);
+    expect(cueEvents.find((event) => event.cue === AUDIO_CUES.death)?.family).toBe('death');
+    expect(cueEvents.find((event) => event.cue === AUDIO_CUES.hurt)?.family).toBe('danger');
   });
 
   it('keeps a checked-in CC0 manifest for menu and per-stage sustained tracks', () => {

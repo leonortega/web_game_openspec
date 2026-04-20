@@ -7,7 +7,8 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "preview": "vite preview",
-    "playtest:stages": "node scripts/stage-playtest.mjs"
+    "playtest:stages": "node scripts/stage-playtest.mjs",
+    "playtest:traversal-visual-language": "node scripts/traversal-category-visual-language-playtest.mjs"
   },
   "keywords": [],
   "author": "",

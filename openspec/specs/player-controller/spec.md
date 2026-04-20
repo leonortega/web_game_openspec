@@ -4,7 +4,7 @@
 TBD - created by archiving change mvp-platform-game. Update Purpose after archive.
 ## Requirements
 ### Requirement: Player can move and jump precisely
-The game SHALL provide a player-controlled character that can run left and right, jump, and adjust position in the air with responsive platformer controls. The controller MUST include a forgiving jump window after leaving a platform and a buffered jump input shortly before landing. While the player is still supported by a falling platform's top surface, that support MUST remain valid for normal movement and jump initiation. When the player is inside an authored low-gravity zone, the controller MUST reduce only the player's ongoing vertical acceleration and MUST restore normal gravity immediately after the player exits the zone. When the player is inside an authored anti-grav stream, the controller MUST add only upward-biased ongoing airborne vertical acceleration and MUST restore normal gravity immediately after the player exits the stream. When the player is inside an authored gravity inversion column, the controller MUST reverse only the player's ongoing airborne vertical acceleration and MUST restore normal gravity immediately after the player exits the column. Low gravity, anti-grav streams, and gravity inversion columns MUST modify the airborne arc after a movement impulse is applied rather than rewriting the initial jump, double-jump, spring-launch, biome-launcher, or dash impulse values. While the player is grounded on authored sticky sludge, the controller MUST use reduced grounded acceleration and reduced grounded maximum horizontal speed, and a grounded jump or coyote jump sourced from that sludge support MUST use a reduced jump launch impulse. Sticky sludge MUST preserve jump buffering and coyote timing rules, MUST NOT damp spring-launch, biome-launcher, or dash impulses, and MUST compose with low gravity, anti-grav streams, and gravity inversion columns by changing only the jump impulse before the airborne field rule takes effect. Authored bounce pods and gas vents MUST trigger only on the first eligible ready-contact update, MUST apply their launch impulse on that update before low-gravity, anti-grav-stream, or gravity-inversion airborne adjustment begins, and MUST use the same jump-hold suppression rule as springs. If jump input is already held, or a buffered jump resolves, on that launcher-contact update, the launcher MUST not auto-launch for that contact and the controller MUST continue with the normal grounded jump or support resolution instead. An active dash MUST NOT be interrupted by launcher contact, and a launcher MUST NOT retroactively fire later during the same uninterrupted contact after dash contact or suppression. An active dash MUST suppress low-gravity, anti-grav-stream, and gravity-inversion acceleration while dash motion still overrides airborne movement.
+The game SHALL provide a player-controlled character that can run left and right, jump, and adjust position in the air with responsive platformer controls. The controller MUST include a forgiving jump window after leaving a platform and a buffered jump input shortly before landing. While the player is still supported by a falling platform's top surface, that support MUST remain valid for normal movement and jump initiation. When the player is inside an authored low-gravity zone, the controller MUST reduce only the player's ongoing vertical acceleration and MUST restore normal gravity immediately after the player exits the zone. When the player is inside an authored anti-grav stream, the controller MUST add only upward-biased ongoing airborne vertical acceleration and MUST restore normal gravity immediately after the player exits the stream. When the player is inside an authored gravity inversion column, the controller MUST reverse only the player's ongoing airborne vertical acceleration and MUST restore normal gravity immediately after the player exits the column. Low gravity, anti-grav streams, and gravity inversion columns MUST modify the airborne arc after a movement impulse is applied rather than rewriting the initial jump, double-jump, spring-launch, biome-launcher, or dash impulse values. While the player is grounded on authored sticky sludge, the controller MUST use reduced grounded acceleration and reduced grounded maximum horizontal speed only. Sticky sludge MUST preserve grounded jump launch strength, jump buffering, coyote timing, spring-launch, biome-launcher, dash, and gravity-field composition rules instead of rewriting them. Authored bounce pods and gas vents MUST trigger only on the first eligible ready-contact update, MUST apply their launch impulse on that update before low-gravity, anti-grav-stream, or gravity-inversion airborne adjustment begins, and MUST use the same jump-hold suppression rule as springs. If jump input is already held, or a buffered jump resolves, on that launcher-contact update, the launcher MUST not auto-launch for that contact and the controller MUST continue with the normal grounded jump or support resolution instead. An active dash MUST NOT be interrupted by launcher contact, and a launcher MUST NOT retroactively fire later during the same uninterrupted contact after dash contact or suppression. An active dash MUST suppress low-gravity, anti-grav-stream, and gravity-inversion acceleration while dash motion still overrides airborne movement.
 
 #### Scenario: Running on solid ground
 - **WHEN** the player holds a movement input on stable ground
@@ -20,7 +20,7 @@ The game SHALL provide a player-controlled character that can run left and right
 
 #### Scenario: Jumping from sticky sludge coyote time
 - **WHEN** the player presses jump during coyote time immediately after leaving sticky sludge support
-- **THEN** the controller performs a valid jump using the sticky-sludge jump impulse for that takeoff
+- **THEN** the controller performs a valid jump using the normal jump launch strength for that takeoff
 
 #### Scenario: Buffering jump before landing
 - **WHEN** the player presses jump shortly before touching the ground
@@ -28,7 +28,7 @@ The game SHALL provide a player-controlled character that can run left and right
 
 #### Scenario: Buffering a jump onto sticky sludge
 - **WHEN** a buffered jump resolves on the frame the player lands on sticky sludge
-- **THEN** the character jumps immediately using the sticky-sludge jump impulse
+- **THEN** the character jumps immediately using the normal jump launch strength
 
 #### Scenario: Jumping from a falling platform
 - **WHEN** the player is still in contact with the top of a falling platform and presses jump
@@ -51,7 +51,7 @@ The game SHALL provide a player-controlled character that can run left and right
 
 #### Scenario: Jumping from sticky sludge inside an anti-grav stream
 - **WHEN** the player initiates a grounded jump from sticky sludge while inside an authored anti-grav stream
-- **THEN** the jump starts with the reduced sticky-sludge jump impulse
+- **THEN** the jump starts with the normal impulse
 - **AND** the remaining airborne motion gains the stream's upward-biased acceleration only after that jump has started
 
 #### Scenario: Dashing through an authored gravity field
@@ -103,7 +103,7 @@ The game SHALL provide a player-controlled character that can run left and right
 - **AND** the gravity inversion affects only the airborne arc after the jump has started
 
 ### Requirement: Player can take damage and recover through respawn
-The game SHALL track player health or hit state, apply damage from enemies and hazards, and return the player to active play through death and respawn rules. When the player collides with a damaging enemy or hazard while one or more active non-invincible powers are present and invincibility is not active, the game MUST clear those active non-invincible powers and MUST NOT reduce health for that hit. When invincibility is active, damaging contact MUST preserve invincibility until its timer expires, MUST keep health unchanged for that hit, and MUST still clear any other active non-invincible powers. When the player has no active powers, damaging contact MUST reduce health as normal. When the player reaches the defeat condition, the game MUST enter a short non-controllable death presentation state that emits a bounded blow-apart particle burst from the player's last position before respawning at the most recently activated checkpoint or level start. That defeat presentation MUST stay local, deterministic, and clearly visible above ordinary gameplay objects, it MUST remain visually distinct from stomp and Plasma Blaster enemy-defeat bursts, and it MUST remain short enough to preserve the current respawn flow without changing damage immunity rules, checkpoint semantics, or which respawn point is selected.
+The game SHALL track player health or hit state, apply damage from enemies and hazards, and return the player to active play through death and respawn rules. When the player collides with a damaging enemy or hazard while one or more active non-invincible powers are present and invincibility is not active, the game MUST clear those active non-invincible powers and MUST NOT reduce health for that hit. When invincibility is active, damaging contact MUST preserve invincibility until its timer expires, MUST keep health unchanged for that hit, and MUST still clear any other active non-invincible powers. When the player has no active powers, damaging contact MUST reduce health as normal. When the player reaches the defeat condition, the game MUST enter a short non-controllable death presentation state that emits a bounded blow-apart particle burst from the player's last position before respawning at the most recently activated checkpoint or level start. That defeat presentation MUST keep the player visible for a brief bounded defeat-flash window of no more than 120 ms, MUST play a local victim-side defeat tween or flash before the sprite hides, MUST stay local, deterministic, and clearly visible above ordinary gameplay objects, MUST remain visually distinct from stomp and Plasma Blaster enemy-defeat bursts, MUST preserve the existing respawn point and timing semantics, MAY temporarily break apart or distort the player's presentation for effect, and MUST remain short enough to preserve the current respawn flow without changing damage immunity rules, checkpoint semantics, or which respawn point is selected. The defeat transition MUST also trigger one dedicated fatal-death audio event that remains distinct from survivable damage and enemy-defeat cues without changing when respawn begins. Before the respawned player returns to active play, the game MUST restore the full player visual composition, including all body parts, pose offsets, alpha, tint, scale, rotation, visibility, and active-power presentation details, so the avatar never appears broken after respawn.
 
 #### Scenario: Taking damage from a threat while unpowered
 - **WHEN** the player collides with a damaging enemy or hazard and has no active powers
@@ -123,7 +123,7 @@ The game SHALL track player health or hit state, apply damage from enemies and h
 
 #### Scenario: Losing all health
 - **WHEN** the player reaches the defeat condition
-- **THEN** the game triggers a death state, plays the bounded blow-apart defeat presentation above ordinary gameplay objects, and then restarts the player from the current respawn point
+- **THEN** the game triggers a death state, keeps the player briefly visible for the bounded defeat tween window, plays the bounded blow-apart defeat presentation above ordinary gameplay objects, and then restarts the player from the current respawn point
 
 #### Scenario: Distinguishing player defeat from enemy defeat
 - **WHEN** the player sees a player death and an enemy defeat during active play
@@ -137,6 +137,21 @@ The game SHALL track player health or hit state, apply damage from enemies and h
 #### Scenario: Losing powers after death
 - **WHEN** the player dies after taking damage
 - **THEN** the game clears the player's active powers
+
+#### Scenario: Holding the player sprite without delaying respawn flow
+- **WHEN** the player death presentation begins
+- **THEN** the player remains non-controllable while the brief defeat flash or tween plays before hide
+- **AND** the short visible hold does not change the existing respawn cadence
+
+#### Scenario: Triggering the fatal-death audio event
+- **WHEN** the player enters the fatal death transition after losing the last remaining health
+- **THEN** the game emits the dedicated death-audio event once for that defeat
+- **AND** the event does not delay or duplicate the existing respawn handoff
+
+#### Scenario: Restoring the full avatar on respawn
+- **WHEN** the player respawns after any defeat presentation state
+- **THEN** the player returns with a complete intact avatar in the correct base or active-power visual variant
+- **AND** no defeat-only visual mutations remain on the respawned player
 
 ### Requirement: Player can defeat eligible enemies by stomping
 The game SHALL allow the player to defeat stompable enemy types by landing on them from above while falling.
@@ -177,4 +192,25 @@ The game SHALL attach readable event-based visual feedback to supported controll
 - **WHEN** the player activates a survey beacon checkpoint
 - **THEN** the game plays a readable checkpoint pulse, burst, or equivalent bounded accent near that beacon event
 - **AND** the activation feedback does not change respawn location, checkpoint persistence, or controller state timing
+
+### Requirement: Gated gravity capsule sections preserve existing controller semantics
+The game SHALL apply active enclosed gravity room sections as a gating layer on top of the current anti-grav-stream and gravity-inversion controller rules without changing the underlying movement model. An enclosed gravity room section that has not yet been disabled MUST modify only the player's ongoing airborne vertical acceleration after the relevant jump, launcher, or dash-overridden motion rule has already been determined. Once the linked interior disable button has been triggered, that room section MUST leave the player's jump, fall, dash, launcher impulse, and grounded movement behavior unchanged until the next reset event. Normal gravity MUST resume immediately when the player leaves an active room field or when that room has been disabled. This controller contract MUST apply consistently across every current playable stage's enclosed gravity room rollout, including rooms that replace formerly open anti-grav and inversion sections.
+
+#### Scenario: Jumping through an active enclosed gravity room section
+- **WHEN** the player jumps or falls through an enclosed gravity room section before its linked disable button has been triggered
+- **THEN** the player's initial jump or launcher impulse remains unchanged
+- **AND** the room-specific airborne acceleration applies only after that impulse has begun and only while the player remains inside the active field bounds
+
+#### Scenario: Jumping through a disabled enclosed gravity room section
+- **WHEN** the player jumps or falls through an enclosed gravity room section after its linked interior button has disabled the room field
+- **THEN** the player's airborne arc follows the surrounding normal gravity rule with no room-specific acceleration applied
+
+#### Scenario: Dashing through an active enclosed gravity room section
+- **WHEN** the player dashes through an enclosed gravity room section while dash motion still overrides airborne movement
+- **THEN** the dash keeps its normal motion while active
+- **AND** the room-specific airborne acceleration resumes only after dash no longer overrides airborne movement
+
+#### Scenario: Traversing multiple rolled-out gravity rooms across stages
+- **WHEN** the player encounters enclosed gravity rooms in different current playable stages
+- **THEN** each room uses the same controller composition rules without changing jump, dash, launcher, or grounded semantics between stages
 

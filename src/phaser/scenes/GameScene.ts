@@ -2,19 +2,15 @@ import * as Phaser from 'phaser';
 import { AUDIO_CUES, type AudioCue } from '../../audio/audioContract';
 import type { SessionSnapshot } from '../../game/simulation/GameSession';
 import {
-  getCollectibleRewardBlockLabel,
-  getCollectibleRewardRevealLabel,
   PLAYER_POWER_VARIANTS,
-  TURRET_VARIANT_CONFIG,
-  getPowerRevealLabel,
-  getPowerShortLabel,
   isBrittleSurfaceBroken,
   isBrittleSurfaceWarning,
-  isPlatformActive,
   isPlatformVisible,
+  type EnemyDefeatCause,
   type CheckpointState,
   type CollectibleState,
   type EnemyState,
+  type GravityCapsuleState,
   type GravityFieldState,
   type LauncherState,
   type PlatformState,
@@ -26,27 +22,119 @@ import {
 import { createHud } from '../../ui/hud/hud';
 import { SceneBridge } from '../adapters/sceneBridge';
 import { SynthAudio } from '../audio/SynthAudio';
-import { runUnlockedAudioAction } from '../audio/sceneAudio';
-import { configureCamera } from '../view/camera/configureCamera';
 import {
-  RETRO_FONT_FAMILY,
+  CAPSULE_PRESENTATION,
+  EXIT_CAPSULE_ART_BOUNDS,
+  EXIT_CAPSULE_TEXTURE_KEYS,
+  getExitFinishDoorOpenProgress,
+  getStageStartCapsuleLayout,
+  getStageStartSequenceState,
+  getStageStartSequenceTotalMs,
+  resolveStageStartCapsuleAnchor,
+  type StageStartCapsulePhase,
+  type StageStartCapsuleLayout,
+} from '../view/capsulePresentation';
+import {
+  ENEMY_DEFEAT_VISIBLE_HOLD_MS,
+  PLAYER_DEFEAT_VISIBLE_HOLD_MS,
   createRetroPresentationPalette,
   detectRetroFeedbackEvents,
-  drawRetroBackdrop,
-  getRetroEnemyPose,
+  getRetroDefeatTweenPreset,
   getRetroMotionStep,
   getRetroPlayerPose,
+  playRetroDefeatTweenPreset,
   playRetroTweenPreset,
-  snapRetroValue,
+  resetRetroPresentationTargets,
+  spawnRetroDefeatFlash,
   spawnRetroParticleBurst,
   type RetroFeedbackSnapshot,
   type RetroPresentationPalette,
 } from '../view/retroPresentation';
+import {
+  activationNodeColor,
+  gravityCapsuleButtonColor,
+  gravityCapsuleButtonCoreColor,
+  gravityCapsuleDoorAlpha,
+  gravityCapsuleEntryDoorColor,
+  gravityCapsuleExitDoorColor,
+  gravityCapsuleShellAlpha,
+  gravityCapsuleShellColor,
+  gravityCapsuleShellStrokeColor,
+  gravityFieldAlpha,
+  gravityFieldColor,
+  launcherColor,
+  platformColor,
+  platformDetailColor,
+  rewardBlockColor,
+  rewardBlockLabel,
+  rewardRevealColor,
+  rewardRevealText,
+  terrainSurfaceAccentAlpha,
+  terrainSurfaceAccentColor,
+  terrainSurfaceAccentHeight,
+  terrainSurfaceAccentWidth,
+  terrainSurfaceAccentY,
+  terrainSurfaceAlpha,
+  terrainSurfaceColor,
+  terrainSurfaceShadowAlpha,
+  terrainSurfaceStrokeAlpha,
+  terrainSurfaceStrokeColor,
+} from '../view/gameSceneStyling';
+import {
+  getActivationNodeTraversalVisualCategory,
+  getGravityCapsuleButtonTraversalVisualCategory,
+  getGravityCapsuleShellTraversalVisualCategory,
+  getGravityFieldTraversalVisualCategory,
+  getLauncherTraversalVisualCategory,
+  getPlatformTraversalVisualCategory,
+  getTerrainTraversalVisualCategory,
+  type TraversalVisualCategory,
+} from '../view/traversalVisualLanguage';
+import {
+  cleanupGameScene,
+  createBaseDisplayObjects,
+  setupGameSceneHud,
+  setupGameSceneInput,
+  type GameSceneBaseDisplayContext,
+  type GameSceneCleanupContext,
+  type GameSceneHudSetupContext,
+  type GameSceneInputContext,
+} from './gameScene/bootstrap';
+import {
+  drawHazard as drawHazardRendering,
+  syncEnemy as syncEnemyRendering,
+  syncProjectile as syncProjectileRendering,
+  type GameSceneEnemyRenderingContext,
+} from './gameScene/enemyRendering';
+import {
+  syncGravityCapsule as syncGravityCapsuleRendering,
+  syncGravityField as syncGravityFieldRendering,
+  type GameSceneGravityRenderingContext,
+} from './gameScene/gravityRendering';
+import {
+  syncActivationNode as syncActivationNodeRendering,
+  syncLauncher as syncLauncherRendering,
+  syncPlatform as syncPlatformRendering,
+  syncTerrainSurface as syncTerrainSurfaceRendering,
+  type GameScenePlatformRenderingContext,
+} from './gameScene/platformRendering';
+import {
+  syncCheckpoint as syncCheckpointRendering,
+  syncCollectible as syncCollectibleRendering,
+  syncRewardBlock as syncRewardBlockRendering,
+  syncRewardReveal as syncRewardRevealRendering,
+  type GameSceneRewardRenderingContext,
+} from './gameScene/rewardRendering';
+
+const COMPLETE_TRANSITION_DELAY_MS = 160;
+const STAGE_START_SEQUENCE_DURATION_MS = getStageStartSequenceTotalMs();
 
 export class GameScene extends Phaser.Scene {
   private bridge!: SceneBridge;
 
   private audio!: SynthAudio;
+
+  private playerAnchor!: Phaser.GameObjects.Rectangle;
 
   private playerAura!: Phaser.GameObjects.Ellipse;
 
@@ -61,6 +149,10 @@ export class GameScene extends Phaser.Scene {
   private playerBelt!: Phaser.GameObjects.Rectangle;
 
   private playerPack!: Phaser.GameObjects.Rectangle;
+
+  private playerArmLeft!: Phaser.GameObjects.Rectangle;
+
+  private playerArmRight!: Phaser.GameObjects.Rectangle;
 
   private playerBootLeft!: Phaser.GameObjects.Rectangle;
 
@@ -96,11 +188,19 @@ export class GameScene extends Phaser.Scene {
 
   private playerDefeatFeedbackLatched = false;
 
+  private playerDefeatVisibleUntilMs = Number.NEGATIVE_INFINITY;
+
+  private playerDefeatResetPending = false;
+
+  private enemyDefeatVisibleUntilMs = new Map<string, number>();
+
   private platformSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
   private platformShadowSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
   private platformDetailSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
+  private platformCategoryMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
   private terrainSurfaceSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
@@ -108,9 +208,13 @@ export class GameScene extends Phaser.Scene {
 
   private terrainSurfaceAccentSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
+  private terrainSurfaceDetailSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
+
   private launcherSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
   private launcherCoreSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
+  private launcherCategoryMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
   private hazardSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
@@ -118,7 +222,25 @@ export class GameScene extends Phaser.Scene {
 
   private gravityFieldSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
+  private gravityFieldCategoryMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
+
+  private gravityCapsuleShellSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
+  private gravityCapsuleEntryDoorSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
+  private gravityCapsuleExitDoorSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
+  private gravityCapsuleButtonSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
+  private gravityCapsuleButtonCoreSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
+  private gravityCapsuleShellMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
+
+  private gravityCapsuleButtonMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
+
   private activationNodeSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+
+  private activationNodeMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
   private enemySprites = new Map<string, Phaser.GameObjects.Sprite>();
 
@@ -136,7 +258,29 @@ export class GameScene extends Phaser.Scene {
 
   private projectileSprites = new Map<string, Phaser.GameObjects.Sprite>();
 
-  private exitSprite!: Phaser.GameObjects.Sprite;
+  private exitShell!: Phaser.GameObjects.Image;
+
+  private exitDoor!: Phaser.GameObjects.Image;
+
+  private exitBase!: Phaser.GameObjects.Rectangle;
+
+  private exitBaseShadow!: Phaser.GameObjects.Rectangle;
+
+  private exitBeacon!: Phaser.GameObjects.Rectangle;
+
+  private arrivalBase!: Phaser.GameObjects.Rectangle;
+
+  private arrivalBaseShadow!: Phaser.GameObjects.Rectangle;
+
+  private arrivalBeacon!: Phaser.GameObjects.Rectangle;
+
+  private arrivalShell!: Phaser.GameObjects.Image;
+
+  private arrivalDoor!: Phaser.GameObjects.Image;
+
+  private arrivalAura!: Phaser.GameObjects.Ellipse;
+
+  private arrivalPlayer!: Phaser.GameObjects.Sprite;
 
   private pauseOverlay!: Phaser.GameObjects.Rectangle;
 
@@ -146,288 +290,278 @@ export class GameScene extends Phaser.Scene {
 
   private completeTransitionEvent?: Phaser.Time.TimerEvent;
 
+  private stageStartArrivalTimerMs = 0;
+
+  private stageStartCapsuleLayout!: StageStartCapsuleLayout;
+
+  private gameplayMusicStarted = false;
+
   constructor() {
     super('game');
+  }
+
+  private getHudSetupContext(): GameSceneHudSetupContext {
+    void this.hud;
+    return this as unknown as GameSceneHudSetupContext;
+  }
+
+  private getInputContext(): GameSceneInputContext {
+    void this.audio;
+    void this.bridge;
+    void this.startGameplayMusicIfReady;
+    void this.setPauseOverlayVisible;
+    return this as unknown as GameSceneInputContext;
+  }
+
+  private getCleanupContext(): GameSceneCleanupContext {
+    void this.completeTransitionEvent;
+    void this.audio;
+    void this.hud;
+    void this.platformSprites;
+    void this.platformShadowSprites;
+    void this.platformDetailSprites;
+    void this.platformCategoryMarkerSprites;
+    void this.terrainSurfaceSprites;
+    void this.terrainSurfaceShadowSprites;
+    void this.terrainSurfaceAccentSprites;
+    void this.terrainSurfaceDetailSprites;
+    void this.launcherSprites;
+    void this.launcherCoreSprites;
+    void this.launcherCategoryMarkerSprites;
+    void this.gravityZoneSprites;
+    void this.gravityFieldSprites;
+    void this.gravityFieldCategoryMarkerSprites;
+    void this.gravityCapsuleShellSprites;
+    void this.gravityCapsuleEntryDoorSprites;
+    void this.gravityCapsuleExitDoorSprites;
+    void this.gravityCapsuleButtonSprites;
+    void this.gravityCapsuleButtonCoreSprites;
+    void this.gravityCapsuleShellMarkerSprites;
+    void this.gravityCapsuleButtonMarkerSprites;
+    void this.activationNodeSprites;
+    void this.activationNodeMarkerSprites;
+    void this.enemySprites;
+    void this.enemyAccentSprites;
+    void this.checkpointSprites;
+    void this.collectibleSprites;
+    void this.projectileSprites;
+    void this.rewardBlockSprites;
+    void this.rewardBlockLabels;
+    void this.rewardRevealTexts;
+    void this.hazardSprites;
+    void this.enemyDefeatVisibleUntilMs;
+    void this.playerDefeatVisibleUntilMs;
+    void this.playerDefeatResetPending;
+    void this.feedbackCounts;
+    void this.setPauseOverlayVisible;
+    void this.setStageStartArrivalVisible;
+    return this as unknown as GameSceneCleanupContext;
+  }
+
+  private getBaseDisplayContext(): GameSceneBaseDisplayContext {
+    void this.retroPalette;
+    void this.gravityZoneSprites;
+    void this.gravityFieldSprites;
+    void this.gravityFieldCategoryMarkerSprites;
+    void this.gravityCapsuleShellSprites;
+    void this.gravityCapsuleEntryDoorSprites;
+    void this.gravityCapsuleExitDoorSprites;
+    void this.gravityCapsuleButtonSprites;
+    void this.gravityCapsuleButtonCoreSprites;
+    void this.gravityCapsuleShellMarkerSprites;
+    void this.gravityCapsuleButtonMarkerSprites;
+    void this.activationNodeSprites;
+    void this.activationNodeMarkerSprites;
+    void this.platformSprites;
+    void this.platformShadowSprites;
+    void this.platformDetailSprites;
+    void this.platformCategoryMarkerSprites;
+    void this.terrainSurfaceSprites;
+    void this.terrainSurfaceShadowSprites;
+    void this.terrainSurfaceAccentSprites;
+    void this.terrainSurfaceDetailSprites;
+    void this.launcherSprites;
+    void this.launcherCoreSprites;
+    void this.launcherCategoryMarkerSprites;
+    void this.checkpointSprites;
+    void this.collectibleSprites;
+    void this.rewardBlockSprites;
+    void this.rewardBlockLabels;
+    void this.enemySprites;
+    void this.enemyAccentSprites;
+    void this.playerAnchor;
+    void this.playerAura;
+    void this.player;
+    void this.playerHelmet;
+    void this.playerVisor;
+    void this.playerChest;
+    void this.playerBelt;
+    void this.playerPack;
+    void this.playerArmLeft;
+    void this.playerArmRight;
+    void this.playerBootLeft;
+    void this.playerBootRight;
+    void this.playerKneeLeft;
+    void this.playerKneeRight;
+    void this.playerHeadband;
+    void this.playerAccent;
+    void this.playerWingLeft;
+    void this.playerWingRight;
+    void this.exitShell;
+    void this.exitDoor;
+    void this.exitBase;
+    void this.exitBaseShadow;
+    void this.exitBeacon;
+    void this.arrivalBase;
+    void this.arrivalBaseShadow;
+    void this.arrivalBeacon;
+    void this.arrivalShell;
+    void this.arrivalDoor;
+    void this.arrivalAura;
+    void this.arrivalPlayer;
+    void this.pauseOverlay;
+    void this.pauseText;
+    void this.gravityFieldColor;
+    void this.gravityFieldAlpha;
+    void this.gravityCapsuleShellColor;
+    void this.gravityCapsuleShellAlpha;
+    void this.gravityCapsuleShellStrokeColor;
+    void this.gravityCapsuleEntryDoorColor;
+    void this.gravityCapsuleExitDoorColor;
+    void this.gravityCapsuleDoorAlpha;
+    void this.gravityCapsuleButtonColor;
+    void this.gravityCapsuleButtonCoreColor;
+    void this.activationNodeColor;
+    void this.platformColor;
+    void this.platformDetailColor;
+    void this.terrainSurfaceColor;
+    void this.terrainSurfaceAlpha;
+    void this.terrainSurfaceAccentColor;
+    void this.launcherColor;
+    void this.rewardBlockColor;
+    void this.rewardBlockLabel;
+    void this.createTraversalMarkerRects;
+    void this.drawHazard;
+    return this as unknown as GameSceneBaseDisplayContext;
+  }
+
+  private getPlatformRenderingContext(): GameScenePlatformRenderingContext {
+    void this.bridge;
+    void this.retroPalette;
+    void this.platformSprites;
+    void this.platformShadowSprites;
+    void this.platformDetailSprites;
+    void this.platformCategoryMarkerSprites;
+    void this.launcherSprites;
+    void this.launcherCoreSprites;
+    void this.launcherCategoryMarkerSprites;
+    void this.activationNodeSprites;
+    void this.activationNodeMarkerSprites;
+    void this.terrainSurfaceSprites;
+    void this.terrainSurfaceShadowSprites;
+    void this.terrainSurfaceAccentSprites;
+    void this.terrainSurfaceDetailSprites;
+    void this.platformColor;
+    void this.platformDetailColor;
+    void this.launcherColor;
+    void this.activationNodeColor;
+    void this.terrainSurfaceColor;
+    void this.terrainSurfaceAlpha;
+    void this.terrainSurfaceStrokeColor;
+    void this.terrainSurfaceStrokeAlpha;
+    void this.terrainSurfaceShadowAlpha;
+    void this.terrainSurfaceAccentY;
+    void this.terrainSurfaceAccentWidth;
+    void this.terrainSurfaceAccentHeight;
+    void this.terrainSurfaceAccentColor;
+    void this.terrainSurfaceAccentAlpha;
+    void this.syncStickySurfaceDetails;
+    void this.syncBrittleSurfaceDetails;
+    return this as unknown as GameScenePlatformRenderingContext;
+  }
+
+  private getGravityRenderingContext(): GameSceneGravityRenderingContext {
+    void this.bridge;
+    void this.retroPalette;
+    void this.gravityFieldSprites;
+    void this.gravityFieldCategoryMarkerSprites;
+    void this.gravityCapsuleShellSprites;
+    void this.gravityCapsuleEntryDoorSprites;
+    void this.gravityCapsuleExitDoorSprites;
+    void this.gravityCapsuleButtonSprites;
+    void this.gravityCapsuleButtonCoreSprites;
+    void this.gravityCapsuleShellMarkerSprites;
+    void this.gravityCapsuleButtonMarkerSprites;
+    void this.gravityFieldColor;
+    void this.gravityFieldAlpha;
+    void this.gravityCapsuleShellColor;
+    void this.gravityCapsuleShellAlpha;
+    void this.gravityCapsuleShellStrokeColor;
+    void this.gravityCapsuleEntryDoorColor;
+    void this.gravityCapsuleExitDoorColor;
+    void this.gravityCapsuleDoorAlpha;
+    void this.gravityCapsuleButtonColor;
+    void this.gravityCapsuleButtonCoreColor;
+    return this as unknown as GameSceneGravityRenderingContext;
+  }
+
+  private getRewardRenderingContext(): GameSceneRewardRenderingContext {
+    void this.retroPalette;
+    void this.checkpointSprites;
+    void this.collectibleSprites;
+    void this.rewardBlockSprites;
+    void this.rewardBlockLabels;
+    void this.rewardRevealTexts;
+    void this.rewardBlockColor;
+    void this.rewardBlockLabel;
+    void this.rewardRevealText;
+    void this.rewardRevealColor;
+    return this as unknown as GameSceneRewardRenderingContext;
+  }
+
+  private getEnemyRenderingContext(): GameSceneEnemyRenderingContext {
+    void this.retroPalette;
+    void this.hazardSprites;
+    void this.enemySprites;
+    void this.enemyAccentSprites;
+    void this.projectileSprites;
+    void this.enemyDefeatVisibleUntilMs;
+    return this as unknown as GameSceneEnemyRenderingContext;
   }
 
   create(): void {
     this.bridge = this.registry.get('bridge') as SceneBridge;
     this.audio = new SynthAudio(this, () => this.bridge.getSession().getState().progress.runSettings.masterVolume);
     this.completeTransitionEvent = undefined;
-    const mount = this.game.canvas.parentElement as HTMLElement;
-    this.hud.root.remove();
-    this.hud = createHud(mount);
+    setupGameSceneHud(this.getHudSetupContext());
 
     const state = this.bridge.getSession().getState();
     const { stage } = state;
-  this.retroPalette = createRetroPresentationPalette(stage.palette);
-  this.previousFeedbackState = this.captureFeedbackSnapshot(state);
-  this.feedbackCounts = {};
-  this.currentPlayerPose = 'idle';
-  this.jumpPoseHoldUntilMs = 0;
-  this.debugJumpPoseUntilMs = 0;
-  this.lastJumpFeedbackAtMs = Number.NEGATIVE_INFINITY;
-  this.lastPlayerDefeatFeedbackAtMs = Number.NEGATIVE_INFINITY;
+    this.retroPalette = createRetroPresentationPalette(stage.palette);
+    this.previousFeedbackState = this.captureFeedbackSnapshot(state);
+    this.feedbackCounts = {};
+    this.currentPlayerPose = 'idle';
+    this.jumpPoseHoldUntilMs = 0;
+    this.debugJumpPoseUntilMs = 0;
+    this.lastJumpFeedbackAtMs = Number.NEGATIVE_INFINITY;
+    this.lastPlayerDefeatFeedbackAtMs = Number.NEGATIVE_INFINITY;
     this.playerDefeatFeedbackLatched = false;
-
-    this.cameras.main.fadeIn(150);
-    configureCamera(
-      this.cameras.main,
-      stage.world.width,
-      stage.world.height,
-      `#${this.retroPalette.background.toString(16).padStart(6, '0')}`,
+    this.playerDefeatVisibleUntilMs = Number.NEGATIVE_INFINITY;
+    this.playerDefeatResetPending = false;
+    this.enemyDefeatVisibleUntilMs.clear();
+    this.stageStartArrivalTimerMs = STAGE_START_SEQUENCE_DURATION_MS;
+    this.stageStartCapsuleLayout = getStageStartCapsuleLayout(
+      resolveStageStartCapsuleAnchor(state.stage.startCabin),
+      state.player,
     );
-
-    drawRetroBackdrop(this, 0, 0, stage.world.width, stage.world.height, this.retroPalette, 'gameplay');
-
-    for (const zone of state.stageRuntime.lowGravityZones) {
-      const overlay = this.add
-        .rectangle(
-          zone.x + zone.width / 2,
-          zone.y + zone.height / 2,
-          zone.width,
-          zone.height,
-          this.retroPalette.cool,
-          0.11,
-        )
-        .setStrokeStyle(2, this.retroPalette.cool, 0.4)
-        .setOrigin(0.5);
-      this.gravityZoneSprites.push(overlay);
-    }
-
-    for (const field of state.stageRuntime.gravityFields) {
-      const overlay = this.add
-        .rectangle(
-          field.x + field.width / 2,
-          field.y + field.height / 2,
-          field.width,
-          field.height,
-          this.gravityFieldColor(field),
-          this.gravityFieldAlpha(field),
-        )
-        .setStrokeStyle(2, this.gravityFieldColor(field), 0.42)
-        .setOrigin(0.5)
-        .setDepth(1);
-      this.gravityFieldSprites.set(field.id, overlay);
-    }
-
-    for (const node of state.stageRuntime.activationNodes) {
-      const sprite = this.add
-        .rectangle(
-          node.x + node.width / 2,
-          node.y + node.height / 2,
-          node.width,
-          node.height,
-          this.activationNodeColor(node),
-          0.9,
-        )
-        .setStrokeStyle(2, this.retroPalette.border, 0.48)
-        .setOrigin(0.5)
-        .setDepth(3);
-      this.activationNodeSprites.set(node.id, sprite);
-    }
-
-    for (const platform of state.stageRuntime.platforms) {
-      const sprite = this.add
-        .rectangle(
-          platform.x + platform.width / 2,
-          platform.y + platform.height / 2,
-          platform.width,
-          platform.height,
-          this.platformColor(platform),
-        )
-        .setOrigin(0.5);
-      const shadow = this.add
-        .rectangle(
-          platform.x + platform.width / 2,
-          platform.y + platform.height / 2 + Math.max(2, Math.floor(platform.height * 0.18)),
-          Math.max(6, platform.width - 6),
-          Math.max(4, Math.floor(platform.height * 0.38)),
-          this.retroPalette.ink,
-          0.3,
-        )
-        .setOrigin(0.5)
-        .setDepth(0.5);
-      const detail = this.add
-        .rectangle(
-          platform.x + platform.width / 2,
-          platform.y + Math.min(platform.height / 2, 4),
-          platform.width,
-          Math.min(platform.height, 6),
-          this.platformDetailColor(platform),
-        )
-        .setOrigin(0.5)
-        .setDepth(1);
-      sprite.setVisible(
-        isPlatformVisible(
-          platform,
-          state.stageRuntime.revealedPlatformIds,
-          state.stageRuntime.temporaryBridges.filter((bridge) => bridge.active).map((bridge) => bridge.id),
-        ),
-      );
-      this.platformSprites.set(platform.id, sprite);
-      this.platformShadowSprites.set(platform.id, shadow);
-      this.platformDetailSprites.set(platform.id, detail);
-    }
-
-    for (const terrainSurface of state.stageRuntime.terrainSurfaces) {
-      const sprite = this.add
-        .rectangle(
-          terrainSurface.x + terrainSurface.width / 2,
-          terrainSurface.y + terrainSurface.height / 2,
-          terrainSurface.width,
-          terrainSurface.height,
-          this.terrainSurfaceColor(terrainSurface),
-          this.terrainSurfaceAlpha(terrainSurface),
-        )
-        .setOrigin(0.5)
-        .setDepth(2);
-      const shadow = this.add
-        .rectangle(
-          terrainSurface.x + terrainSurface.width / 2,
-          terrainSurface.y + terrainSurface.height / 2 + Math.max(2, Math.floor(terrainSurface.height * 0.16)),
-          Math.max(8, terrainSurface.width - 8),
-          Math.max(4, Math.floor(terrainSurface.height * 0.32)),
-          this.retroPalette.ink,
-          0.2,
-        )
-        .setOrigin(0.5)
-        .setDepth(2.5);
-      const accent = this.add
-        .rectangle(
-          terrainSurface.x + terrainSurface.width / 2,
-          terrainSurface.y + Math.max(2, Math.floor(terrainSurface.height / 2)),
-          terrainSurface.width,
-          Math.min(terrainSurface.height, 4),
-          this.terrainSurfaceAccentColor(terrainSurface),
-          0.9,
-        )
-        .setOrigin(0.5)
-        .setDepth(3);
-      sprite.setStrokeStyle(2, this.retroPalette.border, terrainSurface.kind === 'stickySludge' ? 0.24 : 0.38);
-      this.terrainSurfaceSprites.set(terrainSurface.id, sprite);
-      this.terrainSurfaceShadowSprites.set(terrainSurface.id, shadow);
-      this.terrainSurfaceAccentSprites.set(terrainSurface.id, accent);
-    }
-
-    for (const launcherEntry of state.stageRuntime.launchers) {
-      const sprite = this.add
-        .rectangle(
-          launcherEntry.x + launcherEntry.width / 2,
-          launcherEntry.y + launcherEntry.height / 2,
-          launcherEntry.width,
-          launcherEntry.height,
-          this.launcherColor(launcherEntry),
-          0.86,
-        )
-        .setOrigin(0.5)
-        .setDepth(3);
-      const core = this.add
-        .rectangle(
-          launcherEntry.x + launcherEntry.width / 2,
-          launcherEntry.y + launcherEntry.height / 2,
-          Math.max(6, launcherEntry.width - 8),
-          Math.max(6, launcherEntry.height - 8),
-          this.retroPalette.bright,
-          0.46,
-        )
-        .setOrigin(0.5)
-        .setDepth(3.5);
-      sprite.setStrokeStyle(2, this.retroPalette.border, 0.5);
-      this.launcherSprites.set(launcherEntry.id, sprite);
-      this.launcherCoreSprites.set(launcherEntry.id, core);
-    }
-
-    for (const hazard of state.stageRuntime.hazards) {
-      this.drawHazard(hazard);
-    }
-
-    this.playerAura = this.add.ellipse(0, 0, 40, 52, this.retroPalette.cool, 0.18).setVisible(false).setDepth(5);
-    this.playerPack = this.add.rectangle(0, 0, 8, 16, this.retroPalette.ink).setOrigin(0, 0).setDepth(5);
-    this.player = this.add.rectangle(0, 0, 24, 40, this.retroPalette.warm).setOrigin(0, 0).setDepth(6);
-    this.playerHelmet = this.add.rectangle(0, 0, 20, 12, this.retroPalette.border).setOrigin(0, 0).setDepth(7);
-    this.playerVisor = this.add.rectangle(0, 0, 12, 6, this.retroPalette.cool).setOrigin(0, 0).setDepth(8);
-    this.playerChest = this.add.rectangle(0, 0, 12, 8, this.retroPalette.cool).setOrigin(0, 0).setDepth(7);
-    this.playerBelt = this.add.rectangle(0, 0, 16, 4, this.retroPalette.ink).setOrigin(0, 0).setDepth(7);
-    this.playerBootLeft = this.add.rectangle(0, 0, 6, 6, this.retroPalette.ink).setOrigin(0, 0).setDepth(7);
-    this.playerBootRight = this.add.rectangle(0, 0, 6, 6, this.retroPalette.ink).setOrigin(0, 0).setDepth(7);
-    this.playerKneeLeft = this.add.rectangle(0, 0, 4, 5, this.retroPalette.border).setOrigin(0, 0).setDepth(7);
-    this.playerKneeRight = this.add.rectangle(0, 0, 4, 5, this.retroPalette.border).setOrigin(0, 0).setDepth(7);
-    this.playerHeadband = this.add.rectangle(0, 0, 18, 6, this.retroPalette.border).setVisible(false).setDepth(7);
-    this.playerAccent = this.add.rectangle(0, 0, 10, 8, this.retroPalette.border).setVisible(false).setDepth(7);
-    this.playerWingLeft = this.add.rectangle(0, 0, 8, 16, this.retroPalette.bright).setVisible(false).setDepth(7);
-    this.playerWingRight = this.add.rectangle(0, 0, 8, 16, this.retroPalette.bright).setVisible(false).setDepth(7);
-
-    for (const checkpoint of state.stageRuntime.checkpoints) {
-      const sprite = this.add.sprite(checkpoint.rect.x, checkpoint.rect.y, 'checkpoint').setOrigin(0, 0);
-      this.checkpointSprites.set(checkpoint.id, sprite);
-    }
-
-    for (const collectible of state.stageRuntime.collectibles) {
-      const sprite = this.add.sprite(collectible.position.x, collectible.position.y, 'collectible');
-      this.collectibleSprites.set(collectible.id, sprite);
-    }
-
-    for (const rewardBlock of state.stageRuntime.rewardBlocks) {
-      const blockSprite = this.add
-        .rectangle(
-          rewardBlock.x + rewardBlock.width / 2,
-          rewardBlock.y + rewardBlock.height / 2,
-          rewardBlock.width,
-          rewardBlock.height,
-          this.rewardBlockColor(rewardBlock),
-        )
-        .setStrokeStyle(2, this.retroPalette.border, 0.55)
-        .setOrigin(0.5);
-      const label = this.add
-        .text(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2, this.rewardBlockLabel(rewardBlock), {
-          fontFamily: RETRO_FONT_FAMILY,
-          fontSize: '14px',
-          color: this.retroPalette.shadow,
-          fontStyle: 'bold',
-        })
-        .setOrigin(0.5);
-      this.rewardBlockSprites.set(rewardBlock.id, blockSprite);
-      this.rewardBlockLabels.set(rewardBlock.id, label);
-    }
-
-    for (const enemy of state.stageRuntime.enemies) {
-      const sprite = this.add.sprite(enemy.x, enemy.y, enemy.kind).setOrigin(0, 0);
-      this.enemySprites.set(enemy.id, sprite);
-      if (enemy.kind === 'flyer') {
-        const accents = [
-          this.add.rectangle(enemy.x + 4, enemy.y + 4, 6, 6, this.retroPalette.bright, 0).setOrigin(0, 0).setDepth(10),
-          this.add.rectangle(enemy.x + 16, enemy.y + 10, 4, 4, this.retroPalette.cool, 0).setOrigin(0, 0).setDepth(10),
-        ];
-        this.enemyAccentSprites.set(enemy.id, accents);
-      }
-    }
-
-    this.exitSprite = this.add.sprite(stage.exit.x, stage.exit.y, 'exit').setOrigin(0, 0).setTint(this.retroPalette.warm);
-
-    this.pauseOverlay = this.add
-      .rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, this.retroPalette.ink, 0.8)
-      .setDepth(100)
-      .setScrollFactor(0)
-      .setVisible(false);
-    this.pauseText = this.add
-      .text(this.scale.width / 2, this.scale.height / 2, 'PAUSED', {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '40px',
-        color: this.retroPalette.text,
-        fontStyle: 'bold',
-        letterSpacing: 4,
-      })
-      .setOrigin(0.5)
-      .setDepth(101)
-      .setScrollFactor(0)
-      .setVisible(false);
+    this.gameplayMusicStarted = false;
+    createBaseDisplayObjects(this.getBaseDisplayContext(), state);
 
     this.setupInput();
-    this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
+    this.cameras.main.startFollow(this.playerAnchor, true, 0.08, 0.08);
     this.syncView();
     this.bridge.syncHud(this.hud);
-    this.audio.startStageMusic(stage);
+    this.startGameplayMusicIfReady();
 
     const syncPauseOverlayLayout = ({ width, height }: { width: number; height: number }): void => {
       this.pauseOverlay.setPosition(width / 2, height / 2).setSize(width, height);
@@ -445,33 +579,40 @@ export class GameScene extends Phaser.Scene {
   update(_: number, delta: number): void {
     const view = this.cameras.main.worldView;
     this.bridge.setCameraViewBox({ x: view.x, y: view.y, width: view.width, height: view.height });
-    this.bridge.consumeFrame(delta);
-    const state = this.bridge.getSession().getState();
-    if (state.player.dead) {
-      if (!this.playerDefeatFeedbackLatched) {
-        this.triggerPlayerDefeatFeedback(state.player.x + state.player.width / 2, state.player.y + state.player.height / 2);
-        this.playerDefeatFeedbackLatched = true;
-      }
+    const arrivalActive = this.isStageStartArrivalActive();
+    if (arrivalActive) {
+      this.updateStageStartArrival(delta);
     } else {
-      this.playerDefeatFeedbackLatched = false;
+      this.bridge.consumeFrame(delta);
     }
-    if (!state.player.onGround && state.player.vy < -80) {
-      this.triggerJumpFeedback(state);
-    }
-    const cues = this.bridge.drainCues();
-    for (const cue of cues) {
-      if (cue === AUDIO_CUES.stageClear || cue === AUDIO_CUES.finalCongrats) {
-        continue;
+    const state = this.bridge.getSession().getState();
+    if (!arrivalActive) {
+      if (state.player.dead) {
+        if (!this.playerDefeatFeedbackLatched) {
+          this.triggerPlayerDefeatFeedback(state.player.x + state.player.width / 2, state.player.y + state.player.height / 2);
+          this.playerDefeatFeedbackLatched = true;
+        }
+      } else {
+        this.playerDefeatFeedbackLatched = false;
       }
-      this.audio.playCue(cue);
-      this.handleCueFeedback(cue, state);
+      if (!state.player.onGround && state.player.vy < -80) {
+        this.triggerJumpFeedback(state);
+      }
+      const cues = this.bridge.drainCues();
+      for (const cue of cues) {
+        if (cue === AUDIO_CUES.stageClear || cue === AUDIO_CUES.finalCongrats) {
+          continue;
+        }
+        this.audio.playCue(cue);
+        this.handleCueFeedback(cue, state);
+      }
+      this.applyStateFeedback(state);
     }
-    this.applyStateFeedback(state);
     this.syncView();
     this.bridge.syncHud(this.hud);
 
-    if (state.levelJustCompleted && !this.completeTransitionEvent) {
-      this.completeTransitionEvent = this.time.delayedCall(350, () => {
+    if (!arrivalActive && state.levelJustCompleted && !this.completeTransitionEvent) {
+      this.completeTransitionEvent = this.time.delayedCall(COMPLETE_TRANSITION_DELAY_MS, () => {
         this.completeTransitionEvent = undefined;
         this.scene.start('complete');
       });
@@ -479,129 +620,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleShutdown(): void {
-    this.completeTransitionEvent?.remove(false);
-    this.completeTransitionEvent = undefined;
-    this.audio.stopMusic();
-    this.setPauseOverlayVisible(false);
-    this.hud.root.remove();
-    this.platformSprites.clear();
-    this.platformShadowSprites.clear();
-    this.platformDetailSprites.clear();
-    this.terrainSurfaceSprites.clear();
-    this.terrainSurfaceShadowSprites.clear();
-    this.terrainSurfaceAccentSprites.clear();
-    this.launcherSprites.clear();
-    this.launcherCoreSprites.clear();
-    this.gravityZoneSprites = [];
-    this.gravityFieldSprites.clear();
-    this.activationNodeSprites.clear();
-    this.enemySprites.clear();
-    this.enemyAccentSprites.clear();
-    this.checkpointSprites.clear();
-    this.collectibleSprites.clear();
-    this.projectileSprites.clear();
-    this.rewardBlockSprites.clear();
-    this.rewardBlockLabels.clear();
-    this.rewardRevealTexts.clear();
-    this.hazardSprites.clear();
-    this.feedbackCounts = {};
+    cleanupGameScene(this.getCleanupContext());
   }
 
   private setupInput(): void {
-    const cursors = this.input.keyboard?.createCursorKeys();
-    const left = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.A);
-    const right = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.D);
-    const up = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.W);
-    const shift = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
-    const space = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    const f = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.F);
-    const r = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.R);
-    const esc = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-
-    const unlockAudio = () => {
-      void runUnlockedAudioAction(this.audio, () => {
-        this.audio.startStageMusic(this.bridge.getSession().getState().stage);
-      });
-    };
-    this.input.keyboard?.once('keydown', unlockAudio);
-    this.input.once('pointerdown', unlockAudio);
-
-    const updateInput = () => {
-      const moveLeft = Boolean(cursors?.left.isDown || left?.isDown);
-      const moveRight = Boolean(cursors?.right.isDown || right?.isDown);
-      const jumpHeld = Boolean(cursors?.up.isDown || up?.isDown || space?.isDown);
-
-      this.bridge.setLeft(moveLeft);
-      this.bridge.setRight(moveRight);
-      this.bridge.setJumpHeld(jumpHeld);
-    };
-
-    this.events.on(Phaser.Scenes.Events.UPDATE, updateInput);
-
-    for (const key of [cursors?.up, up, space]) {
-      key?.on('down', () => this.bridge.pressJump());
-    }
-    shift?.on('down', () => this.bridge.pressDash());
-    f?.on('down', () => this.bridge.pressShoot());
-
-    r?.on('down', () => {
-      this.bridge.restartStage();
-      this.setPauseOverlayVisible(false);
-      this.scene.restart();
-    });
-
-    esc?.on('down', () => {
-      if (this.bridge.isRunPaused()) {
-        if (!this.bridge.resumeRun()) {
-          return;
-        }
-
-        this.setPauseOverlayVisible(false);
-        return;
-      }
-
-      if (!this.bridge.pauseRun()) {
-        return;
-      }
-
-      this.setPauseOverlayVisible(true);
-    });
-
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.events.off(Phaser.Scenes.Events.UPDATE, updateInput);
-    });
+    setupGameSceneInput(this.getInputContext());
   }
 
   private drawHazard(hazard: { id?: string; kind: string; rect: { x: number; y: number; width: number; height: number } }): void {
-    const base = this.add
-      .rectangle(
-        hazard.rect.x + hazard.rect.width / 2,
-        hazard.rect.y + hazard.rect.height / 2,
-        hazard.rect.width,
-        hazard.rect.height,
-        this.retroPalette.alert,
-      )
-      .setOrigin(0.5)
-      .setDepth(4)
-      .setStrokeStyle(2, this.retroPalette.ink, 1);
+    drawHazardRendering(this.getEnemyRenderingContext(), hazard as never);
+  }
 
-    const toothWidth = Math.max(8, Math.floor(hazard.rect.width / 3));
-    for (let index = 0; index < Math.max(2, Math.floor(hazard.rect.width / toothWidth)); index += 1) {
-      this.add
-        .rectangle(
-          hazard.rect.x + toothWidth / 2 + toothWidth * index,
-          hazard.rect.y + 2,
-          Math.max(4, toothWidth - 2),
-          Math.max(4, Math.floor(hazard.rect.height / 2)),
-          this.retroPalette.warm,
-        )
-        .setOrigin(0.5, 0)
-        .setDepth(5);
-    }
-
-    if (hazard.id) {
-      this.hazardSprites.set(hazard.id, base);
-    }
+  private createTraversalMarkerRects(count: number, depth: number): Phaser.GameObjects.Rectangle[] {
+    return Array.from({ length: count }, () =>
+      this.add.rectangle(0, 0, 6, 6, this.retroPalette.bright, 0.5).setOrigin(0.5).setDepth(depth).setVisible(false),
+    );
   }
 
   private syncView(): void {
@@ -615,11 +648,18 @@ export class GameScene extends Phaser.Scene {
     } else {
       this.playerDefeatFeedbackLatched = false;
     }
-    const playerVisible = !player.dead;
+    const playerDefeatHoldActive = player.dead && this.time.now < this.playerDefeatVisibleUntilMs;
+    if (this.playerDefeatResetPending && !playerDefeatHoldActive) {
+      this.resetPlayerDefeatPresentation();
+      this.playerDefeatResetPending = false;
+    }
+    const playerVisible =
+      (!player.dead || playerDefeatHoldActive) && !state.player.suppressPresentation && !this.isStageStartArrivalActive();
     const variantKey = state.player.presentationPower ?? 'base';
     const variant = PLAYER_POWER_VARIANTS[variantKey];
     const centerX = player.x + player.width / 2;
     const centerY = player.y + player.height / 2;
+    const facing = player.facing;
     const pose = getRetroPlayerPose({
       timeMs: this.time.now + centerX,
       velocityX: player.vx,
@@ -638,51 +678,91 @@ export class GameScene extends Phaser.Scene {
           })
         : pose;
     this.currentPlayerPose = effectivePose.state;
-      this.player.setVisible(playerVisible);
-      this.playerHelmet.setVisible(playerVisible);
-      this.playerVisor.setVisible(playerVisible);
-      this.playerChest.setVisible(playerVisible);
-      this.playerBelt.setVisible(playerVisible);
-      this.playerPack.setVisible(playerVisible);
-      this.playerBootLeft.setVisible(playerVisible);
-      this.playerBootRight.setVisible(playerVisible);
-      this.playerKneeLeft.setVisible(playerVisible);
-      this.playerKneeRight.setVisible(playerVisible);
-    this.player.setPosition(player.x, player.y + effectivePose.bodyOffsetY).setSize(24, effectivePose.bodyHeight);
-    this.player.setAlpha(player.invulnerableMs > 0 && Math.floor(player.invulnerableMs / 90) % 2 === 0 ? 0.45 : 1);
+    const torsoHeight = effectivePose.state === 'dash' ? 16 : effectivePose.state === 'fall' ? 18 : 17;
+    const torsoY = player.y + 13 + effectivePose.bodyOffsetY;
+    const armSwing =
+      effectivePose.state === 'run-a'
+        ? -2
+        : effectivePose.state === 'run-b'
+          ? 2
+          : effectivePose.state === 'jump'
+            ? -3
+            : effectivePose.state === 'fall'
+              ? 1
+              : effectivePose.state === 'dash'
+                ? 4
+                : 0;
+    const leftArmY = player.y + 15 + effectivePose.chestOffsetY + (facing === 1 ? -armSwing : armSwing);
+    const rightArmY = player.y + 15 + effectivePose.chestOffsetY + (facing === 1 ? armSwing : -armSwing);
+    const visorX = facing === 1 ? player.x + 8 : player.x + 6;
+    const packX = facing === 1 ? player.x + 2 : player.x + player.width - 8;
+    const chestX = player.x + 8;
+    this.playerAnchor.setPosition(player.x, player.y).setSize(player.width, player.height);
+    this.player.setVisible(playerVisible);
+    this.playerHelmet.setVisible(playerVisible);
+    this.playerVisor.setVisible(playerVisible);
+    this.playerChest.setVisible(playerVisible);
+    this.playerBelt.setVisible(playerVisible);
+    this.playerPack.setVisible(playerVisible);
+    this.playerArmLeft.setVisible(playerVisible);
+    this.playerArmRight.setVisible(playerVisible);
+    this.playerBootLeft.setVisible(playerVisible);
+    this.playerBootRight.setVisible(playerVisible);
+    this.playerKneeLeft.setVisible(playerVisible);
+    this.playerKneeRight.setVisible(playerVisible);
+    this.player.setPosition(player.x + 5, torsoY).setSize(14, torsoHeight);
+    this.player.setAlpha(playerDefeatHoldActive ? 1 : player.invulnerableMs > 0 && Math.floor(player.invulnerableMs / 90) % 2 === 0 ? 0.45 : 1);
     this.player.setFillStyle(variant.bodyColor);
     this.player.setStrokeStyle(2, variant.detailColor, 0.95);
     this.playerHelmet
-      .setPosition(player.x + 2, player.y + 2 + effectivePose.helmetOffsetY)
+      .setPosition(player.x + 4, player.y + 2 + effectivePose.helmetOffsetY)
+      .setSize(16, 11)
       .setFillStyle(variant.bodyColor)
       .setStrokeStyle(2, variant.detailColor, 0.95);
-    this.playerVisor.setPosition(player.x + 6, player.y + 6 + effectivePose.helmetOffsetY).setFillStyle(variant.accentColor);
+    this.playerVisor.setPosition(visorX, player.y + 6 + effectivePose.helmetOffsetY).setSize(8, 5).setFillStyle(variant.accentColor);
     this.playerChest
-      .setPosition(player.x + 6, player.y + 17 + effectivePose.chestOffsetY)
+      .setPosition(chestX, player.y + 18 + effectivePose.chestOffsetY)
+      .setSize(8, 6)
       .setFillStyle(variant.accentColor)
-      .setAlpha(this.player.alpha * 0.9);
+      .setAlpha(playerDefeatHoldActive ? 1 : this.player.alpha * 0.9);
     this.playerBelt
-      .setPosition(player.x + 4, player.y + 25 + effectivePose.bodyOffsetY)
+      .setPosition(player.x + 6, player.y + 25 + effectivePose.bodyOffsetY)
+      .setSize(12, 3)
       .setFillStyle(variant.detailColor)
       .setAlpha(this.player.alpha);
     this.playerPack
-      .setPosition(player.x - 2, player.y + 14 + effectivePose.packOffsetY)
+      .setPosition(packX, player.y + 13 + effectivePose.packOffsetY)
+      .setSize(6, 14)
       .setFillStyle(variant.detailColor)
+      .setAlpha(this.player.alpha);
+    this.playerArmLeft
+      .setPosition(player.x + 2, leftArmY)
+      .setSize(4, effectivePose.state === 'dash' ? 10 : 12)
+      .setFillStyle(variant.bodyColor)
+      .setAlpha(this.player.alpha);
+    this.playerArmRight
+      .setPosition(player.x + player.width - 6, rightArmY)
+      .setSize(4, effectivePose.state === 'dash' ? 10 : 12)
+      .setFillStyle(variant.bodyColor)
       .setAlpha(this.player.alpha);
     this.playerBootLeft
       .setPosition(player.x + 4, player.y + player.height - 6 + effectivePose.bootLeftOffsetY)
+      .setSize(6, 6)
       .setFillStyle(variant.detailColor)
       .setAlpha(this.player.alpha);
     this.playerBootRight
       .setPosition(player.x + player.width - 10, player.y + player.height - 6 + effectivePose.bootRightOffsetY)
+      .setSize(6, 6)
       .setFillStyle(variant.detailColor)
       .setAlpha(this.player.alpha);
     this.playerKneeLeft
-      .setPosition(player.x + 5, player.y + player.height - 12 + effectivePose.kneeLeftOffsetY)
+      .setPosition(player.x + 6, player.y + player.height - 12 + effectivePose.kneeLeftOffsetY)
+      .setSize(4, 5)
       .setFillStyle(variant.accentColor)
       .setAlpha(this.player.alpha * 0.85);
     this.playerKneeRight
-      .setPosition(player.x + player.width - 9, player.y + player.height - 12 + effectivePose.kneeRightOffsetY)
+      .setPosition(player.x + player.width - 10, player.y + player.height - 12 + effectivePose.kneeRightOffsetY)
+      .setSize(4, 5)
       .setFillStyle(variant.accentColor)
       .setAlpha(this.player.alpha * 0.85);
     const auraStep = getRetroMotionStep(this.time.now + centerX, 110, 3);
@@ -692,6 +772,22 @@ export class GameScene extends Phaser.Scene {
       .setFillStyle(variant.auraColor ?? variant.accentColor, variant.auraColor ? 0.24 : 0.12)
       .setVisible(playerVisible && Boolean(variant.auraColor))
       .setAlpha(variant.auraColor ? auraAlpha : 0);
+    if (playerDefeatHoldActive) {
+      this.player.setFillStyle(this.retroPalette.bright);
+      this.player.setStrokeStyle(3, this.retroPalette.alert, 1);
+      this.playerHelmet.setFillStyle(this.retroPalette.alert);
+      this.playerVisor.setFillStyle(this.retroPalette.bright);
+      this.playerChest.setFillStyle(this.retroPalette.alert).setAlpha(1);
+      this.playerBelt.setFillStyle(this.retroPalette.bright);
+      this.playerPack.setFillStyle(this.retroPalette.alert);
+      this.playerArmLeft.setFillStyle(this.retroPalette.alert);
+      this.playerArmRight.setFillStyle(this.retroPalette.alert);
+      this.playerBootLeft.setFillStyle(this.retroPalette.bright);
+      this.playerBootRight.setFillStyle(this.retroPalette.bright);
+      this.playerKneeLeft.setFillStyle(this.retroPalette.bright);
+      this.playerKneeRight.setFillStyle(this.retroPalette.bright);
+      this.setPlayerVisualDepths(12, 13);
+    }
     this.playerHeadband.setVisible(false);
     this.playerAccent.setVisible(false);
     this.playerWingLeft.setVisible(false);
@@ -699,6 +795,8 @@ export class GameScene extends Phaser.Scene {
     if (playerVisible) {
       this.syncPlayerAccessories(variantKey, variant, player, effectivePose);
     }
+    this.applyExitFinishPresentation(state);
+    this.applyStageStartArrivalPresentation(state);
 
     for (const platform of state.stageRuntime.platforms) {
       this.syncPlatform(platform);
@@ -710,6 +808,14 @@ export class GameScene extends Phaser.Scene {
 
     for (const launcherEntry of state.stageRuntime.launchers) {
       this.syncLauncher(launcherEntry);
+    }
+
+    for (const gravityField of state.stageRuntime.gravityFields) {
+      this.syncGravityField(gravityField);
+    }
+
+    for (const gravityCapsule of state.stageRuntime.gravityCapsules) {
+      this.syncGravityCapsule(gravityCapsule);
     }
 
     for (const activationNode of state.stageRuntime.activationNodes) {
@@ -754,7 +860,27 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    this.exitSprite.setAlpha(state.stageRuntime.exitReached ? 0.55 : 1);
+    if (!state.exitFinish.active) {
+      this.exitBase
+        .setFillStyle(this.retroPalette.panelAlt, 0.94)
+        .setScale(1, 1)
+        .setAlpha(1);
+      this.exitBaseShadow.setAlpha(0.26).setScale(1, 1);
+      this.exitBeacon
+        .setFillStyle(state.stageRuntime.exitReached ? this.retroPalette.cool : this.retroPalette.bright, state.stageRuntime.exitReached ? 0.86 : 0.78)
+        .setScale(1, 1)
+        .setAlpha(state.stageRuntime.exitReached ? 0.9 : 0.78);
+      this.exitShell
+        .setAlpha(state.stageRuntime.exitReached ? 0.68 : 1)
+        .setScale(1, 1)
+        .setTint(this.retroPalette.warm);
+      this.exitDoor
+        .setTexture(EXIT_CAPSULE_TEXTURE_KEYS.door)
+        .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.door.width, EXIT_CAPSULE_ART_BOUNDS.door.height)
+        .setTint(state.stageRuntime.exitReached ? this.retroPalette.border : this.retroPalette.ink)
+        .setAlpha(state.stageRuntime.exitReached ? 0.76 : 0.88)
+        .setVisible(true);
+    }
   }
 
   getDebugSnapshot(): {
@@ -762,41 +888,126 @@ export class GameScene extends Phaser.Scene {
     pauseOverlayVisible: boolean;
     pauseText: string | null;
     hudVisible: boolean;
+    stageStartArrivalActive: boolean;
+    stageStartArrivalTimerMs: number;
+    stageStartArrivalProgress: number;
+    stageStartCapsulePhase: StageStartCapsulePhase;
+    stageStartCapsuleDoorClosedProgress: number;
+    stageStartWalkoutProgress: number;
+    stageStartControlLocked: boolean;
+    arrivalCapsuleVisible: boolean;
+    arrivalPlayerVisible: boolean;
+    arrivalPlayerX: number;
+    persistentStartCapsuleVisible: boolean;
+    arrivalCapsuleCenterX: number;
+    arrivalCapsuleCenterY: number;
+    arrivalCapsuleBaseY: number;
+    arrivalCapsuleShellWidth: number;
+    arrivalCapsuleDoorWidth: number;
+    arrivalCapsuleShellTextureKey: string;
+    arrivalCapsuleDoorTextureKey: string;
+    arrivalCapsuleUsesExitArt: boolean;
+    gameplayMusicStarted: boolean;
+    exitFinishActive: boolean;
+    exitFinishTimerMs: number;
+    exitDoorWidth: number;
+    exitDoorTextureKey: string;
+    exitDoorVisible: boolean;
+    exitDoorOpenProgress: number;
+    playerVisualVisibleCount: number;
+    exitSpriteTextureKey: string;
+    exitSpriteAlpha: number;
+    exitBaseVisible: boolean;
+    exitBeaconVisible: boolean;
     playerPose: ReturnType<typeof getRetroPlayerPose>['state'];
     feedbackCounts: Record<string, number>;
     terrainSurfaceVisuals: {
       id: string;
+      visualCategory: TraversalVisualCategory;
+      kind: TerrainSurfaceState['kind'];
       x: number;
       y: number;
       width: number;
       height: number;
       visible: boolean;
+      fillColor: number;
+      fillAlpha: number;
+      accentColor: number;
+      accentAlpha: number;
+      detailVisibleCount: number;
+      detailWidths: number[];
+      detailHeights: number[];
+      detailOffsets: { x: number; y: number }[];
+    }[];
+    platformVisuals: {
+      id: string;
+      kind: PlatformState['kind'];
+      visualCategory: TraversalVisualCategory;
+      revealId: string | null;
+      temporaryBridgeScannerId: string | null;
+      magneticPowered: boolean;
+      visible: boolean;
+      fillColor: number;
+      alpha: number;
+      markerVisibleCount: number;
     }[];
     launcherVisuals: {
       id: string;
+      visualCategory: TraversalVisualCategory;
       x: number;
       y: number;
       width: number;
       height: number;
       visible: boolean;
+      markerVisibleCount: number;
     }[];
     gravityFieldVisuals: {
       id: string;
+      visualCategory: TraversalVisualCategory;
       x: number;
       y: number;
       width: number;
       height: number;
       visible: boolean;
       fillColor: number;
+      fillAlpha: number;
+      markerVisibleCount: number;
+    }[];
+    gravityCapsuleVisuals: {
+      id: string;
+      enabled: boolean;
+      shellVisualCategory: TraversalVisualCategory;
+      buttonVisualCategory: TraversalVisualCategory;
+      shellVisible: boolean;
+        entryDoorVisible: boolean;
+        exitDoorVisible: boolean;
+      buttonVisible: boolean;
+      buttonActivated: boolean;
+      shellFillColor: number;
+      shellFillAlpha: number;
+        entryDoorFillColor: number;
+        exitDoorFillColor: number;
+      buttonFillColor: number;
+      buttonCoreFillColor: number;
+      shellMarkerVisibleCount: number;
+      buttonMarkerVisibleCount: number;
+    }[];
+    enemyVisuals: {
+      id: string;
+      kind: EnemyState['kind'];
+      visible: boolean;
+      tint: number;
     }[];
     activationNodeVisuals: {
       id: string;
+      visualCategory: TraversalVisualCategory;
       x: number;
       y: number;
       width: number;
       height: number;
       visible: boolean;
       fillColor: number;
+      markerVisibleCount: number;
     }[];
     magneticPlatformVisuals: {
       id: string;
@@ -817,6 +1028,41 @@ export class GameScene extends Phaser.Scene {
       pauseOverlayVisible: this.pauseOverlay.visible && this.pauseText.visible,
       pauseText: this.pauseText.visible ? this.pauseText.text : null,
       hudVisible: this.hud.root.style.visibility !== 'hidden',
+      stageStartArrivalActive: this.isStageStartArrivalActive(),
+      stageStartArrivalTimerMs: this.stageStartArrivalTimerMs,
+      stageStartArrivalProgress: this.getStageStartArrivalProgress(),
+      stageStartCapsulePhase: this.getStageStartCapsulePhase(),
+      stageStartCapsuleDoorClosedProgress: this.getStageStartCapsuleDoorClosedProgress(),
+      stageStartWalkoutProgress: this.getStageStartSequenceState().walkoutProgress,
+      stageStartControlLocked: this.getStageStartSequenceState().playerControlLocked,
+      arrivalCapsuleVisible: this.arrivalShell.visible,
+      arrivalPlayerVisible: this.arrivalPlayer.visible,
+      arrivalPlayerX: this.arrivalPlayer.x,
+      persistentStartCapsuleVisible: !this.isStageStartArrivalActive() && this.arrivalShell.visible,
+      arrivalCapsuleCenterX: this.arrivalShell.x,
+      arrivalCapsuleCenterY: this.arrivalShell.y,
+      arrivalCapsuleBaseY: this.arrivalBase.y,
+      arrivalCapsuleShellWidth: this.arrivalShell.displayWidth,
+      arrivalCapsuleDoorWidth: this.arrivalDoor.displayWidth,
+      arrivalCapsuleShellTextureKey: this.arrivalShell.texture.key,
+      arrivalCapsuleDoorTextureKey: this.arrivalDoor.texture.key,
+      arrivalCapsuleUsesExitArt:
+        this.arrivalShell.texture.key === EXIT_CAPSULE_TEXTURE_KEYS.shell &&
+        this.arrivalDoor.texture.key === EXIT_CAPSULE_TEXTURE_KEYS.door,
+      gameplayMusicStarted: this.gameplayMusicStarted,
+      exitFinishActive: state.exitFinish.active,
+      exitFinishTimerMs: state.exitFinish.timerMs,
+      exitDoorWidth: this.exitDoor.displayWidth,
+      exitDoorTextureKey: this.exitDoor.texture.key,
+      exitDoorVisible: this.exitDoor.visible,
+      exitDoorOpenProgress: getExitFinishDoorOpenProgress(this.getExitFinishProgress(state)),
+      playerVisualVisibleCount: this.getPlayerVisualTargets().filter(
+        (target) => (target as Phaser.GameObjects.GameObject & { visible?: boolean }).visible,
+      ).length,
+      exitSpriteTextureKey: this.exitShell.texture.key,
+      exitSpriteAlpha: this.exitShell.alpha,
+      exitBaseVisible: this.exitBase.visible,
+      exitBeaconVisible: this.exitBeacon.visible,
       playerPose,
       feedbackCounts: {
         ...this.feedbackCounts,
@@ -828,46 +1074,124 @@ export class GameScene extends Phaser.Scene {
         .getState()
         .stageRuntime.terrainSurfaces.map((surface) => ({
           id: surface.id,
+          visualCategory: getTerrainTraversalVisualCategory(surface),
+          kind: surface.kind,
           x: surface.x,
           y: surface.y,
           width: surface.width,
           height: surface.height,
           visible: this.terrainSurfaceSprites.get(surface.id)?.visible ?? false,
+          fillColor: this.terrainSurfaceSprites.get(surface.id)?.fillColor ?? 0,
+          fillAlpha: this.terrainSurfaceSprites.get(surface.id)?.fillAlpha ?? 0,
+          accentColor: this.terrainSurfaceAccentSprites.get(surface.id)?.fillColor ?? 0,
+          accentAlpha: this.terrainSurfaceAccentSprites.get(surface.id)?.fillAlpha ?? 0,
+          detailVisibleCount:
+            this.terrainSurfaceDetailSprites.get(surface.id)?.filter((detail) => detail.visible).length ?? 0,
+          detailWidths: this.terrainSurfaceDetailSprites.get(surface.id)?.map((detail) => detail.width) ?? [],
+          detailHeights: this.terrainSurfaceDetailSprites.get(surface.id)?.map((detail) => detail.height) ?? [],
+          detailOffsets:
+            this.terrainSurfaceDetailSprites.get(surface.id)?.map((detail) => ({
+              x: Math.round(detail.x - (surface.x + surface.width / 2)),
+              y: Math.round(detail.y - (surface.y + surface.height / 2)),
+            })) ?? [],
+        })),
+      platformVisuals: this.bridge
+        .getSession()
+        .getState()
+        .stageRuntime.platforms.map((platform) => ({
+          id: platform.id,
+          kind: platform.kind,
+          visualCategory: getPlatformTraversalVisualCategory(platform),
+          revealId: platform.reveal?.id ?? null,
+          temporaryBridgeScannerId: platform.temporaryBridge?.scannerId ?? null,
+          magneticPowered: platform.magnetic?.powered ?? false,
+          visible:
+            (this.platformSprites.get(platform.id)?.visible ?? false) ||
+            isPlatformVisible(platform, state.stageRuntime.revealedPlatformIds, activeTemporaryBridgeIds),
+          fillColor: this.platformSprites.get(platform.id)?.fillColor ?? 0,
+          alpha: this.platformSprites.get(platform.id)?.alpha ?? 0,
+          markerVisibleCount: this.platformCategoryMarkerSprites.get(platform.id)?.filter((marker) => marker.visible).length ?? 0,
         })),
       launcherVisuals: this.bridge
         .getSession()
         .getState()
         .stageRuntime.launchers.map((launcherEntry) => ({
           id: launcherEntry.id,
+          visualCategory: getLauncherTraversalVisualCategory(launcherEntry),
           x: launcherEntry.x,
           y: launcherEntry.y,
           width: launcherEntry.width,
           height: launcherEntry.height,
           visible: this.launcherSprites.get(launcherEntry.id)?.visible ?? false,
+          markerVisibleCount: this.launcherCategoryMarkerSprites.get(launcherEntry.id)?.filter((marker) => marker.visible).length ?? 0,
         })),
       gravityFieldVisuals: this.bridge
         .getSession()
         .getState()
-        .stageRuntime.gravityFields.map((field) => ({
-          id: field.id,
-          x: field.x,
-          y: field.y,
-          width: field.width,
-          height: field.height,
-          visible: this.gravityFieldSprites.get(field.id)?.visible ?? false,
-          fillColor: this.gravityFieldSprites.get(field.id)?.fillColor ?? 0,
+        .stageRuntime.gravityFields.map((field) => {
+          const capsule = field.gravityCapsuleId
+            ? state.stageRuntime.gravityCapsules.find((entry) => entry.id === field.gravityCapsuleId) ?? null
+            : null;
+          return {
+            id: field.id,
+            visualCategory: getGravityFieldTraversalVisualCategory(field, capsule),
+            x: field.x,
+            y: field.y,
+            width: field.width,
+            height: field.height,
+            visible: this.gravityFieldSprites.get(field.id)?.visible ?? false,
+            fillColor: this.gravityFieldSprites.get(field.id)?.fillColor ?? 0,
+            fillAlpha: this.gravityFieldSprites.get(field.id)?.fillAlpha ?? 0,
+            markerVisibleCount:
+              this.gravityFieldCategoryMarkerSprites.get(field.id)?.filter((marker) => marker.visible).length ?? 0,
+          };
+        }),
+      gravityCapsuleVisuals: this.bridge
+        .getSession()
+        .getState()
+        .stageRuntime.gravityCapsules.map((capsule) => ({
+          id: capsule.id,
+          enabled: capsule.enabled,
+          shellVisualCategory: getGravityCapsuleShellTraversalVisualCategory(capsule),
+          buttonVisualCategory: getGravityCapsuleButtonTraversalVisualCategory(capsule),
+          shellVisible: this.gravityCapsuleShellSprites.get(capsule.id)?.visible ?? false,
+          entryDoorVisible: this.gravityCapsuleEntryDoorSprites.get(capsule.id)?.visible ?? false,
+          exitDoorVisible: this.gravityCapsuleExitDoorSprites.get(capsule.id)?.visible ?? false,
+          buttonVisible: this.gravityCapsuleButtonSprites.get(capsule.id)?.visible ?? false,
+          buttonActivated: capsule.button.activated,
+          shellFillColor: this.gravityCapsuleShellSprites.get(capsule.id)?.fillColor ?? 0,
+          shellFillAlpha: this.gravityCapsuleShellSprites.get(capsule.id)?.fillAlpha ?? 0,
+          entryDoorFillColor: this.gravityCapsuleEntryDoorSprites.get(capsule.id)?.fillColor ?? 0,
+          exitDoorFillColor: this.gravityCapsuleExitDoorSprites.get(capsule.id)?.fillColor ?? 0,
+          buttonFillColor: this.gravityCapsuleButtonSprites.get(capsule.id)?.fillColor ?? 0,
+          buttonCoreFillColor: this.gravityCapsuleButtonCoreSprites.get(capsule.id)?.fillColor ?? 0,
+          shellMarkerVisibleCount:
+            this.gravityCapsuleShellMarkerSprites.get(capsule.id)?.filter((marker) => marker.visible).length ?? 0,
+          buttonMarkerVisibleCount:
+            this.gravityCapsuleButtonMarkerSprites.get(capsule.id)?.filter((marker) => marker.visible).length ?? 0,
+        })),
+      enemyVisuals: this.bridge
+        .getSession()
+        .getState()
+        .stageRuntime.enemies.map((enemy) => ({
+          id: enemy.id,
+          kind: enemy.kind,
+          visible: this.enemySprites.get(enemy.id)?.visible ?? false,
+          tint: this.enemySprites.get(enemy.id)?.tintTopLeft ?? 0,
         })),
       activationNodeVisuals: this.bridge
         .getSession()
         .getState()
         .stageRuntime.activationNodes.map((node) => ({
           id: node.id,
+          visualCategory: getActivationNodeTraversalVisualCategory(node),
           x: node.x,
           y: node.y,
           width: node.width,
           height: node.height,
           visible: this.activationNodeSprites.get(node.id)?.visible ?? false,
           fillColor: this.activationNodeSprites.get(node.id)?.fillColor ?? 0,
+          markerVisibleCount: this.activationNodeMarkerSprites.get(node.id)?.filter((marker) => marker.visible).length ?? 0,
         })),
       magneticPlatformVisuals: this.bridge
         .getSession()
@@ -891,419 +1215,203 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncPlatform(platform: PlatformState): void {
-    const sprite = this.platformSprites.get(platform.id);
-    const shadow = this.platformShadowSprites.get(platform.id);
-    const detail = this.platformDetailSprites.get(platform.id);
-    if (!sprite || !shadow || !detail) {
-      return;
-    }
-
-    const state = this.bridge.getSession().getState();
-    const visible = isPlatformVisible(
-      platform,
-      state.stageRuntime.revealedPlatformIds,
-      state.stageRuntime.temporaryBridges.filter((bridge) => bridge.active).map((bridge) => bridge.id),
-    );
-    const active = isPlatformActive(
-      platform,
-      state.stageRuntime.revealedPlatformIds,
-      state.stageRuntime.temporaryBridges.filter((bridge) => bridge.active).map((bridge) => bridge.id),
-    );
-    sprite.setVisible(visible);
-    shadow.setVisible(visible);
-    detail.setVisible(visible);
-    if (!visible) {
-      return;
-    }
-
-    sprite.setPosition(platform.x + platform.width / 2, platform.y + platform.height / 2);
-    sprite.setFillStyle(this.platformColor(platform));
-    sprite.setStrokeStyle(0);
-    shadow
-      .setPosition(platform.x + platform.width / 2, platform.y + platform.height / 2 + Math.max(2, Math.floor(platform.height * 0.18)))
-      .setSize(Math.max(6, platform.width - 6), Math.max(4, Math.floor(platform.height * 0.38)))
-      .setAlpha(active ? 0.28 : 0.18);
-    detail
-      .setPosition(platform.x + platform.width / 2, platform.y + Math.min(platform.height / 2, 4))
-      .setSize(platform.width, Math.min(platform.height, 6))
-      .setFillStyle(this.platformDetailColor(platform));
-
-    if (platform.kind === 'falling' && platform.fall) {
-      const alpha = platform.fall.falling ? 0.45 : platform.fall.triggered ? 0.7 : 1;
-      sprite.setAlpha(alpha);
-      shadow.setAlpha(alpha * 0.28);
-      detail.setAlpha(alpha);
-    } else if (platform.magnetic) {
-      sprite.setAlpha(platform.magnetic.powered ? 1 : 0.46);
-      sprite.setStrokeStyle(2, platform.magnetic.powered ? 0xd6fff6 : 0x90a6bf, 0.48);
-      shadow.setAlpha(platform.magnetic.powered ? 0.3 : 0.16);
-      detail.setAlpha(platform.magnetic.powered ? 1 : 0.46);
-    } else if (platform.temporaryBridge && platform.reveal && !active) {
-      sprite.setAlpha(0.38);
-      sprite.setStrokeStyle(2, 0xf7f3d6, 0.2);
-      shadow.setAlpha(0.12);
-      detail.setAlpha(0.38);
-    } else {
-      sprite.setAlpha(1);
-      shadow.setAlpha(0.28);
-      detail.setAlpha(1);
-    }
+    syncPlatformRendering(this.getPlatformRenderingContext(), platform);
   }
 
   private syncLauncher(launcherEntry: LauncherState): void {
-    const sprite = this.launcherSprites.get(launcherEntry.id);
-    const core = this.launcherCoreSprites.get(launcherEntry.id);
-    if (!sprite || !core) {
-      return;
-    }
-
-    sprite
-      .setPosition(launcherEntry.x + launcherEntry.width / 2, launcherEntry.y + launcherEntry.height / 2)
-      .setSize(launcherEntry.width, launcherEntry.height)
-      .setFillStyle(this.launcherColor(launcherEntry), launcherEntry.timerMs > 0 ? 0.5 : 0.86)
-      .setVisible(true);
-    core
-      .setPosition(launcherEntry.x + launcherEntry.width / 2, launcherEntry.y + launcherEntry.height / 2)
-      .setSize(Math.max(6, launcherEntry.width - 8), Math.max(6, launcherEntry.height - 8))
-      .setFillStyle(launcherEntry.timerMs > 0 ? this.retroPalette.bright : this.retroPalette.cool, launcherEntry.timerMs > 0 ? 0.2 : 0.48)
-      .setVisible(true);
+    syncLauncherRendering(this.getPlatformRenderingContext(), launcherEntry);
   }
 
   private syncActivationNode(node: { id: string; x: number; y: number; width: number; height: number; activated: boolean }): void {
-    const sprite = this.activationNodeSprites.get(node.id);
-    if (!sprite) {
-      return;
-    }
-
-    sprite
-      .setPosition(node.x + node.width / 2, node.y + node.height / 2)
-      .setSize(node.width, node.height)
-      .setFillStyle(this.activationNodeColor(node), node.activated ? 0.98 : 0.9)
-      .setStrokeStyle(2, node.activated ? this.retroPalette.bright : this.retroPalette.border, node.activated ? 0.52 : 0.4)
-      .setVisible(true);
+    syncActivationNodeRendering(this.getPlatformRenderingContext(), node as never);
   }
 
   private syncTerrainSurface(surface: TerrainSurfaceState): void {
-    const sprite = this.terrainSurfaceSprites.get(surface.id);
-    const shadow = this.terrainSurfaceShadowSprites.get(surface.id);
-    const accent = this.terrainSurfaceAccentSprites.get(surface.id);
-    if (!sprite || !shadow || !accent) {
-      return;
-    }
+    syncTerrainSurfaceRendering(this.getPlatformRenderingContext(), surface);
+  }
 
-    sprite.setPosition(surface.x + surface.width / 2, surface.y + surface.height / 2);
-    sprite.setSize(surface.width, surface.height);
-    sprite.setVisible(true);
-    sprite.setFillStyle(this.terrainSurfaceColor(surface), this.terrainSurfaceAlpha(surface));
-    sprite.setStrokeStyle(2, this.retroPalette.border, surface.kind === 'stickySludge' ? 0.24 : 0.38);
-    shadow
-      .setPosition(surface.x + surface.width / 2, surface.y + surface.height / 2 + Math.max(2, Math.floor(surface.height * 0.16)))
-      .setSize(Math.max(8, surface.width - 8), Math.max(4, Math.floor(surface.height * 0.32)))
-      .setVisible(true)
-      .setAlpha(surface.kind === 'stickySludge' ? 0.12 : 0.2);
-    accent
-      .setPosition(surface.x + surface.width / 2, surface.y + Math.max(2, Math.floor(surface.height / 2)))
-      .setSize(surface.width, Math.min(surface.height, 4))
-      .setFillStyle(this.terrainSurfaceAccentColor(surface), surface.kind === 'stickySludge' ? 0.58 : 0.82)
-      .setVisible(true);
+  private syncGravityField(field: GravityFieldState): void {
+    syncGravityFieldRendering(this.getGravityRenderingContext(), field);
+  }
+
+  private syncGravityCapsule(capsule: GravityCapsuleState): void {
+    syncGravityCapsuleRendering(this.getGravityRenderingContext(), capsule);
+  }
+
+  private syncBrittleSurfaceDetails(surface: TerrainSurfaceState, details: Phaser.GameObjects.Rectangle[]): void {
+    const broken = isBrittleSurfaceBroken(surface);
+    const warning = isBrittleSurfaceWarning(surface);
+    const centerX = surface.x + surface.width / 2;
+    const centerY = surface.y + surface.height / 2;
+    const shardWidth = Math.max(6, Math.floor(surface.width * (broken ? 0.12 : 0.08)));
+    const shardHeight = Math.max(4, Math.floor(surface.height * (broken ? 0.4 : 0.72)));
+    const shardOffsets = [-0.28, 0, 0.28];
+    const shardYOffsets = broken ? [0.12, 0.18, 0.08] : [0.06, -0.08, 0.1];
+    const shardAlphas = broken ? [0.22, 0.16, 0.22] : warning ? [0.82, 0.96, 0.82] : [0.44, 0.66, 0.44];
+
+    details.forEach((detail, index) => {
+      detail
+        .setPosition(centerX + surface.width * shardOffsets[index], centerY + surface.height * shardYOffsets[index])
+        .setSize(index === 1 ? shardWidth + 2 : shardWidth, index === 1 ? shardHeight + (broken ? 0 : 2) : shardHeight)
+        .setFillStyle(broken ? this.retroPalette.border : warning ? this.retroPalette.bright : this.retroPalette.border, shardAlphas[index])
+        .setVisible(true);
+    });
+  }
+
+  private syncStickySurfaceDetails(surface: TerrainSurfaceState, details: Phaser.GameObjects.Rectangle[]): void {
+    const centerX = surface.x + surface.width / 2;
+    const centerY = surface.y + surface.height / 2;
+    const bandHeight = Math.max(2, Math.floor(surface.height * 0.24));
+    const baseWidths = [0.84, 0.62, 0.74];
+    const yOffsets = [-0.16, 0.04, 0.22];
+    const driftStep = (this.time.now + surface.x) / 140;
+
+    details.forEach((detail, index) => {
+      const drift = Math.sin(driftStep + index * 0.9) * Math.max(4, surface.width * 0.04);
+      const widthPulse = (Math.cos(driftStep * 1.2 + index) + 1) * Math.max(2, surface.width * 0.03);
+      const bandWidth = Math.max(12, Math.floor(surface.width * baseWidths[index] - widthPulse));
+      detail
+        .setPosition(centerX + drift * (index === 1 ? -1 : 1), centerY + surface.height * yOffsets[index])
+        .setSize(bandWidth, bandHeight)
+        .setFillStyle(index === 1 ? this.retroPalette.warm : this.retroPalette.alert, index === 1 ? 0.34 : 0.46)
+        .setVisible(true);
+    });
   }
 
   private syncCheckpoint(checkpoint: CheckpointState): void {
-    const sprite = this.checkpointSprites.get(checkpoint.id);
-    sprite
-      ?.setTint(checkpoint.activated ? this.retroPalette.safe : this.retroPalette.cool)
-      .setScale(checkpoint.activated ? 1.12 : 1);
+    syncCheckpointRendering(this.getRewardRenderingContext(), checkpoint);
   }
 
   private syncCollectible(collectible: CollectibleState): void {
-    const sprite = this.collectibleSprites.get(collectible.id);
-    if (!sprite) {
-      return;
-    }
-    sprite.setVisible(!collectible.collected);
-    if (!collectible.collected) {
-      const collectibleStep = getRetroMotionStep(this.time.now + collectible.position.x, 140, 2);
-      sprite.setPosition(collectible.position.x, collectible.position.y);
-      sprite.setTint(this.retroPalette.warm);
-      sprite.setScale(collectibleStep === 0 ? 1 : 1.12);
-      sprite.setAlpha(collectibleStep === 0 ? 1 : 0.86);
-    }
+    syncCollectibleRendering(this.getRewardRenderingContext(), collectible);
   }
 
   private syncRewardBlock(rewardBlock: RewardBlockState): void {
-    const sprite = this.rewardBlockSprites.get(rewardBlock.id);
-    const label = this.rewardBlockLabels.get(rewardBlock.id);
-    if (!sprite || !label) {
-      return;
-    }
-
-    const flashProgress = Phaser.Math.Clamp(rewardBlock.hitFlashMs / 180, 0, 1);
-    const bumpOffset = flashProgress > 0 ? snapRetroValue(10 * flashProgress, 2) : 0;
-    const alpha = rewardBlock.used ? 0.35 : 1;
-
-    sprite.setPosition(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2 - bumpOffset);
-    sprite.setFillStyle(this.rewardBlockColor(rewardBlock));
-    sprite.setStrokeStyle(2, flashProgress > 0 ? 0xffffff : this.retroPalette.border, flashProgress > 0 ? 0.8 : 0.55);
-    sprite.setAlpha(alpha);
-    label.setPosition(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2 - bumpOffset);
-    label.setText(this.rewardBlockLabel(rewardBlock));
-    label.setAlpha(alpha);
+    syncRewardBlockRendering(this.getRewardRenderingContext(), rewardBlock);
   }
 
   private syncRewardReveal(rewardReveal: RewardRevealState): void {
-    let text = this.rewardRevealTexts.get(rewardReveal.id);
-    if (!text) {
-      text = this.add
-        .text(rewardReveal.x, rewardReveal.y, this.rewardRevealText(rewardReveal), {
-          fontFamily: RETRO_FONT_FAMILY,
-          fontSize: '18px',
-          color: this.rewardRevealColor(rewardReveal),
-          fontStyle: 'bold',
-          stroke: this.retroPalette.shadow,
-          strokeThickness: 4,
-        })
-        .setOrigin(0.5)
-        .setDepth(12);
-      this.rewardRevealTexts.set(rewardReveal.id, text);
-    }
-
-    const alpha = Phaser.Math.Clamp(rewardReveal.timerMs / rewardReveal.durationMs, 0, 1);
-    const floatOffset = snapRetroValue((1 - alpha) * 24, 3);
-    text.setText(this.rewardRevealText(rewardReveal));
-    text.setColor(this.rewardRevealColor(rewardReveal));
-    text.setPosition(rewardReveal.x, rewardReveal.y - floatOffset);
-    text.setAlpha(alpha);
+    syncRewardRevealRendering(this.getRewardRenderingContext(), rewardReveal);
   }
 
   private syncEnemy(enemy: EnemyState): void {
-    const sprite = this.enemySprites.get(enemy.id);
-    const accents = this.enemyAccentSprites.get(enemy.id) ?? [];
-    if (!sprite) {
-      return;
-    }
-    sprite.setVisible(enemy.alive);
-    if (enemy.alive) {
-      const motion = getRetroEnemyPose(enemy, this.time.now);
-      sprite.setPosition(enemy.x, enemy.y + motion.yOffset);
-      sprite.setFlipX(enemy.direction < 0);
-      sprite.setScale(motion.scaleX, motion.scaleY);
-      sprite.setAlpha(motion.alpha);
-      const turretVariant = enemy.variant ? TURRET_VARIANT_CONFIG[enemy.variant] : null;
-      let tint =
-        enemy.kind === 'charger'
-          ? this.retroPalette.alert
-          : enemy.kind === 'flyer'
-            ? this.retroPalette.cool
-            : turretVariant
-              ? turretVariant.baseColor
-              : enemy.kind === 'hopper'
-                ? this.retroPalette.safe
-                : this.retroPalette.warm;
-      if (enemy.kind === 'charger' && enemy.charger?.state === 'windup') {
-        tint = this.retroPalette.warm;
-      }
-      if (enemy.kind === 'turret' && turretVariant && enemy.turret?.telegraphMs) {
-        tint = turretVariant.telegraphColor;
-      }
-      sprite.setTint(tint);
-      for (const accent of accents) {
-        accent.setVisible(false);
-      }
-      if (enemy.kind === 'flyer' && accents.length === 2) {
-        accents[0]
-          .setPosition(enemy.x + 4 + motion.accentOffsetX, enemy.y + 3 + motion.accentOffsetY)
-          .setFillStyle(this.retroPalette.bright, motion.accentAlpha)
-          .setVisible(true);
-        accents[1]
-          .setPosition(enemy.x + enemy.width - 8 - motion.accentOffsetX, enemy.y + 11 - motion.accentOffsetY)
-          .setFillStyle(this.retroPalette.cool, Math.max(0.16, motion.accentAlpha * 0.72))
-          .setVisible(true);
-      }
-      return;
-    }
-
-    for (const accent of accents) {
-      accent.setVisible(false);
-    }
+    syncEnemyRendering(this.getEnemyRenderingContext(), enemy);
   }
 
   private syncProjectile(projectile: ProjectileState): void {
-    let sprite = this.projectileSprites.get(projectile.id);
-    if (!projectile.alive) {
-      sprite?.destroy();
-      this.projectileSprites.delete(projectile.id);
-      return;
-    }
-
-    if (!sprite) {
-      sprite = this.add.sprite(projectile.x, projectile.y, 'projectile').setOrigin(0, 0);
-      this.projectileSprites.set(projectile.id, sprite);
-    }
-
-    sprite.setPosition(projectile.x, projectile.y);
-    sprite.setTint(projectile.variant ? TURRET_VARIANT_CONFIG[projectile.variant].projectileColor : 0xffc15b);
-    sprite.setScale(projectile.variant ? 1.18 : 1.06);
-    sprite.setAlpha(projectile.variant ? 0.96 : 0.9);
+    syncProjectileRendering(this.getEnemyRenderingContext(), projectile);
   }
 
   private platformColor(platform: PlatformState): number {
-    if (platform.magnetic) {
-      return platform.magnetic.powered ? this.retroPalette.cool : this.retroPalette.panelAlt;
-    }
-
-    if (platform.temporaryBridge) {
-      return this.retroPalette.cool;
-    }
-
-    if (platform.reveal) {
-      return this.retroPalette.border;
-    }
-
-    switch (platform.kind) {
-      case 'moving':
-        return this.retroPalette.muted;
-      case 'falling':
-        return this.retroPalette.alert;
-      case 'spring':
-        return this.retroPalette.safe;
-      default:
-        return this.retroPalette.panelAlt;
-    }
+    return platformColor(this.retroPalette, platform);
   }
 
   private platformDetailColor(platform: PlatformState): number {
-    if (platform.magnetic) {
-      return platform.magnetic.powered ? this.retroPalette.bright : this.retroPalette.cool;
-    }
-
-    if (platform.temporaryBridge) {
-      return this.retroPalette.bright;
-    }
-
-    if (platform.reveal) {
-      return this.retroPalette.cool;
-    }
-
-    switch (platform.kind) {
-      case 'moving':
-        return this.retroPalette.cool;
-      case 'falling':
-        return this.retroPalette.warm;
-      case 'spring':
-        return this.retroPalette.border;
-      default:
-        return this.retroPalette.muted;
-    }
+    return platformDetailColor(this.retroPalette, platform);
   }
 
   private activationNodeColor(node: { activated: boolean }): number {
-    return node.activated ? this.retroPalette.safe : this.retroPalette.muted;
+    return activationNodeColor(this.retroPalette, node);
   }
 
   private terrainSurfaceColor(surface: TerrainSurfaceState): number {
-    if (surface.kind === 'stickySludge') {
-      return this.retroPalette.panelAlt;
-    }
-
-    if (isBrittleSurfaceBroken(surface)) {
-      return this.retroPalette.muted;
-    }
-
-    if (isBrittleSurfaceWarning(surface)) {
-      return this.retroPalette.warm;
-    }
-
-    return this.retroPalette.cool;
+    return terrainSurfaceColor(this.retroPalette, surface);
   }
 
   private terrainSurfaceAccentColor(surface: TerrainSurfaceState): number {
-    if (surface.kind === 'stickySludge') {
-      return this.retroPalette.alert;
-    }
-
-    if (isBrittleSurfaceBroken(surface)) {
-      return this.retroPalette.ink;
-    }
-
-    if (isBrittleSurfaceWarning(surface)) {
-      return this.retroPalette.bright;
-    }
-
-    return this.retroPalette.border;
+    return terrainSurfaceAccentColor(this.retroPalette, surface);
   }
 
   private launcherColor(launcherEntry: LauncherState): number {
-    return launcherEntry.kind === 'bouncePod' ? this.retroPalette.safe : this.retroPalette.warm;
+    return launcherColor(this.retroPalette, launcherEntry);
   }
 
   private terrainSurfaceAlpha(surface: TerrainSurfaceState): number {
-    if (surface.kind === 'stickySludge') {
-      return 0.78;
-    }
-
-    return isBrittleSurfaceBroken(surface) ? 0.34 : isBrittleSurfaceWarning(surface) ? 0.92 : 0.8;
+    return terrainSurfaceAlpha(surface);
   }
 
-  private gravityFieldColor(field: GravityFieldState): number {
-    return field.kind === 'anti-grav-stream' ? this.retroPalette.cool : this.retroPalette.warm;
+  private terrainSurfaceStrokeColor(surface: TerrainSurfaceState): number {
+    return terrainSurfaceStrokeColor(this.retroPalette, surface);
   }
 
-  private gravityFieldAlpha(field: GravityFieldState): number {
-    return field.kind === 'anti-grav-stream' ? 0.13 : 0.11;
+  private terrainSurfaceStrokeAlpha(surface: TerrainSurfaceState): number {
+    return terrainSurfaceStrokeAlpha(surface);
+  }
+
+  private terrainSurfaceShadowAlpha(surface: TerrainSurfaceState): number {
+    return terrainSurfaceShadowAlpha(surface);
+  }
+
+  private terrainSurfaceAccentY(surface: TerrainSurfaceState): number {
+    return terrainSurfaceAccentY(surface);
+  }
+
+  private terrainSurfaceAccentWidth(surface: TerrainSurfaceState): number {
+    return terrainSurfaceAccentWidth(surface);
+  }
+
+  private terrainSurfaceAccentHeight(surface: TerrainSurfaceState): number {
+    return terrainSurfaceAccentHeight(surface);
+  }
+
+  private terrainSurfaceAccentAlpha(surface: TerrainSurfaceState): number {
+    return terrainSurfaceAccentAlpha(surface);
+  }
+
+  private gravityFieldColor(field: GravityFieldState, capsule: GravityCapsuleState | null = null): number {
+    return gravityFieldColor(this.retroPalette, field, capsule);
+  }
+
+  private gravityFieldAlpha(field: GravityFieldState, capsule: GravityCapsuleState | null = null): number {
+    return gravityFieldAlpha(field, capsule);
+  }
+
+  private gravityCapsuleShellColor(capsule: GravityCapsuleState): number {
+    return gravityCapsuleShellColor(capsule);
+  }
+
+  private gravityCapsuleShellAlpha(capsule: GravityCapsuleState): number {
+    return gravityCapsuleShellAlpha(capsule);
+  }
+
+  private gravityCapsuleShellStrokeColor(capsule: GravityCapsuleState): number {
+    return gravityCapsuleShellStrokeColor(capsule);
+  }
+
+  private gravityCapsuleEntryDoorColor(capsule: GravityCapsuleState): number {
+    return gravityCapsuleEntryDoorColor(capsule);
+  }
+
+  private gravityCapsuleExitDoorColor(capsule: GravityCapsuleState): number {
+    return gravityCapsuleExitDoorColor(capsule);
+  }
+
+  private gravityCapsuleDoorAlpha(capsule: GravityCapsuleState): number {
+    return gravityCapsuleDoorAlpha(capsule);
+  }
+
+  private gravityCapsuleButtonColor(capsule: GravityCapsuleState): number {
+    return gravityCapsuleButtonColor(this.retroPalette, capsule);
+  }
+
+  private gravityCapsuleButtonCoreColor(capsule: GravityCapsuleState): number {
+    return gravityCapsuleButtonCoreColor(this.retroPalette, capsule);
   }
 
   private rewardBlockColor(rewardBlock: RewardBlockState): number {
-    if (rewardBlock.reward.kind === 'coins') {
-      return this.retroPalette.warm;
-    }
-
-    switch (rewardBlock.reward.power) {
-      case 'doubleJump':
-        return 0xdfe8bf;
-      case 'shooter':
-        return 0xf0c6a1;
-      case 'invincible':
-        return this.retroPalette.cool;
-      case 'dash':
-        return this.retroPalette.border;
-    }
+    return rewardBlockColor(this.retroPalette, rewardBlock);
   }
 
   private rewardBlockLabel(rewardBlock: RewardBlockState): string {
-    if (rewardBlock.reward.kind === 'coins') {
-      return getCollectibleRewardBlockLabel(rewardBlock.remainingHits);
-    }
-
-    if (rewardBlock.used) {
-      return '--';
-    }
-
-    return getPowerShortLabel(rewardBlock.reward.power);
+    return rewardBlockLabel(rewardBlock);
   }
 
   private rewardRevealText(rewardReveal: RewardRevealState): string {
-    if (rewardReveal.reward.kind === 'coins') {
-      return getCollectibleRewardRevealLabel();
-    }
-
-    return getPowerRevealLabel(rewardReveal.reward.power);
+    return rewardRevealText(rewardReveal);
   }
 
   private rewardRevealColor(rewardReveal: RewardRevealState): string {
-    if (rewardReveal.reward.kind === 'coins') {
-      return '#f5cf64';
-    }
-
-    switch (rewardReveal.reward.power) {
-      case 'doubleJump':
-        return '#dfe8bf';
-      case 'shooter':
-        return '#f0c6a1';
-      case 'invincible':
-        return '#8fdff2';
-      case 'dash':
-        return '#f7f3d6';
-    }
+    return rewardRevealColor(rewardReveal);
   }
 
   private syncPlayerAccessories(
@@ -1317,61 +1425,61 @@ export class GameScene extends Phaser.Scene {
     switch (variantKey) {
       case 'doubleJump':
         this.playerHeadband
-          .setPosition(centerX, player.y + 8 + pose.headbandOffsetY)
-          .setSize(20, 8)
+          .setPosition(centerX, player.y + 11 + pose.headbandOffsetY)
+          .setSize(14, 4)
           .setFillStyle(variant.detailColor)
           .setVisible(true);
         this.playerWingLeft
-          .setPosition(player.x - 4, player.y + 19 + pose.wingLift)
-          .setSize(10, 20)
+          .setPosition(player.x + 3, player.y + 23 + pose.wingLift)
+          .setSize(5, 14)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         this.playerWingRight
-          .setPosition(player.x + player.width + 4, player.y + 19 + pose.wingLift)
-          .setSize(10, 20)
+          .setPosition(player.x + player.width - 3, player.y + 23 + pose.wingLift)
+          .setSize(5, 14)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         break;
       case 'shooter':
         this.playerHeadband
-          .setPosition(centerX, player.y + 13 + pose.headbandOffsetY)
-          .setSize(18, 8)
+          .setPosition(centerX, player.y + 11 + pose.headbandOffsetY)
+          .setSize(12, 3)
           .setFillStyle(variant.detailColor)
           .setVisible(true);
         this.playerAccent
-          .setPosition(centerX + facingOffset * 14, player.y + 22 + pose.accentOffsetY)
-          .setSize(16, 10)
+          .setPosition(centerX + facingOffset * 11, player.y + 23 + pose.accentOffsetY)
+          .setSize(10, 8)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         break;
       case 'invincible':
         this.playerHeadband
-          .setPosition(centerX, player.y + 6 + pose.headbandOffsetY)
-          .setSize(22, 8)
+          .setPosition(centerX, player.y + 8 + pose.headbandOffsetY)
+          .setSize(18, 4)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         this.playerAccent
-          .setPosition(centerX, player.y - 1 + pose.accentOffsetY)
-          .setSize(12, 8)
+          .setPosition(centerX, player.y + 1 + pose.accentOffsetY)
+          .setSize(8, 6)
           .setFillStyle(variant.detailColor)
           .setVisible(true);
         break;
       case 'dash':
         this.playerHeadband
-          .setPosition(centerX, player.y + player.height - 7 + pose.headbandOffsetY)
-          .setSize(20, 6)
+          .setPosition(centerX, player.y + 27 + pose.headbandOffsetY)
+          .setSize(12, 4)
           .setFillStyle(variant.detailColor)
           .setVisible(true);
         this.playerAccent
-          .setPosition(centerX - facingOffset * 14, player.y + 20 + pose.accentOffsetY)
-          .setSize(player.dashTimerMs > 0 ? 18 : 12, 10)
+          .setPosition(centerX - facingOffset * 8, player.y + 25 + pose.accentOffsetY)
+          .setSize(player.dashTimerMs > 0 ? 14 : 8, 7)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         break;
       default:
         this.playerHeadband
-          .setPosition(centerX, player.y + 11 + pose.headbandOffsetY)
-          .setSize(18, 5)
+          .setPosition(centerX, player.y + 28 + pose.headbandOffsetY)
+          .setSize(10, 3)
           .setFillStyle(variant.detailColor)
           .setVisible(true);
         break;
@@ -1446,7 +1554,9 @@ export class GameScene extends Phaser.Scene {
               : event.enemyKind === 'flyer'
                 ? this.retroPalette.bright
                 : this.retroPalette.cool;
-          spawnRetroParticleBurst(this, event.x, event.y, tint, preset);
+            spawnRetroParticleBurst(this, event.x, event.y, tint, preset);
+            spawnRetroDefeatFlash(this, event.x, event.y, tint, event.cause === 'stomp' ? 'stomp' : 'plasma-blast');
+            this.triggerEnemyDefeatFeedback(event.id, event.cause);
           this.recordFeedback('enemyDefeat');
           this.recordFeedback(event.cause === 'stomp' ? 'enemyDefeatStomp' : 'enemyDefeatPlasma');
           break;
@@ -1510,6 +1620,8 @@ export class GameScene extends Phaser.Scene {
       this.playerChest,
       this.playerBelt,
       this.playerPack,
+      this.playerArmLeft,
+      this.playerArmRight,
       this.playerBootLeft,
       this.playerBootRight,
       this.playerKneeLeft,
@@ -1519,6 +1631,220 @@ export class GameScene extends Phaser.Scene {
       this.playerWingLeft,
       this.playerWingRight,
     ];
+  }
+
+  private getExitFinishProgress(state: Readonly<SessionSnapshot>): number {
+    if (!state.exitFinish.active || state.exitFinish.durationMs <= 0) {
+      return 0;
+    }
+
+    return Phaser.Math.Clamp(1 - state.exitFinish.timerMs / state.exitFinish.durationMs, 0, 1);
+  }
+
+  private isStageStartArrivalActive(): boolean {
+    return this.stageStartArrivalTimerMs > 0;
+  }
+
+  private getStageStartArrivalProgress(): number {
+    return this.getStageStartSequenceState().overallProgress;
+  }
+
+  private getStageStartCapsuleDoorClosedProgress(): number {
+    return this.getStageStartSequenceState().doorClosedProgress;
+  }
+
+  private getStageStartCapsulePhase(): StageStartCapsulePhase {
+    return this.getStageStartSequenceState().phase;
+  }
+
+  private getStageStartSequenceState() {
+    return getStageStartSequenceState(this.stageStartArrivalTimerMs);
+  }
+
+  private updateStageStartArrival(deltaMs: number): void {
+    this.bridge.resetGameplayInput();
+    this.stageStartArrivalTimerMs = Math.max(0, this.stageStartArrivalTimerMs - deltaMs);
+    if (this.stageStartArrivalTimerMs === 0) {
+      this.startGameplayMusicIfReady();
+    }
+  }
+
+  private setStageStartArrivalVisible(visible: boolean): void {
+    this.arrivalBaseShadow.setVisible(visible);
+    this.arrivalBase.setVisible(visible);
+    this.arrivalBeacon.setVisible(visible);
+    this.arrivalShell.setVisible(visible);
+    this.arrivalDoor.setVisible(visible);
+    this.arrivalAura.setVisible(visible);
+    this.arrivalPlayer.setVisible(visible);
+  }
+
+  private startGameplayMusicIfReady(): void {
+    if (this.gameplayMusicStarted || this.isStageStartArrivalActive()) {
+      return;
+    }
+
+    this.audio.startStageMusic(this.bridge.getSession().getState().stage);
+    this.gameplayMusicStarted = true;
+  }
+
+  private applyStageStartArrivalPresentation(state: Readonly<SessionSnapshot>): void {
+    const layout = this.stageStartCapsuleLayout;
+    const playerCenterX = layout.playerTargetX + state.player.width / 2;
+    const playerCenterY = layout.playerY + state.player.height / 2;
+    const sequence = this.getStageStartSequenceState();
+    if (!this.isStageStartArrivalActive()) {
+      this.arrivalBaseShadow
+        .setPosition(layout.capsuleCenterX, layout.baseShadowY)
+        .setScale(1, 1)
+        .setAlpha(0.22)
+        .setVisible(true);
+      this.arrivalBase
+        .setPosition(layout.capsuleCenterX, layout.baseY)
+        .setScale(1, 1)
+        .setFillStyle(this.retroPalette.panelAlt, 0.92)
+        .setAlpha(0.92)
+        .setVisible(true);
+      this.arrivalBeacon
+        .setPosition(layout.capsuleCenterX, layout.beaconY)
+        .setFillStyle(this.retroPalette.cool, 0.34)
+        .setScale(1, 1)
+        .setAlpha(0.34)
+        .setVisible(true);
+      this.arrivalShell
+        .setPosition(layout.capsuleCenterX, layout.capsuleCenterY)
+        .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.shell.width, EXIT_CAPSULE_ART_BOUNDS.shell.height)
+        .setTint(this.retroPalette.warm)
+        .setScale(1, 1)
+        .setAlpha(0.78)
+        .setVisible(true);
+      this.arrivalDoor
+        .setPosition(layout.capsuleCenterX, layout.capsuleCenterY + 1)
+        .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.door.width, EXIT_CAPSULE_ART_BOUNDS.door.height)
+        .setTint(this.retroPalette.border)
+        .setAlpha(0.82)
+        .setVisible(true);
+      this.arrivalAura.setVisible(false);
+      this.arrivalPlayer.setVisible(false);
+      return;
+    }
+
+    const flickerAlpha = sequence.phase === 'rematerialize' && Math.floor(this.time.now / 48) % 2 === 0 ? 0.58 : 1;
+    const shellAlpha = Phaser.Math.Clamp(0.4 + (1 - sequence.overallProgress) * 0.28, 0.32, 0.72);
+    const shellTint = sequence.phase === 'rematerialize' ? this.retroPalette.cool : this.retroPalette.warm;
+    const doorWidth = Phaser.Math.Linear(
+      CAPSULE_PRESENTATION.doorOpenWidth,
+      CAPSULE_PRESENTATION.doorClosedWidth,
+      sequence.doorClosedProgress,
+    );
+    const doorAlpha = Phaser.Math.Linear(0.22, 0.86, sequence.doorClosedProgress);
+    const playerAlpha = Phaser.Math.Clamp((1 - sequence.doorClosedProgress * 0.9) * flickerAlpha, 0, 1);
+    const walkoutStrideY = Math.sin(sequence.walkoutProgress * Math.PI * 2) * CAPSULE_PRESENTATION.walkoutLift;
+    const arrivalPlayerX = Phaser.Math.Linear(layout.playerStartX, layout.playerTargetX, sequence.walkoutProgress);
+    const arrivalPlayerY = layout.playerY + (1 - sequence.revealProgress) * 10 - walkoutStrideY;
+
+    this.arrivalBaseShadow
+      .setPosition(layout.capsuleCenterX, layout.baseShadowY)
+      .setScale(1 + (1 - sequence.doorClosedProgress) * 0.08, 1)
+      .setAlpha(0.2 + (1 - sequence.overallProgress) * 0.08)
+      .setVisible(true);
+    this.arrivalBase
+      .setPosition(layout.capsuleCenterX, layout.baseY)
+      .setScale(1 + (1 - sequence.doorClosedProgress) * 0.06, 1)
+      .setFillStyle(sequence.phase === 'rematerialize' ? this.retroPalette.cool : this.retroPalette.panelAlt, 0.88)
+      .setAlpha(0.88)
+      .setVisible(true);
+    this.arrivalBeacon
+      .setPosition(layout.capsuleCenterX, layout.beaconY)
+      .setFillStyle(sequence.phase === 'rematerialize' ? this.retroPalette.cool : this.retroPalette.bright, 0.82)
+      .setScale(1 + (1 - sequence.overallProgress) * 0.14, 1 + (1 - sequence.overallProgress) * 0.1)
+      .setAlpha(0.56 + sequence.revealProgress * 0.22 + Math.sin(this.time.now / 62) * 0.08)
+      .setVisible(true);
+    this.arrivalShell
+      .setPosition(layout.capsuleCenterX, layout.capsuleCenterY)
+      .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.shell.width, EXIT_CAPSULE_ART_BOUNDS.shell.height)
+      .setTint(shellTint)
+      .setScale(1, 1 - (1 - sequence.revealProgress) * 0.04)
+      .setAlpha(shellAlpha)
+      .setVisible(true);
+    this.arrivalDoor
+      .setPosition(layout.capsuleCenterX, layout.capsuleCenterY + 1)
+      .setDisplaySize(doorWidth, EXIT_CAPSULE_ART_BOUNDS.door.height)
+      .setTint(sequence.doorClosedProgress > 0.5 ? this.retroPalette.border : this.retroPalette.ink)
+      .setAlpha(doorAlpha)
+      .setVisible(doorAlpha > 0.02);
+    this.arrivalAura
+      .setPosition(Phaser.Math.Linear(layout.capsuleCenterX, playerCenterX, sequence.walkoutProgress * 0.8), playerCenterY - 2)
+      .setSize(50 - sequence.overallProgress * 8, 66 - sequence.overallProgress * 10)
+      .setFillStyle(this.retroPalette.cool, 0.22)
+      .setAlpha(Phaser.Math.Clamp(0.58 - sequence.walkoutProgress * 0.28 - sequence.doorClosedProgress * 0.34, 0, 0.58))
+      .setVisible(sequence.phase !== 'inert' && sequence.doorClosedProgress < 0.98);
+    this.arrivalPlayer
+      .setPosition(arrivalPlayerX, arrivalPlayerY)
+      .setTint(sequence.phase === 'rematerialize' ? this.retroPalette.bright : this.retroPalette.cool)
+      .setAlpha(playerAlpha)
+      .setVisible(sequence.phase !== 'closing' && playerAlpha > 0.02);
+  }
+
+  private applyExitFinishPresentation(state: Readonly<SessionSnapshot>): void {
+    const progress = this.getExitFinishProgress(state);
+    if (progress <= 0) {
+      return;
+    }
+
+    const capsuleCenterX = state.stage.exit.x + state.stage.exit.width / 2;
+    const capsuleCenterY = state.stage.exit.y + state.stage.exit.height / 2;
+    const playerCenterX = state.player.x + state.player.width / 2;
+    const playerCenterY = state.player.y + state.player.height / 2;
+    const shiftX = Phaser.Math.Linear(0, capsuleCenterX - playerCenterX, Math.min(1, progress * 1.18));
+    const shiftY = Phaser.Math.Linear(0, capsuleCenterY - 20 - playerCenterY, Math.min(1, progress * 1.12));
+    const flickerAlpha = progress > 0.18 && Math.floor(this.time.now / 45) % 2 === 0 ? 0.28 : 1;
+    const doorOpenProgress = getExitFinishDoorOpenProgress(progress);
+    const exitDoorWidth = Phaser.Math.Linear(
+      CAPSULE_PRESENTATION.doorClosedWidth,
+      CAPSULE_PRESENTATION.doorOpenWidth,
+      doorOpenProgress,
+    );
+    const hidden = state.exitFinish.suppressPresentation;
+    const collapseAlpha = hidden ? 0 : Phaser.Math.Clamp(1 - progress * 2.6, 0, 1) * flickerAlpha;
+
+    for (const target of this.getPlayerVisualTargets()) {
+      const shape = target as Phaser.GameObjects.Shape;
+      shape.setPosition(shape.x + shiftX, shape.y + shiftY - progress * 10);
+      shape.setVisible(!hidden && shape.visible);
+      shape.setAlpha(shape.alpha * collapseAlpha);
+    }
+
+    this.playerAura
+      .setPosition(capsuleCenterX, capsuleCenterY - 16)
+      .setVisible(true)
+      .setSize(34 + progress * 22, 48 + progress * 20)
+      .setFillStyle(this.retroPalette.cool, 0.18 + progress * 0.42)
+      .setAlpha(0.3 + progress * 0.55)
+      .setDepth(11);
+
+    this.exitBase
+      .setFillStyle(progress > 0.5 ? this.retroPalette.cool : this.retroPalette.panelAlt, 0.92)
+      .setScale(1 + progress * 0.08, 1)
+      .setAlpha(0.92 + progress * 0.08);
+    this.exitBaseShadow
+      .setScale(1 + progress * 0.14, 1)
+      .setAlpha(0.24 + progress * 0.12);
+    this.exitBeacon
+      .setFillStyle(progress > 0.45 ? this.retroPalette.cool : this.retroPalette.bright, 0.8 + progress * 0.18)
+      .setScale(1 + progress * 0.18, 1 + progress * 0.12)
+      .setAlpha(0.82 + progress * 0.16);
+
+    this.exitShell
+      .setTint(progress > 0.55 ? this.retroPalette.cool : this.retroPalette.warm)
+      .setAlpha(0.88 + Math.sin(this.time.now / 55) * 0.12)
+      .setScale(1 + progress * 0.06, 1 - progress * 0.03);
+    this.exitDoor
+      .setTexture(doorOpenProgress > 0 ? EXIT_CAPSULE_TEXTURE_KEYS.doorOpen : EXIT_CAPSULE_TEXTURE_KEYS.door)
+      .setDisplaySize(exitDoorWidth, EXIT_CAPSULE_ART_BOUNDS.door.height)
+      .setTint(progress > 0.42 ? this.retroPalette.cool : this.retroPalette.ink)
+      .setAlpha(0.82 + doorOpenProgress * 0.12 + Math.sin(this.time.now / 70) * 0.04)
+      .setVisible(true);
   }
 
   private recordFeedback(kind: string): void {
@@ -1547,7 +1873,69 @@ export class GameScene extends Phaser.Scene {
     }
 
     spawnRetroParticleBurst(this, x, y, this.retroPalette.border, 'player-defeat');
+    spawnRetroDefeatFlash(this, x, y, this.retroPalette.alert, 'player-death');
+    const defeatPreset = getRetroDefeatTweenPreset('player-death');
+    this.playerDefeatVisibleUntilMs = Math.max(this.playerDefeatVisibleUntilMs, this.time.now + PLAYER_DEFEAT_VISIBLE_HOLD_MS);
+    this.playerDefeatResetPending = true;
+    playRetroDefeatTweenPreset(this, this.getPlayerVisualTargets(), 'player-death');
+    this.setPlayerVisualDepths(defeatPreset.depth, defeatPreset.depth + 1);
     this.lastPlayerDefeatFeedbackAtMs = this.time.now;
     this.recordFeedback('playerDefeat');
+  }
+
+  private triggerEnemyDefeatFeedback(enemyId: string, cause: EnemyDefeatCause): void {
+    const sprite = this.enemySprites.get(enemyId);
+    if (!sprite) {
+      return;
+    }
+
+    const presetName = cause === 'plasma-blast' ? 'plasma-blast' : 'stomp';
+    const preset = getRetroDefeatTweenPreset(presetName);
+    this.enemyDefeatVisibleUntilMs.set(enemyId, this.time.now + ENEMY_DEFEAT_VISIBLE_HOLD_MS);
+    sprite.setVisible(true);
+    sprite.setDepth(preset.depth);
+    playRetroDefeatTweenPreset(this, sprite, presetName);
+  }
+
+  private resetPlayerDefeatPresentation(): void {
+    resetRetroPresentationTargets(this, [
+      { target: this.playerAura, depth: 5, visible: false, alpha: 0 },
+      { target: this.playerPack, depth: 5, visible: true },
+      { target: this.player, depth: 6, visible: true },
+      { target: this.playerHelmet, depth: 7, visible: true },
+      { target: this.playerVisor, depth: 7, visible: true },
+      { target: this.playerChest, depth: 7, visible: true },
+      { target: this.playerBelt, depth: 7, visible: true },
+      { target: this.playerArmLeft, depth: 7, visible: true },
+      { target: this.playerArmRight, depth: 7, visible: true },
+      { target: this.playerBootLeft, depth: 7, visible: true },
+      { target: this.playerBootRight, depth: 7, visible: true },
+      { target: this.playerKneeLeft, depth: 7, visible: true },
+      { target: this.playerKneeRight, depth: 7, visible: true },
+      { target: this.playerHeadband, depth: 7, visible: false },
+      { target: this.playerAccent, depth: 7, visible: false },
+      { target: this.playerWingLeft, depth: 7, visible: false },
+      { target: this.playerWingRight, depth: 7, visible: false },
+    ]);
+    this.playerDefeatVisibleUntilMs = Number.NEGATIVE_INFINITY;
+  }
+
+  private setPlayerVisualDepths(baseDepth: number, detailDepth: number): void {
+    this.player.setDepth(baseDepth);
+    this.playerHelmet.setDepth(detailDepth);
+    this.playerVisor.setDepth(detailDepth);
+    this.playerChest.setDepth(detailDepth);
+    this.playerBelt.setDepth(detailDepth);
+    this.playerPack.setDepth(detailDepth);
+    this.playerArmLeft.setDepth(detailDepth);
+    this.playerArmRight.setDepth(detailDepth);
+    this.playerBootLeft.setDepth(detailDepth);
+    this.playerBootRight.setDepth(detailDepth);
+    this.playerKneeLeft.setDepth(detailDepth);
+    this.playerKneeRight.setDepth(detailDepth);
+    this.playerHeadband.setDepth(detailDepth);
+    this.playerAccent.setDepth(detailDepth);
+    this.playerWingLeft.setDepth(detailDepth);
+    this.playerWingRight.setDepth(detailDepth);
   }
 }

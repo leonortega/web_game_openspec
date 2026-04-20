@@ -8,13 +8,39 @@ import {
 } from '../../audio/musicAssets';
 import { stageDefinitions, validateStageDefinition, type StageDefinition } from './stages';
 
+const terrainVariantPlatforms = (stage: StageDefinition, kind: 'brittleCrystal' | 'stickySludge') =>
+  stage.platforms.filter((platform) => platform.terrainVariant === kind);
+
 const cloneStage = (): StageDefinition => JSON.parse(JSON.stringify(stageDefinitions[0])) as StageDefinition;
 const cloneAmberStage = (): StageDefinition =>
   JSON.parse(JSON.stringify(stageDefinitions.find((stage) => stage.id === 'amber-cavern'))) as StageDefinition;
 const cloneSkyStage = (): StageDefinition =>
   JSON.parse(JSON.stringify(stageDefinitions.find((stage) => stage.id === 'sky-sanctum'))) as StageDefinition;
 
+const terrainBeatSummary = (stage: StageDefinition, kind: 'brittleCrystal' | 'stickySludge') =>
+  new Set(
+    terrainVariantPlatforms(stage, kind)
+      .map((platform) => stage.segments.find((segment) => platform.x + platform.width / 2 >= segment.startX && platform.x + platform.width / 2 <= segment.endX)?.id ?? 'unmapped'),
+  );
+
 describe('launcher stage validation', () => {
+  it('accepts exits that stay grounded on a supported final platform', () => {
+    const stage = cloneStage();
+
+    expect(validateStageDefinition(stage).exit).toEqual(stage.exit);
+  });
+
+  it('rejects unsupported floating exit endpoints', () => {
+    const stage = cloneStage();
+
+    stage.exit = {
+      ...stage.exit,
+      x: stage.exit.x + 80,
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow('Stage exits must sit on readable grounded support');
+  });
+
   it('accepts supported launcher kinds with bounded upward-biased directions', () => {
     const stage = cloneStage();
 
@@ -49,6 +75,44 @@ describe('launcher stage validation', () => {
     expect(() => validateStageDefinition(stage)).toThrow(
       'Launchers cannot overlap another launcher or spring contact area',
     );
+  });
+});
+
+describe('enemy placement validation', () => {
+  it('accepts current grounded non-flying enemy placement across the authored stage', () => {
+    const stage = cloneStage();
+
+    expect(validateStageDefinition(stage).enemies).toEqual(stage.enemies);
+  });
+
+  it('rejects non-flying enemies that sit off readable platform support', () => {
+    const stage = cloneStage();
+    const walker = stage.enemies.find((enemy) => enemy.id === 'walker-1');
+    if (!walker || walker.kind !== 'walker') {
+      throw new Error('Expected forest walker fixture.');
+    }
+
+    walker.position.x = 1450;
+    walker.position.y = 640;
+
+    expect(() => validateStageDefinition(stage)).toThrow('Non-flying enemies must sit on readable platform support');
+  });
+
+  it('rejects non-flying enemies hidden below the stage floor while allowing flyers off platforms', () => {
+    const stage = cloneStage();
+    const hopper = stage.enemies.find((enemy) => enemy.id === 'hopper-1');
+    const flyer = stage.enemies.find((enemy) => enemy.id === 'flyer-1');
+    if (!hopper || hopper.kind !== 'hopper' || !flyer || flyer.kind !== 'flyer') {
+      throw new Error('Expected forest hopper and flyer fixtures.');
+    }
+
+    flyer.position.x = 1500;
+    flyer.position.y = 680;
+    expect(validateStageDefinition(stage).enemies.find((enemy) => enemy.id === 'flyer-1')?.position.y).toBe(680);
+
+    hopper.position.y = stage.world.height;
+
+    expect(() => validateStageDefinition(stage)).toThrow('Non-flying enemies must stay within the visible stage bounds');
   });
 });
 
@@ -132,26 +196,88 @@ describe('activation-node magnetic platform stage validation', () => {
 });
 
 describe('gravity field stage validation', () => {
-  it('requires every main stage to author at least one terrain section and one gravity section', () => {
+  it('requires every main stage to author at least two brittle and two sticky terrain sections across multiple beats plus one gravity section', () => {
     const forest = cloneStage();
     const amber = cloneAmberStage();
     const sky = cloneSkyStage();
 
-    expect(validateStageDefinition(forest).terrainSurfaces.length).toBeGreaterThan(0);
+    expect(terrainVariantPlatforms(validateStageDefinition(forest), 'brittleCrystal').length).toBeGreaterThanOrEqual(2);
+    expect(terrainVariantPlatforms(validateStageDefinition(forest), 'stickySludge').length).toBeGreaterThanOrEqual(2);
+    expect(terrainBeatSummary(validateStageDefinition(forest), 'brittleCrystal').size).toBeGreaterThanOrEqual(2);
+    expect(terrainBeatSummary(validateStageDefinition(forest), 'stickySludge').size).toBeGreaterThanOrEqual(2);
     expect(validateStageDefinition(forest).gravityFields.length).toBeGreaterThan(0);
-    expect(validateStageDefinition(amber).terrainSurfaces.length).toBeGreaterThan(0);
+    expect(terrainVariantPlatforms(validateStageDefinition(amber), 'brittleCrystal').length).toBeGreaterThanOrEqual(2);
+    expect(terrainVariantPlatforms(validateStageDefinition(amber), 'stickySludge').length).toBeGreaterThanOrEqual(2);
+    expect(terrainBeatSummary(validateStageDefinition(amber), 'brittleCrystal').size).toBeGreaterThanOrEqual(2);
+    expect(terrainBeatSummary(validateStageDefinition(amber), 'stickySludge').size).toBeGreaterThanOrEqual(2);
     expect(validateStageDefinition(amber).gravityFields.length).toBeGreaterThan(0);
-    expect(validateStageDefinition(sky).terrainSurfaces.length).toBeGreaterThan(0);
+    expect(terrainVariantPlatforms(validateStageDefinition(sky), 'brittleCrystal').length).toBeGreaterThanOrEqual(2);
+    expect(terrainVariantPlatforms(validateStageDefinition(sky), 'stickySludge').length).toBeGreaterThanOrEqual(2);
+    expect(terrainBeatSummary(validateStageDefinition(sky), 'brittleCrystal').size).toBeGreaterThanOrEqual(2);
+    expect(terrainBeatSummary(validateStageDefinition(sky), 'stickySludge').size).toBeGreaterThanOrEqual(2);
     expect(validateStageDefinition(sky).gravityFields.length).toBeGreaterThan(0);
 
-    forest.terrainSurfaces = [];
+    forest.platforms = forest.platforms.map((platform) =>
+      platform.terrainVariant === 'stickySludge' ? { ...platform, terrainVariant: undefined } : platform,
+    );
     expect(() => validateStageDefinition(forest)).toThrow(
-      'Main stages must author at least one terrain-surface section: forest-ruins',
+      'Main stages must author at least 2 brittle crystal and sticky sludge surfaces: forest-ruins',
+    );
+
+    const clusteredAmber = cloneAmberStage();
+    clusteredAmber.platforms = clusteredAmber.platforms.map((platform) => {
+      if (platform.id === 'platform-8160-520') {
+        return { ...platform, terrainVariant: undefined };
+      }
+
+      if (platform.id === 'platform-11090-420') {
+        return { ...platform, terrainVariant: undefined };
+      }
+
+      if (platform.id === 'platform-10290-500' || platform.id === 'platform-10550-430') {
+        return { ...platform, terrainVariant: 'stickySludge' };
+      }
+
+      return platform;
+    });
+    expect(() => validateStageDefinition(clusteredAmber)).toThrow(
+      'Main stages must spread brittle crystal and sticky sludge across at least two traversal beats: amber-cavern',
     );
 
     amber.gravityFields = [];
+    amber.gravityCapsules = [];
     expect(() => validateStageDefinition(amber)).toThrow(
       'Main stages must author at least one bounded gravity-field section: amber-cavern',
+    );
+  });
+
+  it('rejects legacy brittle and sticky terrain overlays and non-static platform variant usage', () => {
+    const legacyOverlayStage = cloneStage();
+    legacyOverlayStage.platforms = legacyOverlayStage.platforms.map((platform) => ({ ...platform, terrainVariant: undefined }));
+    legacyOverlayStage.terrainSurfaces = [
+      { id: 'legacy-sticky', kind: 'stickySludge', x: 8350, y: 520, width: 132, height: 12 },
+    ];
+
+    expect(() => validateStageDefinition(legacyOverlayStage)).toThrow(
+      'Brittle crystal and sticky sludge must be authored on platform terrainVariant instead of terrain surfaces',
+    );
+
+    const mixedAuthoringStage = cloneStage();
+    mixedAuthoringStage.terrainSurfaces = [
+      { id: 'legacy-brittle', kind: 'brittleCrystal', x: 8480, y: 340, width: 110, height: 12 },
+    ];
+
+    expect(() => validateStageDefinition(mixedAuthoringStage)).toThrow(
+      'Brittle crystal and sticky sludge cannot mix platform terrain variants with legacy terrain surfaces',
+    );
+
+    const movingVariantStage = cloneStage();
+    movingVariantStage.platforms = movingVariantStage.platforms.map((platform) =>
+      platform.kind === 'moving' ? { ...platform, terrainVariant: 'stickySludge' } : platform,
+    );
+
+    expect(() => validateStageDefinition(movingVariantStage)).toThrow(
+      'Brittle crystal and sticky sludge variants must stay on plain static platforms',
     );
   });
 
@@ -163,20 +289,145 @@ describe('gravity field stage validation', () => {
       'anti-grav-stream',
       'gravity-inversion-column',
     ]);
+    expect(validated.gravityCapsules).toHaveLength(2);
+    expect(validated.gravityCapsules.map((capsule) => capsule.fieldId).sort()).toEqual([
+      'sky-anti-grav-stream',
+      'sky-gravity-inversion-column',
+    ]);
+  });
+
+  it('encloses every current playable gravity field in its own authored gravity room', () => {
+    const forest = validateStageDefinition(cloneStage());
+    const amber = validateStageDefinition(cloneAmberStage());
+    const sky = validateStageDefinition(cloneSkyStage());
+
+    expect(forest.gravityCapsules).toHaveLength(forest.gravityFields.length);
+    expect(amber.gravityCapsules).toHaveLength(amber.gravityFields.length);
+    expect(sky.gravityCapsules).toHaveLength(sky.gravityFields.length);
+    expect(forest.gravityFields.every((field) => field.gravityCapsuleId)).toBe(true);
+    expect(amber.gravityFields.every((field) => field.gravityCapsuleId)).toBe(true);
+    expect(sky.gravityFields.every((field) => field.gravityCapsuleId)).toBe(true);
+    expect(sky.gravityCapsules.map((capsule) => capsule.button.id).sort()).toEqual([
+      'sky-anti-grav-capsule-button',
+      'sky-gravity-inversion-room-button',
+    ]);
+  });
+
+  it('rejects current playable stages that leave any gravity field outside its own linked room', () => {
+    const forest = cloneStage();
+    forest.gravityFields[0] = {
+      ...forest.gravityFields[0],
+      gravityCapsuleId: undefined,
+    };
+    forest.gravityCapsules = forest.gravityCapsules.filter((capsule) => capsule.fieldId !== 'forest-anti-grav-canopy-lift');
+
+    expect(() => validateStageDefinition(forest)).toThrow(
+      'Main stages must enclose every authored gravity field in its own linked gravity room: forest-ruins',
+    );
+  });
+
+  it('accepts authored enclosed gravity rooms with separate bottom doors and contained content', () => {
+    const stage = cloneSkyStage();
+
+    const validated = validateStageDefinition(stage);
+    expect(validated.gravityCapsules).toHaveLength(2);
+    expect(validated.gravityCapsules[0].button.id).toBe('sky-anti-grav-capsule-button');
+    expect(validated.gravityCapsules[1].button.id).toBe('sky-gravity-inversion-room-button');
+    expect(validated.gravityCapsules.every((capsule) => capsule.entryDoor.x < capsule.exitDoor.x)).toBe(true);
+    expect(validated.gravityCapsules[0].contents.platformIds).toContain('platform-9010-480');
+    expect(validated.gravityCapsules[1].contents.platformIds).toContain('platform-9490-540');
+  });
+
+  it('rejects gravity rooms whose linked button is not on a reachable interior route', () => {
+    const stage = cloneSkyStage();
+    stage.gravityCapsules[0].button = {
+      ...stage.gravityCapsules[0].button,
+      x: stage.gravityCapsules[0].shell.x + stage.gravityCapsules[0].shell.width - 48,
+      y: stage.gravityCapsules[0].shell.y + 20,
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Gravity rooms must place their linked interior disable button on a reachable authored route: sky-anti-grav-capsule',
+    );
+  });
+
+  it('rejects gravity rooms that reuse one bottom opening for both entry and exit', () => {
+    const stage = cloneSkyStage();
+    stage.gravityCapsules[0].exitDoor = { ...stage.gravityCapsules[0].entryDoor };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Gravity rooms must author separate bottom entry and exit openings while keeping the rest of the shell blocked: sky-anti-grav-capsule',
+    );
+  });
+
+  it('rejects gravity rooms whose door openings consume the shell edge instead of leaving blocking wall segments', () => {
+    const stage = cloneSkyStage();
+    stage.gravityCapsules[0].entryDoor = {
+      ...stage.gravityCapsules[0].entryDoor,
+      x: stage.gravityCapsules[0].shell.x,
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Gravity rooms must author separate bottom entry and exit openings while keeping the rest of the shell blocked: sky-anti-grav-capsule',
+    );
+  });
+
+  it('rejects gravity rooms whose linked content escapes the authored shell', () => {
+    const stage = cloneSkyStage();
+    stage.gravityCapsules[0].contents = {
+      ...stage.gravityCapsules[0].contents,
+      collectibleIds: ['sky-10b', 'sky-19c'],
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Gravity rooms must keep all linked room content inside the authored shell: sky-anti-grav-capsule',
+    );
+  });
+
+  it('rejects current playable gravity rooms that keep pickups or other mixed mechanics inside the shell', () => {
+    const stage = cloneSkyStage();
+    stage.collectibles.push({
+      id: 'sky-room-sample-test',
+      position: {
+        x: stage.gravityCapsules[0].shell.x + 84,
+        y: stage.gravityCapsules[0].shell.y + 118,
+      },
+    });
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Current playable gravity rooms must stay focused on contained gravity traversal and button-off exit flow without extra mixed mechanics: sky-anti-grav-capsule',
+    );
+  });
+
+  it('rejects gravity rooms whose entry-to-exit route geometry is cut off inside the shell', () => {
+    const stage = cloneSkyStage();
+    stage.gravityCapsules[0].exitRoute = {
+      ...stage.gravityCapsules[0].exitRoute,
+      y: stage.gravityCapsules[0].exitRoute.y - 88,
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Gravity rooms must contain readable traversable route geometry from entry to exit: sky-anti-grav-capsule',
+    );
   });
 
   it('rejects overlapping gravity fields and nearby checkpoint placement', () => {
     const stage = cloneSkyStage();
     const [antiGravStream, inversionColumn] = stage.gravityFields;
+    stage.id = 'sky-overlap-test';
+    stage.gravityCapsules = [];
 
     stage.gravityFields = [
-      antiGravStream,
-      { ...inversionColumn, x: antiGravStream.x + 80, y: antiGravStream.y + 40 },
+      { ...antiGravStream, gravityCapsuleId: undefined },
+      { ...inversionColumn, x: antiGravStream.x + 80, y: antiGravStream.y + 40, gravityCapsuleId: undefined },
     ];
 
     expect(() => validateStageDefinition(stage)).toThrow('Gravity fields cannot overlap another gravity modifier zone');
 
-    stage.gravityFields = [antiGravStream, inversionColumn];
+    stage.gravityFields = [
+      { ...antiGravStream, gravityCapsuleId: undefined },
+      { ...inversionColumn, gravityCapsuleId: undefined },
+    ];
     stage.checkpoints[0] = {
       ...stage.checkpoints[0],
       rect: { x: antiGravStream.x + 24, y: antiGravStream.y + antiGravStream.height - 80, width: 24, height: 80 },

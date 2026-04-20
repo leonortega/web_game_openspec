@@ -20,17 +20,20 @@ Run the full OpenSpec workflow with one dedicated agent per stage:
 
 Each stage must be handled by its own spawned custom agent, not by ad hoc prompt switching inside one general agent.
 
+Default to the local `caveman` skill for OpenSpec orchestration as far as practical, including user-facing progress updates, stage-agent narration, and compact handoff summaries. Keep code, commits, and other technical deliverables in normal form where the caveman skill requires it. Never use caveman style inside spec artifacts or change artifacts under `openspec/specs/` or `openspec/changes/`; those files must stay in normal repo prose.
+
 ## Stage Execution
 
 1. Strip the leading `openspec` word from the user's prompt.
 2. Treat the remaining text as the change request or change description.
-3. Spawn the `OpenSpec Explore` agent for `explore`, and require it to inspect any relevant local skills or best-practice guidance before it settles on exploration findings.
-4. After explore completes, spawn the `OpenSpec Propose` agent for `propose`.
-5. After propose completes, spawn the `OpenSpec Apply` agent for `apply`.
-6. After apply completes, spawn the `OpenSpec Verify` agent for `verify`.
-7. If verify reports incomplete tasks or warnings, return to `apply` for fixes, then run `verify` again.
-8. Repeat step 7 until verify reports no incomplete tasks and no warnings.
-9. Spawn the `OpenSpec Archive` agent for `archive`.
+3. Read the local `caveman` skill before orchestration and capture the requested level if the user specified one; otherwise use the caveman default mode for workflow communication.
+4. Spawn the `OpenSpec Explore` agent for `explore`, and require it to inspect any relevant local skills or best-practice guidance before it settles on exploration findings.
+5. After explore completes, spawn the `OpenSpec Propose` agent for `propose`.
+6. After propose completes, spawn the `OpenSpec Apply` agent for `apply`.
+7. After apply completes, spawn the `OpenSpec Verify` agent for `verify`.
+8. If verify reports incomplete tasks or warnings, return to `apply` for fixes, then run `verify` again.
+9. Repeat step 8 until verify reports no incomplete tasks and no warnings.
+10. Spawn the `OpenSpec Archive` agent for `archive`.
 
 ## Stage Handoff Contract
 
@@ -71,6 +74,11 @@ Each stage must pass a compact structured handoff to the next stage.
   - follow-up needed
 
 ## Agent Responsibilities
+
+- All stage agents:
+  - Read and follow the local `caveman` skill before doing stage work unless the user explicitly disables it.
+  - Keep stage-agent user-facing narration and handoff summaries in caveman mode.
+  - Keep artifact text in normal repo style for all files under `openspec/specs/` and `openspec/changes/`, plus code, commits, and any other output the caveman skill excludes.
 
 - `OpenSpec Explore`:
   - Use the local `openspec-explore` skill behavior as the exploration stance.
@@ -115,9 +123,13 @@ If verify produces only suggestions and no incomplete tasks, no CRITICAL issues,
 - Use one custom agent per stage.
 - Prefer sequential execution over parallel execution because later stages depend on earlier stage output.
 - Pass forward the concrete outputs that matter: change name, artifacts created, implementation status, and verification findings.
+- Include caveman mode explicitly in every stage prompt so terse communication persists across stage boundaries.
 - Reuse the existing stage agent instance if that is simpler than spawning a second apply or verify agent during the loop, but keep stage ownership separate.
 - Keep user-facing progress updates short and explicit about the current stage.
 - If a dedicated stage agent is unavailable, fall back to the matching local step skill behavior and state that fallback explicitly.
+- Keep tool calls and shell commands distinct across all stages: edits must use the editing tool path, and terminal commands must contain only executable shell syntax.
+- Never send tool names such as `apply_patch` to the terminal. If a stage needs to edit a file, call the edit tool directly instead of describing it as a shell action.
+- On Windows workspaces, translate any illustrative shell snippets into PowerShell-native commands before terminal execution.
 
 ## Archive Default
 

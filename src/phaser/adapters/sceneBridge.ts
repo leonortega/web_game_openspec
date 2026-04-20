@@ -136,6 +136,10 @@ export class SceneBridge {
     return this.session.consumeCues();
   }
 
+  resetGameplayInput(): void {
+    this.clearGameplayInput();
+  }
+
   private clearGameplayInput(): void {
     this.input.left = false;
     this.input.right = false;

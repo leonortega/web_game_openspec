@@ -18,4 +18,20 @@ describe('HUD message lane layout contract', () => {
     expect(appCss).toMatch(/@media\s*\(max-width:\s*720px\)\s*\{[\s\S]*\.message-panel\s*\{[\s\S]*bottom:\s*max\(calc\(env\(safe-area-inset-bottom,\s*0px\)\s*\+\s*12px\),\s*12px\)/);
     expect(appCss).toMatch(/@media\s*\(max-width:\s*720px\)\s*\{[\s\S]*\.message-panel\s*\{[\s\S]*max-width:\s*min\(184px,\s*calc\(100%\s*-\s*136px\)\)/);
   });
+
+  it('keeps the browser shell viewport-bounded while allowing a larger desktop presentation', () => {
+    const appCss = readFileSync(new URL('./app.css', import.meta.url), 'utf8');
+
+    expect(appCss).toMatch(/:root\s*\{[\s\S]*--app-shell-gap:\s*clamp\(12px,\s*2\.4vw,\s*32px\)/);
+    expect(appCss).toMatch(/:root\s*\{[\s\S]*--game-shell-max-width:\s*1480px/);
+    expect(appCss).toMatch(/#app\s*\{[\s\S]*min-height:\s*100vh/);
+    expect(appCss).toMatch(/\.game-shell-frame\s*\{[\s\S]*width:\s*min\([\s\S]*calc\(100vw\s*-\s*\(var\(--app-shell-gap\)\s*\*\s*2\)\)/);
+    expect(appCss).toMatch(/\.game-shell-frame\s*\{[\s\S]*calc\(\(100vh\s*-\s*\(var\(--app-shell-gap\)\s*\*\s*2\)\)\s*\*\s*16\s*\/\s*9\)/);
+    expect(appCss).toMatch(/\.game-shell-frame\s*\{[\s\S]*var\(--game-shell-max-width\)/);
+    expect(appCss).toMatch(/\.game-shell-frame\s*\{[\s\S]*aspect-ratio:\s*16\s*\/\s*9/);
+    expect(appCss).toMatch(/\.game-shell\s*\{[\s\S]*width:\s*100%/);
+    expect(appCss).toMatch(/\.game-shell\s*\{[\s\S]*height:\s*100%/);
+    expect(appCss).not.toMatch(/\.game-shell\s*\{[\s\S]*width:\s*min\(100%,\s*1080px\)/);
+    expect(appCss).not.toMatch(/@media\s*\(max-width:\s*720px\)\s*\{[\s\S]*\.game-shell\s*\{[\s\S]*min-height:\s*88vh/);
+  });
 });

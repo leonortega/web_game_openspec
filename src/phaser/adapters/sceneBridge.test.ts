@@ -86,6 +86,35 @@ describe('SceneBridge pause flow regression coverage', () => {
     expect(bridge.isRunPaused()).toBe(false);
   });
 
+  it('drops buffered gameplay input without advancing the active run', () => {
+    const bridge = new SceneBridge();
+    const state = getMutableState(bridge);
+
+    state.player.x = 144;
+    state.player.y = 208;
+
+    bridge.setLeft(true);
+    bridge.setRight(true);
+    bridge.setJumpHeld(true);
+    bridge.pressJump();
+    bridge.pressDash();
+    bridge.pressShoot();
+
+    bridge.resetGameplayInput();
+
+    expect((bridge as any).input).toEqual({
+      left: false,
+      right: false,
+      jumpHeld: false,
+      jumpPressed: false,
+      dashPressed: false,
+      shootPressed: false,
+    });
+    expect(state.player.x).toBe(144);
+    expect(state.player.y).toBe(208);
+    expect(bridge.isRunPaused()).toBe(false);
+  });
+
   it('uses astronaut-themed stage and power presentation in the HUD model', () => {
     const bridge = new SceneBridge();
     const state = getMutableState(bridge);

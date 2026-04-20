@@ -94,6 +94,17 @@ export type RetroPresentationPalette = {
   shadow: string;
 };
 
+export type RetroBackdropMotifPalette = {
+  planetFill: number;
+  planetShade: number;
+  ring: number;
+  craterLight: number;
+  craterDark: number;
+  horizonGlow: number;
+  starWarm: number;
+  starCool: number;
+};
+
 export const RETRO_FONT_FAMILY = '"Courier New", monospace';
 
 // Optional analog overlays stay disabled in the required baseline.
@@ -169,6 +180,21 @@ export const createRetroPresentationPalette = (stagePalette: StagePalette): Retr
 
 export const createRetroMenuPalette = (): RetroPresentationPalette =>
   createRetroPresentationPalette({ accent: 0xe05b3d });
+
+export const createRetroBackdropMotifPalette = (palette: RetroPresentationPalette): RetroBackdropMotifPalette => {
+  const separationReferences = [palette.cool, palette.warm, palette.safe, palette.alert, palette.border, palette.panel, palette.panelAlt];
+
+  return {
+    planetFill: ensureSeparated(mixColor(palette.skyline, palette.stageAccent, 0.2), separationReferences, palette.background, 58),
+    planetShade: ensureSeparated(mixColor(palette.background, palette.groundBand, 0.42), separationReferences, palette.background, 52),
+    ring: ensureSeparated(mixColor(palette.bright, palette.backdropGlow, 0.52), separationReferences, palette.background, 56),
+    craterLight: ensureSeparated(mixColor(palette.groundBand, palette.backdropAccent, 0.3), separationReferences, palette.background, 48),
+    craterDark: ensureSeparated(mixColor(palette.background, palette.ink, 0.36), separationReferences, palette.background, 42),
+    horizonGlow: ensureSeparated(mixColor(palette.backdropGlow, palette.bright, 0.18), separationReferences, palette.background, 54),
+    starWarm: ensureSeparated(mixColor(palette.warm, palette.bright, 0.42), separationReferences, palette.background, 56),
+    starCool: ensureSeparated(mixColor(palette.cool, palette.bright, 0.34), separationReferences, palette.background, 56),
+  };
+};
 
 export const getRetroMotionStep = (
   timeMs: number,
@@ -349,13 +375,13 @@ export const getRetroEnemyPose = (
     const hoverStep = getRetroMotionStep(timeMs + enemy.x * 2, 140, 3);
     return {
       state: 'hover',
-      yOffset: [-2, 0, 2][hoverStep] ?? 0,
-      scaleX: [1.02, 1, 0.98][hoverStep] ?? 1,
-      scaleY: [0.98, 1, 1.02][hoverStep] ?? 1,
-      alpha: 0.96,
-      accentAlpha: [0.28, 0.72, 0.4][hoverStep] ?? 0.4,
-      accentOffsetX: [-2, 1, 3][hoverStep] ?? 0,
-      accentOffsetY: [-3, -1, 2][hoverStep] ?? 0,
+      yOffset: [-2, 0, 1][hoverStep] ?? 0,
+      scaleX: [0.98, 1.02, 1][hoverStep] ?? 1,
+      scaleY: [1.02, 0.98, 1][hoverStep] ?? 1,
+      alpha: 0.97,
+      accentAlpha: [0.72, 0.94, 0.82][hoverStep] ?? 0.82,
+      accentOffsetX: [-1, 0, 1][hoverStep] ?? 0,
+      accentOffsetY: [1, 2, 3][hoverStep] ?? 2,
     };
   }
 
@@ -520,6 +546,16 @@ export const detectRetroFeedbackEvents = (
 
 export type RetroTweenPresetName = 'jump' | 'land' | 'checkpoint' | 'coin' | 'reward' | 'power' | 'transition';
 
+export type RetroDefeatTweenPresetName = 'stomp' | 'plasma-blast' | 'player-death';
+
+export type RetroDefeatFlashPresetName = RetroDefeatTweenPresetName;
+
+export const ENEMY_DEFEAT_VISIBLE_HOLD_MS = 96;
+
+export const PLAYER_DEFEAT_VISIBLE_HOLD_MS = 120;
+
+export const RETRO_DEFEAT_PRESENTATION_MAX_MS = 320;
+
 const RETRO_TWEEN_PRESETS: Record<RetroTweenPresetName, Omit<Phaser.Types.Tweens.TweenBuilderConfig, 'targets'>> = {
   jump: { y: '-=4', scaleX: 1.05, scaleY: 0.95, duration: 90, yoyo: true, ease: 'Linear' },
   land: { scaleX: 1.08, scaleY: 0.92, duration: 80, yoyo: true, ease: 'Linear' },
@@ -529,6 +565,43 @@ const RETRO_TWEEN_PRESETS: Record<RetroTweenPresetName, Omit<Phaser.Types.Tweens
   power: { scaleX: 1.18, scaleY: 1.18, duration: 140, yoyo: true, ease: 'Linear' },
   transition: { y: '-=8', scaleX: 1.08, scaleY: 1.08, duration: 220, yoyo: true, repeat: 1, ease: 'Linear' },
 };
+
+type RetroDefeatTweenPreset = {
+  holdMs: number;
+  depth: number;
+  tween: Omit<Phaser.Types.Tweens.TweenBuilderConfig, 'targets'>;
+};
+
+type RetroDefeatFlashPreset = {
+  width: number;
+  height: number;
+  alpha: number;
+  depth: number;
+  duration: number;
+  scaleStart: number;
+  scaleEnd: number;
+};
+
+const RETRO_DEFEAT_TWEEN_PRESETS: Record<RetroDefeatTweenPresetName, RetroDefeatTweenPreset> = {
+  stomp: {
+    holdMs: ENEMY_DEFEAT_VISIBLE_HOLD_MS,
+    depth: 12,
+    tween: { scaleX: 1.52, scaleY: 0.24, angle: 18, alpha: 0.5, duration: 96, ease: 'Quad.easeOut' },
+  },
+  'plasma-blast': {
+    holdMs: ENEMY_DEFEAT_VISIBLE_HOLD_MS,
+    depth: 12,
+    tween: { scaleX: 0.34, scaleY: 1.72, angle: 28, alpha: 0.44, duration: 108, ease: 'Cubic.easeOut' },
+  },
+  'player-death': {
+    holdMs: PLAYER_DEFEAT_VISIBLE_HOLD_MS,
+    depth: 12,
+    tween: { scaleX: 0.18, scaleY: 1.92, angle: -32, alpha: 0.34, duration: 120, ease: 'Cubic.easeOut' },
+  },
+};
+
+export const getRetroDefeatTweenPreset = (preset: RetroDefeatTweenPresetName): RetroDefeatTweenPreset =>
+  RETRO_DEFEAT_TWEEN_PRESETS[preset];
 
 export const playRetroTweenPreset = (
   scene: Phaser.Scene,
@@ -546,6 +619,92 @@ export const playRetroTweenPreset = (
     ...overrides,
     targets: normalizedTargets,
   });
+};
+
+export const playRetroDefeatTweenPreset = (
+  scene: Phaser.Scene,
+  targets: Phaser.GameObjects.GameObject | Phaser.GameObjects.GameObject[],
+  preset: RetroDefeatTweenPresetName,
+  overrides: Partial<Phaser.Types.Tweens.TweenBuilderConfig> = {},
+): Phaser.Tweens.Tween => {
+  const normalizedTargets = Array.isArray(targets) ? targets : [targets];
+  for (const target of normalizedTargets) {
+    scene.tweens.killTweensOf(target);
+  }
+
+  return scene.tweens.add({
+    ...RETRO_DEFEAT_TWEEN_PRESETS[preset].tween,
+    ...overrides,
+    targets: normalizedTargets,
+  });
+};
+
+type RetroResettableTarget = {
+  target: Phaser.GameObjects.GameObject;
+  depth?: number;
+  visible?: boolean;
+  alpha?: number;
+  scaleX?: number;
+  scaleY?: number;
+  angle?: number;
+};
+
+export const resetRetroPresentationTargets = (
+  scene: Phaser.Scene,
+  targets: RetroResettableTarget[],
+): void => {
+  for (const entry of targets) {
+    scene.tweens.killTweensOf(entry.target);
+
+    if ('setScale' in entry.target && typeof entry.target.setScale === 'function') {
+      entry.target.setScale(entry.scaleX ?? 1, entry.scaleY ?? entry.scaleX ?? 1);
+    }
+    if ('setRotation' in entry.target && typeof entry.target.setRotation === 'function') {
+      entry.target.setRotation(0);
+    }
+    if ('setAngle' in entry.target && typeof entry.target.setAngle === 'function') {
+      entry.target.setAngle(entry.angle ?? 0);
+    }
+    if ('setAlpha' in entry.target && typeof entry.target.setAlpha === 'function') {
+      entry.target.setAlpha(entry.alpha ?? 1);
+    }
+    if ('clearTint' in entry.target && typeof entry.target.clearTint === 'function') {
+      entry.target.clearTint();
+    }
+    if ('setVisible' in entry.target && typeof entry.target.setVisible === 'function') {
+      entry.target.setVisible(entry.visible ?? true);
+    }
+    if (entry.depth !== undefined && 'setDepth' in entry.target && typeof entry.target.setDepth === 'function') {
+      entry.target.setDepth(entry.depth);
+    }
+  }
+};
+
+export const spawnRetroDefeatFlash = (
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  tint: number,
+  preset: RetroDefeatFlashPresetName,
+): Phaser.GameObjects.Ellipse => {
+  const config = RETRO_DEFEAT_FLASH_PRESETS[preset];
+  const flash = scene.add
+    .ellipse(x, y, config.width, config.height, tint, config.alpha)
+    .setDepth(config.depth)
+    .setStrokeStyle(2, 0xffffff, 0.94)
+    .setScale(config.scaleStart);
+
+  scene.tweens.add({
+    targets: flash,
+    scaleX: config.scaleEnd,
+    scaleY: config.scaleEnd,
+    alpha: 0,
+    duration: config.duration,
+    ease: 'Cubic.easeOut',
+    onComplete: () => flash.destroy(),
+  });
+
+  return flash;
 };
 
 export type RetroParticlePresetName =
@@ -571,6 +730,8 @@ type RetroParticlePreset = {
   alphaStart: number;
   depth: number;
   gravityY?: number;
+  textureKey?: string;
+  cleanupDelayMs?: number;
 };
 
 const RETRO_PARTICLE_PRESETS: Record<RetroParticlePresetName, RetroParticlePreset> = {
@@ -582,9 +743,44 @@ const RETRO_PARTICLE_PRESETS: Record<RetroParticlePresetName, RetroParticlePrese
   power: { count: 12, speed: [32, 96], lifespan: 340, angle: [0, 360], scaleStart: 1.5, scaleEnd: 0.22, alphaStart: 0.9, depth: 9 },
   heal: { count: 14, speed: [26, 88], lifespan: 360, angle: [0, 360], scaleStart: 1.6, scaleEnd: 0.18, alphaStart: 0.9, depth: 9 },
   transition: { count: 10, speed: [22, 72], lifespan: 320, angle: [0, 360], scaleStart: 1.2, scaleEnd: 0.18, alphaStart: 0.9, depth: 12 },
-  'player-defeat': { count: 26, speed: [62, 156], lifespan: 460, angle: [0, 360], scaleStart: 2.3, scaleEnd: 0.18, alphaStart: 1, depth: 14, gravityY: 162 },
-  'enemy-defeat-stomp': { count: 12, speed: [28, 80], lifespan: 280, angle: [205, 335], scaleStart: 1.55, scaleEnd: 0.18, alphaStart: 0.98, depth: 13, gravityY: 156 },
-  'enemy-defeat-plasma': { count: 16, speed: [42, 132], lifespan: 320, angle: [0, 360], scaleStart: 1.42, scaleEnd: 0.12, alphaStart: 0.96, depth: 13 },
+  'player-defeat': {
+    count: 42,
+    speed: [110, 240],
+    lifespan: 296,
+    angle: [0, 360],
+    scaleStart: 4.4,
+    scaleEnd: 0.42,
+    alphaStart: 1,
+    depth: 16,
+    gravityY: 156,
+    textureKey: 'retro-particle-burst',
+    cleanupDelayMs: 320,
+  },
+  'enemy-defeat-stomp': {
+    count: 26,
+    speed: [56, 150],
+    lifespan: 248,
+    angle: [198, 342],
+    scaleStart: 3.6,
+    scaleEnd: 0.4,
+    alphaStart: 1,
+    depth: 15,
+    gravityY: 184,
+    textureKey: 'retro-particle-burst',
+    cleanupDelayMs: 300,
+  },
+  'enemy-defeat-plasma': {
+    count: 32,
+    speed: [78, 210],
+    lifespan: 272,
+    angle: [0, 360],
+    scaleStart: 4.2,
+    scaleEnd: 0.28,
+    alphaStart: 1,
+    depth: 15,
+    textureKey: 'retro-particle-burst',
+    cleanupDelayMs: 320,
+  },
 };
 
 export const getRetroParticlePreset = (preset: RetroParticlePresetName): RetroParticlePreset => RETRO_PARTICLE_PRESETS[preset];
@@ -597,7 +793,7 @@ export const spawnRetroParticleBurst = (
   preset: RetroParticlePresetName,
 ): Phaser.GameObjects.Particles.ParticleEmitter => {
   const config = getRetroParticlePreset(preset);
-  const emitter = scene.add.particles(x, y, 'retro-particle', {
+  const emitter = scene.add.particles(x, y, config.textureKey ?? 'retro-particle', {
     emitting: false,
     tint,
     speed: { min: config.speed[0], max: config.speed[1] },
@@ -609,7 +805,7 @@ export const spawnRetroParticleBurst = (
   });
   emitter.setDepth(config.depth);
   emitter.explode(config.count, x, y);
-  scene.time.delayedCall(config.lifespan + 80, () => emitter.destroy());
+  scene.time.delayedCall(config.cleanupDelayMs ?? config.lifespan + 80, () => emitter.destroy());
   return emitter;
 };
 
@@ -623,10 +819,16 @@ export const drawRetroBackdrop = (
   variant: 'gameplay' | 'transition' = 'gameplay',
 ): Phaser.GameObjects.Graphics => {
   const backdrop = scene.add.graphics().setDepth(0);
-  const horizonY = y + Math.floor(height * (variant === 'gameplay' ? 0.68 : 0.62));
-  const skylineY = y + Math.floor(height * (variant === 'gameplay' ? 0.52 : 0.48));
-  const stepWidth = variant === 'gameplay' ? 104 : 68;
-  const columnCount = Math.ceil(width / stepWidth) + 1;
+  const horizonY = y + Math.floor(height * (variant === 'gameplay' ? 0.7 : 0.64));
+  const skylineY = y + Math.floor(height * (variant === 'gameplay' ? 0.5 : 0.46));
+  const motifPalette = createRetroBackdropMotifPalette(palette);
+  const paletteSeed = (palette.stageAccent ^ palette.skyline ^ palette.groundBand) >>> 0;
+  const celestialSpacing = variant === 'gameplay' ? 1800 : 1100;
+  const celestialCount = Math.max(2, Math.ceil(width / celestialSpacing));
+  const planetRadius = variant === 'gameplay' ? Math.max(28, Math.floor(height * 0.11)) : Math.max(22, Math.floor(height * 0.1));
+  const starCount = Math.max(14, celestialCount * (variant === 'gameplay' ? 7 : 5));
+  const craterCount = variant === 'gameplay' ? 7 : 5;
+  const ridgeSegments = variant === 'gameplay' ? 8 : 6;
 
   backdrop.fillStyle(palette.background, 1);
   backdrop.fillRect(x, y, width, height);
@@ -635,8 +837,8 @@ export const drawRetroBackdrop = (
   backdrop.fillRect(x, y, width, Math.max(18, Math.floor(height * 0.08)));
 
   backdrop.fillStyle(palette.backdropGlow, variant === 'gameplay' ? 0.12 : 0.14);
-  const glowStartY = y + Math.floor(height * (variant === 'gameplay' ? 0.18 : 0.14));
-  const glowSpacing = variant === 'gameplay' ? 44 : 32;
+  const glowStartY = y + Math.floor(height * (variant === 'gameplay' ? 0.16 : 0.13));
+  const glowSpacing = variant === 'gameplay' ? 38 : 28;
   const glowLines = variant === 'gameplay' ? 3 : 4;
   for (let index = 0; index < glowLines; index += 1) {
     const glowY = glowStartY + index * glowSpacing;
@@ -646,83 +848,96 @@ export const drawRetroBackdrop = (
     backdrop.fillRect(x, glowY, width, 3);
   }
 
+  for (let index = 0; index < starCount; index += 1) {
+    const offsetSeed = (paletteSeed + index * 97) >>> 0;
+    const starX = x + 18 + (offsetSeed % Math.max(width - 36, 1));
+    const starY = y + 18 + (((offsetSeed >> 3) * 29) % Math.max(Math.floor(height * 0.34), 28));
+    const starSize = index % 4 === 0 ? 3 : 2;
+    backdrop.fillStyle(index % 3 === 0 ? motifPalette.starWarm : motifPalette.starCool, index % 5 === 0 ? 0.94 : 0.82);
+    backdrop.fillRect(starX, starY, starSize, starSize);
+    if (index % 4 === 0) {
+      backdrop.fillRect(starX - 2, starY + 1, starSize + 4, 1);
+      backdrop.fillRect(starX + 1, starY - 2, 1, starSize + 4);
+    }
+  }
+
+  for (let index = 0; index < celestialCount; index += 1) {
+    const sectionLeft = x + Math.floor((index / celestialCount) * width);
+    const sectionWidth = Math.ceil(width / celestialCount);
+    const sectionSeed = (paletteSeed + index * 173) >>> 0;
+    const bodyX = sectionLeft + Math.floor(sectionWidth * (0.34 + ((sectionSeed & 0x1f) / 255) * 0.32));
+    const bodyY = y + Math.floor(height * (0.16 + (((sectionSeed >> 5) & 0x0f) / 255) * 0.16));
+    const bodyRadius = Math.max(variant === 'gameplay' ? 24 : 18, planetRadius - (index % 2 === 0 ? 0 : 8));
+    const moonRadius = Math.max(10, Math.floor(bodyRadius * 0.4));
+    const moonX = bodyX - Math.floor(bodyRadius * (1.15 + (index % 3) * 0.12));
+    const moonY = bodyY + Math.floor(bodyRadius * (0.22 - (index % 2) * 0.12));
+
+    backdrop.fillStyle(motifPalette.planetShade, 0.42);
+    backdrop.fillCircle(bodyX + 8, bodyY + 7, bodyRadius);
+    backdrop.fillStyle(motifPalette.planetFill, 0.58);
+    backdrop.fillCircle(bodyX, bodyY, bodyRadius);
+    backdrop.fillStyle(motifPalette.craterDark, 0.34);
+    backdrop.fillCircle(bodyX - Math.floor(bodyRadius * 0.24), bodyY + Math.floor(bodyRadius * 0.18), Math.max(6, Math.floor(bodyRadius * 0.22)));
+    backdrop.fillCircle(bodyX + Math.floor(bodyRadius * 0.22), bodyY - Math.floor(bodyRadius * 0.14), Math.max(4, Math.floor(bodyRadius * 0.16)));
+    if (index % 2 === 0) {
+      backdrop.lineStyle(4, motifPalette.ring, 0.46);
+      backdrop.strokeEllipse(bodyX - 2, bodyY + 3, bodyRadius * 2.8, Math.max(20, bodyRadius * 0.82));
+    }
+
+    backdrop.fillStyle(motifPalette.planetFill, variant === 'gameplay' ? 0.34 : 0.28);
+    backdrop.fillCircle(moonX, moonY, moonRadius);
+    backdrop.fillStyle(motifPalette.craterLight, 0.24);
+    backdrop.fillCircle(moonX + Math.floor(moonRadius * 0.14), moonY + Math.floor(moonRadius * 0.18), Math.max(4, Math.floor(moonRadius * 0.2)));
+  }
+
   backdrop.fillStyle(palette.skyline, 1);
   backdrop.fillRect(x, skylineY, width, Math.max(36, horizonY - skylineY));
 
-  backdrop.fillStyle(palette.backdropGlow, 0.16);
+  backdrop.fillStyle(motifPalette.horizonGlow, 0.16);
   backdrop.fillRect(x, skylineY - 8, width, 4);
   backdrop.fillStyle(palette.backdropAccent, 0.08);
   backdrop.fillRect(x, skylineY + 6, width, 6);
 
-  const mesaWidth = variant === 'gameplay' ? 64 : 48;
-  const mesaCount = Math.ceil(width / mesaWidth) + 1;
-  for (let index = 0; index < mesaCount; index += 1) {
-    const mesaX = x + index * mesaWidth;
-    const tierHeight = 16 + (index % 4) * 8;
-    backdrop.fillStyle(index % 3 === 0 ? palette.backdropAccent : palette.backdropColumn, index % 3 === 0 ? 0.5 : 0.34);
-    backdrop.fillRect(mesaX, horizonY - 28 - tierHeight, Math.min(mesaWidth - 10, width - (mesaX - x)), tierHeight);
-    backdrop.fillStyle(palette.ink, 0.9);
-    backdrop.fillRect(mesaX, horizonY - 30 - tierHeight, Math.min(mesaWidth - 10, width - (mesaX - x)), 3);
-    backdrop.fillStyle(palette.backdropGlow, 0.22);
-    backdrop.fillRect(mesaX + 6, horizonY - 16 - tierHeight, Math.min(14, Math.max(mesaWidth - 22, 4)), 4);
+  const ridgeWidth = Math.ceil(width / ridgeSegments);
+  for (let index = 0; index < ridgeSegments; index += 1) {
+    const ridgeX = x + index * ridgeWidth;
+    const ridgeHeight = 18 + ((paletteSeed >> (index % 8)) & 0x07) * 5 + (index % 2 === 0 ? 8 : 0);
+    const ridgeTop = horizonY - ridgeHeight;
+    const ridgeColor = index % 2 === 0 ? motifPalette.craterDark : motifPalette.craterLight;
+    backdrop.fillStyle(ridgeColor, index % 2 === 0 ? 0.72 : 0.48);
+    backdrop.fillRect(ridgeX, ridgeTop, Math.min(ridgeWidth + 2, x + width - ridgeX), ridgeHeight + 10);
+    backdrop.fillStyle(palette.ink, 0.18);
+    backdrop.fillEllipse(ridgeX + Math.floor(ridgeWidth * 0.46), ridgeTop + Math.max(6, Math.floor(ridgeHeight * 0.34)), Math.max(18, Math.floor(ridgeWidth * 0.5)), Math.max(10, Math.floor(ridgeHeight * 0.22)));
   }
 
   backdrop.fillStyle(palette.groundBand, 1);
   backdrop.fillRect(x, horizonY, width, y + height - horizonY);
 
-  backdrop.fillStyle(palette.backdropGlow, 0.22);
+  backdrop.fillStyle(motifPalette.horizonGlow, 0.22);
   backdrop.fillRect(x, horizonY - 16, width, 8);
 
-  for (let index = 0; index < columnCount; index += 1) {
-    const columnX = x + index * stepWidth;
-    if (columnX >= x + width) {
-      break;
-    }
-    const isAccentColumn = index % 4 === 1;
-    const columnHeight = variant === 'gameplay' ? 32 + (index % 4) * 16 : 48 + (index % 3) * 20;
-    const columnWidth = Math.min(stepWidth - 12, width - (columnX - x));
-    backdrop.fillStyle(isAccentColumn ? palette.backdropAccent : palette.backdropColumn, isAccentColumn ? 0.86 : 0.78);
-    backdrop.fillRect(columnX, horizonY - columnHeight, columnWidth, columnHeight);
-    backdrop.fillStyle(palette.ink, 1);
-    backdrop.fillRect(columnX, horizonY - columnHeight, columnWidth, 4);
-    backdrop.fillStyle(palette.backdropGlow, 0.18);
-    backdrop.fillRect(columnX + 4, horizonY - columnHeight + 8, Math.max(4, columnWidth - 8), 2);
-    const windowRows = Math.max(1, Math.floor((columnHeight - 12) / 14));
-    const windowWidth = Math.max(4, Math.floor(columnWidth / 5));
-    for (let row = 0; row < windowRows; row += 1) {
-      const windowY = horizonY - columnHeight + 8 + row * 12;
-      const lit = (index + row) % 3 !== 0;
-      backdrop.fillStyle(lit ? palette.bright : palette.backdropGlow, lit ? 0.38 : 0.22);
-      backdrop.fillRect(columnX + 5, windowY, windowWidth, 4);
-      if (columnWidth >= 18) {
-        backdrop.fillRect(columnX + Math.floor(columnWidth / 2) - Math.floor(windowWidth / 2), windowY, windowWidth, 4);
-      }
-      if (columnWidth >= 26) {
-        backdrop.fillRect(columnX + columnWidth - windowWidth - 5, windowY, windowWidth, 4);
-      }
-    }
+  for (let index = 0; index < craterCount; index += 1) {
+    const craterX = x + Math.floor(((index + 1) / (craterCount + 1)) * width);
+    const craterY = horizonY + 20 + (index % 3) * 18;
+    const craterWidth = variant === 'gameplay' ? 44 + (index % 3) * 10 : 34 + (index % 2) * 10;
+    const craterHeight = 12 + (index % 2) * 5;
+    backdrop.fillStyle(motifPalette.craterDark, 0.26);
+    backdrop.fillEllipse(craterX, craterY, craterWidth, craterHeight);
+    backdrop.fillStyle(motifPalette.craterLight, 0.16);
+    backdrop.fillEllipse(craterX, craterY - 2, craterWidth - 8, Math.max(6, craterHeight - 4));
   }
 
   const scanlineStart = skylineY + 10;
-  const scanlineSpacing = variant === 'gameplay' ? 20 : 16;
+  const scanlineSpacing = variant === 'gameplay' ? 22 : 16;
   backdrop.fillStyle(palette.ink, 0.18);
   for (let lineY = scanlineStart; lineY < horizonY - 8; lineY += scanlineSpacing) {
     backdrop.fillRect(x, lineY, width, 2);
   }
 
-  const groundLineSpacing = variant === 'gameplay' ? 18 : 14;
-  backdrop.fillStyle(palette.backdropGlow, 0.1);
+  const groundLineSpacing = variant === 'gameplay' ? 22 : 16;
+  backdrop.fillStyle(motifPalette.horizonGlow, 0.08);
   for (let lineY = horizonY + 10; lineY < y + height - 8; lineY += groundLineSpacing) {
     backdrop.fillRect(x, lineY, width, 2);
-  }
-
-  const starCount = variant === 'gameplay' ? 14 : 10;
-  for (let index = 0; index < starCount; index += 1) {
-    const starX = x + 18 + ((index * 73) % Math.max(width - 36, 1));
-    const starY = y + 18 + ((index * 41) % Math.max(Math.floor(height * 0.34), 24));
-    const starSize = index % 3 === 0 ? 4 : 2;
-    backdrop.fillStyle(index % 4 === 0 ? palette.warm : palette.border, 1);
-    backdrop.fillRect(starX, starY, starSize, starSize);
   }
 
   if (variant === 'transition') {
@@ -731,4 +946,10 @@ export const drawRetroBackdrop = (
   }
 
   return backdrop;
+};
+
+const RETRO_DEFEAT_FLASH_PRESETS: Record<RetroDefeatFlashPresetName, RetroDefeatFlashPreset> = {
+  stomp: { width: 44, height: 22, alpha: 0.78, depth: 14, duration: 120, scaleStart: 0.7, scaleEnd: 1.75 },
+  'plasma-blast': { width: 40, height: 40, alpha: 0.72, depth: 14, duration: 132, scaleStart: 0.68, scaleEnd: 1.9 },
+  'player-death': { width: 58, height: 44, alpha: 0.82, depth: 15, duration: 148, scaleStart: 0.64, scaleEnd: 2.05 },
 };
