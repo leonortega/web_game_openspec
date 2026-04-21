@@ -11,8 +11,6 @@ import {
   RETRO_FONT_FAMILY,
   createRetroPresentationPalette,
   drawRetroBackdrop,
-  playRetroTweenPreset,
-  spawnRetroParticleBurst,
 } from '../view/retroPresentation';
 import { SynthAudio } from '../audio/SynthAudio';
 import { runUnlockedAudioAction } from '../audio/sceneAudio';
@@ -23,12 +21,6 @@ export class CompleteScene extends Phaser.Scene {
   private audio?: SynthAudio;
 
   private autoAdvanceEvent?: Phaser.Time.TimerEvent;
-
-  private accentPanel?: Phaser.GameObjects.Rectangle;
-
-  private accentBurstCount = 0;
-
-  private accentTweenActive = false;
 
   constructor() {
     super('complete');
@@ -142,19 +134,6 @@ export class CompleteScene extends Phaser.Scene {
       )
       .setOrigin(0.5);
 
-    const accentTint = finalStage ? retro.safe : retro.stageAccent;
-    this.accentPanel = this.add
-      .rectangle(width - 176, 288, 104, 118, retro.panelAlt, 0.82)
-      .setStrokeStyle(3, retro.border, 0.9)
-      .setDepth(6);
-    this.add.rectangle(width - 176, 258, 58, 12, accentTint, 0.96).setDepth(7);
-    this.add.rectangle(width - 176, 288, 72, 16, retro.warm, 0.94).setDepth(7);
-    this.add.rectangle(width - 176, 320, 48, 10, accentTint, 0.92).setDepth(7);
-    playRetroTweenPreset(this, this.accentPanel, 'transition', { repeat: finalStage ? 2 : 1 });
-    this.accentTweenActive = true;
-    spawnRetroParticleBurst(this, width - 176, 272, finalStage ? retro.safe : retro.warm, 'transition');
-    this.accentBurstCount += 1;
-
     this.audio.playStageClear(state.stage, finalStage);
     const retryCompletionAudio = () => {
       if (!this.audio) {
@@ -178,17 +157,24 @@ export class CompleteScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.autoAdvanceEvent?.remove(false);
       this.autoAdvanceEvent = undefined;
-      this.accentTweenActive = false;
       this.audio?.stopMusic();
       this.audio = undefined;
     });
   }
 
-  getDebugSnapshot(): { accentBurstCount: number; accentTweenActive: boolean; accentVisible: boolean } {
+  getDebugSnapshot(): {
+    accentBurstCount: number;
+    accentTweenActive: boolean;
+    accentVisible: boolean;
+    accentMode: string;
+    sideWidgetVisible: boolean;
+  } {
     return {
-      accentBurstCount: this.accentBurstCount,
-      accentTweenActive: this.accentTweenActive,
-      accentVisible: this.accentPanel?.visible ?? false,
+      accentBurstCount: 0,
+      accentTweenActive: false,
+      accentVisible: false,
+      accentMode: 'none',
+      sideWidgetVisible: false,
     };
   }
 }

@@ -33,6 +33,15 @@ export type GravityCapsuleRoomContentDefinition = {
   enemyIds?: string[];
 };
 
+export type GravityCapsuleDoorSupportsDefinition = {
+  entryApproachPlatformId: string;
+  entryApproachPath: Rect;
+  exitInteriorPlatformId: string;
+  exitReconnectPlatformId: string;
+  exitReconnectPath: Rect;
+  routePlatformIds: string[];
+};
+
 export type PlatformDefinition = Rect & {
   id: string;
   kind: PlatformKind;
@@ -67,6 +76,7 @@ export type GravityCapsuleDefinition = {
   buttonRoute: Rect;
   exitRoute: Rect;
   contents: GravityCapsuleRoomContentDefinition;
+  doorSupports?: GravityCapsuleDoorSupportsDefinition;
 };
 
 export type RevealVolumeDefinition = Rect & {

@@ -8,7 +8,9 @@
     "test": "vitest run",
     "preview": "vite preview",
     "playtest:stages": "node scripts/stage-playtest.mjs",
-    "playtest:traversal-visual-language": "node scripts/traversal-category-visual-language-playtest.mjs"
+    "playtest:gravity-room-in-out-flow": "node scripts/gravity-room-in-out-flow-playtest.mjs",
+    "playtest:traversal-visual-language": "node scripts/traversal-category-visual-language-playtest.mjs",
+    "playtest:complete-scene-accent": "node scripts/complete-scene-accent-playtest.mjs"
   },
   "keywords": [],
   "author": "",

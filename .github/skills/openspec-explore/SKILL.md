@@ -43,6 +43,9 @@ Depending on what the user brings, you might:
 - Challenge assumptions
 - Reframe the problem
 - Find analogies
+- Translate player-facing intent into concrete constraints before proposing implementation shape
+- Decode examples, sketches, screenshots, annotations, comparisons, and references into explicit keep/remove/move/forbid semantics when they materially affect scope
+- Identify false-positive solutions that might satisfy code, validation, or spec wording while still missing the user's intended gameplay or UX outcome
 
 **Investigate the codebase**
 - Map existing architecture relevant to the discussion
@@ -78,6 +81,13 @@ Depending on what the user brings, you might:
 - Identify what could go wrong
 - Find gaps in understanding
 - Suggest spikes or investigations
+
+**Normalize intent before formalization**
+- Separate gameplay/design intent from implementation wording
+- State what experience should change for the player, not only what geometry, code, or data should change
+- When examples or annotations are present, explain what they mean before treating them as implementation requirements
+- Capture what must stay, what must be removed, what may move, and what kinds of workaround are forbidden
+- Call out ambiguous interpretations early so proposal/apply do not lock onto a technically valid but experientially wrong solution
 
 ---
 
@@ -141,6 +151,7 @@ If the user mentions a change or you detect one is relevant:
    - "That's a design decision. Capture it in design.md?"
    - "This is a new requirement. Add it to specs?"
    - "This changes scope. Update the proposal?"
+     - "This screenshot implies remove/move semantics, not just new validation. Capture that before proposal?"
 
 5. **The user decides** - Offer and move on. Don't pressure. Don't auto-capture.
 
@@ -297,6 +308,8 @@ But this summary is optional. Sometimes the thinking IS the value.
 - **Don't rush** - Discovery is thinking time, not task time
 - **Don't force structure** - Let patterns emerge naturally
 - **Don't auto-capture** - Offer to save insights, don't just do it
+- **Don't collapse player intent into code intent too early** - A technically valid validator or data change can still miss requested gameplay outcome
+- **Don't ignore user-provided examples** - If sketches, screenshots, markup, or comparisons are present, interpret their meaning explicitly before recommending a path
 - **Do visualize** - A good diagram is worth many paragraphs
 - **Do explore the codebase** - Ground discussions in reality
 - **Do question assumptions** - Including the user's and your own

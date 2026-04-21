@@ -829,7 +829,12 @@ async function collectFlowResults(page) {
       hasRetroFrame: retroRectangles.length >= 4,
       hasNoAstronautAccent: !spriteTextureKeys.includes('player'),
       usesRetroFont: textNodes.every((child) => child.style?.fontFamily?.includes('Courier New')),
-      accentAnimated: Boolean(debug?.accentVisible) && debug?.accentTweenActive === true && (debug?.accentBurstCount ?? 0) > 0,
+      noDedicatedWidget:
+        debug?.accentMode === 'none' &&
+        debug?.accentVisible === false &&
+        debug?.accentTweenActive === false &&
+        (debug?.accentBurstCount ?? 0) === 0 &&
+        debug?.sideWidgetVisible === false,
     };
   });
   await waitForActiveScene(page, 'stage-intro', 12000);
@@ -1136,7 +1141,7 @@ async function collectFlowResults(page) {
       completeCheck.hasRetroFrame &&
       completeCheck.hasNoAstronautAccent &&
       completeCheck.usesRetroFont &&
-      completeCheck.accentAnimated,
+      completeCheck.noDedicatedWidget,
     capsuleExitFinishWorked:
       Boolean(capsuleFinishSnapshot) &&
       capsuleFinishSnapshot.exitFinishActive &&
@@ -1247,7 +1252,7 @@ async function collectFlowResults(page) {
     gameplayPlayerDefeatFeedbackWorked: (defeatFeedbackSnapshot?.feedbackCounts?.playerDefeat ?? 0) > 0,
     gameplayEnemyDefeatFeedbackWorked: (defeatFeedbackSnapshot?.feedbackCounts?.enemyDefeat ?? 0) > 0,
     introNoDedicatedAccent: introCheck.noDedicatedAccent,
-    completionAccentAnimated: completeCheck.accentAnimated,
+    completionNoDedicatedWidget: completeCheck.noDedicatedWidget,
     shellExpandedOnDesktop:
       Boolean(roomyShellCheck) &&
       roomyShellCheck.desktopGrowth &&
@@ -1835,7 +1840,7 @@ async function collectStageResults(page) {
       inner.y >= outer.y &&
       inner.x + inner.width <= outer.x + outer.width &&
       inner.y + inner.height <= outer.y + outer.height;
-    const probeGravityRoomBottomEdge = (stageIndex, capsuleId, rect, expectPassThrough) => {
+    const probeGravityRoomBottomEdge = (stageIndex, capsuleId, expectBlocked) => {
       bridge.forceStartStage(stageIndex);
       resetToGameScene();
       const probeState = bridge.getSession().getState();
@@ -1844,7 +1849,7 @@ async function collectStageResults(page) {
 
       probeState.stageRuntime.enemies = [];
       probeState.stageRuntime.hazards = [];
-      probeState.player.x = rect.x + rect.width / 2 - probeState.player.width / 2;
+      probeState.player.x = probeCapsule.shell.x + probeCapsule.shell.width / 2 - probeState.player.width / 2;
       probeState.player.y = shellBottom + 2;
       probeState.player.vx = 0;
       probeState.player.vy = -400;
@@ -1853,7 +1858,35 @@ async function collectStageResults(page) {
       bridge.consumeFrame(16);
 
       const afterProbe = bridge.getSession().getState();
-      return expectPassThrough ? afterProbe.player.y < shellBottom : afterProbe.player.y >= shellBottom;
+      return expectBlocked ? afterProbe.player.y >= shellBottom : afterProbe.player.y < shellBottom;
+    };
+    const probeGravityRoomSideDoor = (stageIndex, capsuleId, side, expectPassThrough) => {
+      bridge.forceStartStage(stageIndex);
+      resetToGameScene();
+      const probeState = bridge.getSession().getState();
+      const probeCapsule = probeState.stageRuntime.gravityCapsules.find((capsule) => capsule.id === capsuleId);
+      const shellRight = probeCapsule.shell.x + probeCapsule.shell.width;
+      const door = side === 'left' ? probeCapsule.entryDoor : probeCapsule.exitDoor;
+
+      probeState.stageRuntime.enemies = [];
+      probeState.stageRuntime.hazards = [];
+      probeState.player.x =
+        side === 'left' ? probeCapsule.shell.x - probeState.player.width + 2 : shellRight - 2;
+      probeState.player.y = door.y + door.height / 2 - probeState.player.height / 2;
+      probeState.player.vx = side === 'left' ? 420 : 420;
+      probeState.player.vy = 0;
+      probeState.player.onGround = false;
+      probeState.player.supportPlatformId = null;
+      bridge.consumeFrame(16);
+
+      const afterProbe = bridge.getSession().getState();
+      return expectPassThrough
+        ? side === 'left'
+          ? afterProbe.player.x >= probeCapsule.shell.x
+          : afterProbe.player.x >= shellRight
+        : side === 'left'
+          ? afterProbe.player.x < probeCapsule.shell.x
+          : afterProbe.player.x < shellRight;
     };
     const gravityRoomWallContainmentAcrossStages = (() => {
       const audit = [0, 1, 2].map((stageIndex) => {
@@ -1862,26 +1895,10 @@ async function collectStageResults(page) {
         const rolloutState = bridge.getSession().getState();
 
         return rolloutState.stageRuntime.gravityCapsules.every((capsule) => {
-          const blockedSpanX = capsule.entryDoor.x + capsule.entryDoor.width;
-          const blockedSpanWidth = capsule.exitDoor.x - blockedSpanX;
-          if (blockedSpanWidth <= 0) {
-            return false;
-          }
-
           return (
-            probeGravityRoomBottomEdge(stageIndex, capsule.id, capsule.entryDoor, true) &&
-            probeGravityRoomBottomEdge(stageIndex, capsule.id, capsule.exitDoor, true) &&
-            probeGravityRoomBottomEdge(
-              stageIndex,
-              capsule.id,
-              {
-                x: blockedSpanX,
-                y: capsule.entryDoor.y,
-                width: blockedSpanWidth,
-                height: capsule.entryDoor.height,
-              },
-              false,
-            )
+            probeGravityRoomSideDoor(stageIndex, capsule.id, 'left', true) &&
+            probeGravityRoomSideDoor(stageIndex, capsule.id, 'right', true) &&
+            probeGravityRoomBottomEdge(stageIndex, capsule.id, true)
           );
         });
       });
@@ -3224,7 +3241,7 @@ async function main() {
         );
         notes.push(
           mechanics.gravityCapsuleDormantVisible
-            ? 'gravity room shell, separate bottom doors, and disable button stay readable while the field is active'
+            ? 'gravity room shell, side-wall doors, and disable button stay readable while the field is active'
             : 'gravity room active presentation is missing before disable contact',
         );
         notes.push(
@@ -3811,7 +3828,7 @@ async function main() {
           playerDefeatFeedbackWorked: flowChecks.gameplayPlayerDefeatFeedbackWorked,
           enemyDefeatFeedbackWorked: flowChecks.gameplayEnemyDefeatFeedbackWorked,
         introNoDedicatedAccent: flowChecks.introNoDedicatedAccent,
-        completionAccentAnimated: flowChecks.completionAccentAnimated,
+        completionNoDedicatedWidget: flowChecks.completionNoDedicatedWidget,
         shellExpandedOnDesktop: flowChecks.shellExpandedOnDesktop,
         shellBoundedOnConstrainedViewport: flowChecks.shellBoundedOnConstrainedViewport,
         passed:
@@ -3824,7 +3841,7 @@ async function main() {
             flowChecks.gameplayPlayerDefeatFeedbackWorked &&
             flowChecks.gameplayEnemyDefeatFeedbackWorked &&
           flowChecks.introNoDedicatedAccent &&
-          flowChecks.completionAccentAnimated &&
+          flowChecks.completionNoDedicatedWidget &&
           flowChecks.shellExpandedOnDesktop &&
           flowChecks.shellBoundedOnConstrainedViewport,
       },
@@ -3839,7 +3856,7 @@ async function main() {
         flowChecks.gameplayPlayerDefeatFeedbackWorked ? 'player defeat burst triggered on the existing respawn path' : 'player defeat burst did not trigger on the existing respawn path',
         flowChecks.gameplayEnemyDefeatFeedbackWorked ? 'enemy defeat particles triggered on local defeats' : 'enemy defeat particles did not trigger on local defeats',
         flowChecks.introNoDedicatedAccent ? 'intro scene stayed text-focused with no dedicated accent during the existing intro duration' : 'intro scene did not satisfy the no-accent transition contract',
-        flowChecks.completionAccentAnimated ? 'completion non-character accent animation stayed active inside the existing results duration' : 'completion non-character accent animation did not stay active inside the results duration',
+        flowChecks.completionNoDedicatedWidget ? 'completion surface stayed centered with no dedicated side widget during the existing results duration' : 'completion surface still exposed dedicated side-widget state during the existing results duration',
         flowChecks.shellExpandedOnDesktop ? 'game shell expanded on roomy desktop viewports without losing centering' : 'game shell did not expand cleanly on roomy desktop viewports',
         flowChecks.shellBoundedOnConstrainedViewport ? 'game shell stayed bounded on constrained viewports without horizontal overflow' : 'game shell overflowed or lost centering on constrained viewports',
       ],

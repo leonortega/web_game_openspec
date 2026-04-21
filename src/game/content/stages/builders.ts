@@ -3,6 +3,7 @@ import type {
   EnemyDefinition,
   GravityCapsuleButtonDefinition,
   GravityCapsuleDefinition,
+  GravityCapsuleDoorSupportsDefinition,
   GravityCapsuleRoomContentDefinition,
   GravityFieldDefinition,
   LauncherDefinition,
@@ -304,6 +305,7 @@ export const gravityCapsule = (
   buttonRoute: Rect,
   exitRoute: Rect,
   contents: GravityCapsuleRoomContentDefinition,
+  doorSupports?: GravityCapsuleDoorSupportsDefinition,
 ): GravityCapsuleDefinition => ({
   id,
   fieldId,
@@ -315,6 +317,7 @@ export const gravityCapsule = (
   buttonRoute,
   exitRoute,
   contents,
+  doorSupports,
 });
 
 export const findSupportBelowSpan = (
@@ -370,6 +373,227 @@ export const intersectsRect = (a: Rect, b: Rect): boolean =>
 
 export const overlapWidth = (leftStart: number, leftEnd: number, rightStart: number, rightEnd: number): number =>
   Math.max(0, Math.min(leftEnd, rightEnd) - Math.max(leftStart, rightStart));
+
+export const overlapHeight = (topStart: number, topEnd: number, bottomStart: number, bottomEnd: number): number =>
+  Math.max(0, Math.min(topEnd, bottomEnd) - Math.max(topStart, bottomStart));
+
+export const gravityCapsuleShellWallThickness = (capsule: Pick<GravityCapsuleDefinition, 'entryDoor' | 'exitDoor'>): number =>
+  Math.max(6, Math.min(12, Math.floor(Math.min(capsule.entryDoor.height, capsule.exitDoor.height) / 4)));
+
+const gravityCapsuleEntryDoorOnLeftWall = (capsule: GravityCapsuleDefinition): boolean =>
+  capsule.entryDoor.x === capsule.shell.x;
+
+const gravityCapsuleExitDoorOnRightWall = (capsule: GravityCapsuleDefinition): boolean =>
+  capsule.exitDoor.x + capsule.exitDoor.width === capsule.shell.x + capsule.shell.width;
+
+const gravityCapsuleSealedBottomSpans = (capsule: GravityCapsuleDefinition): Array<{ left: number; right: number }> => {
+  const shellRight = capsule.shell.x + capsule.shell.width;
+
+  return [{ left: capsule.shell.x, right: shellRight }];
+};
+
+const gravityCapsuleSealedLeftWallSpans = (capsule: GravityCapsuleDefinition): Array<{ top: number; bottom: number }> => [
+  { top: capsule.shell.y, bottom: capsule.entryDoor.y },
+  { top: capsule.entryDoor.y + capsule.entryDoor.height, bottom: capsule.shell.y + capsule.shell.height },
+].filter((span) => span.bottom > span.top);
+
+const gravityCapsuleSealedRightWallSpans = (capsule: GravityCapsuleDefinition): Array<{ top: number; bottom: number }> => [
+  { top: capsule.shell.y, bottom: capsule.exitDoor.y },
+  { top: capsule.exitDoor.y + capsule.exitDoor.height, bottom: capsule.shell.y + capsule.shell.height },
+].filter((span) => span.bottom > span.top);
+;
+
+const rectCrossesVerticalWallAtSealedSpan = (
+  rect: Rect,
+  wallX: number,
+  spans: Array<{ top: number; bottom: number }>,
+): boolean =>
+  rect.x < wallX && rect.x + rect.width > wallX && spans.some((span) => overlapHeight(rect.y, rect.y + rect.height, span.top, span.bottom) > 0);
+
+const rectCrossesHorizontalWallAtSealedSpan = (
+  rect: Rect,
+  wallY: number,
+  spans: Array<{ left: number; right: number }>,
+): boolean =>
+  rect.y < wallY && rect.y + rect.height > wallY && spans.some((span) => overlapWidth(rect.x, rect.x + rect.width, span.left, span.right) > 0);
+
+export const gravityCapsuleUsesSideWallDoors = (capsule: GravityCapsuleDefinition): boolean => {
+  const shellBottom = capsule.shell.y + capsule.shell.height;
+
+  return (
+    gravityCapsuleEntryDoorOnLeftWall(capsule) &&
+    gravityCapsuleExitDoorOnRightWall(capsule) &&
+    capsule.entryDoor.y > capsule.shell.y &&
+    capsule.exitDoor.y > capsule.shell.y &&
+    capsule.entryDoor.y + capsule.entryDoor.height < shellBottom &&
+    capsule.exitDoor.y + capsule.exitDoor.height < shellBottom
+  );
+};
+
+export const gravityCapsuleRectCrossesSealedShellBoundary = (capsule: GravityCapsuleDefinition, rect: Rect): boolean => {
+  const shellRight = capsule.shell.x + capsule.shell.width;
+  const shellBottom = capsule.shell.y + capsule.shell.height;
+  const overlapsShellHeight = rect.y < shellBottom && rect.y + rect.height > capsule.shell.y;
+  const overlapsShellWidth = rect.x < shellRight && rect.x + rect.width > capsule.shell.x;
+
+  if (overlapsShellHeight && rectCrossesVerticalWallAtSealedSpan(rect, capsule.shell.x, gravityCapsuleSealedLeftWallSpans(capsule))) {
+    return true;
+  }
+
+  if (overlapsShellHeight && rectCrossesVerticalWallAtSealedSpan(rect, shellRight, gravityCapsuleSealedRightWallSpans(capsule))) {
+    return true;
+  }
+
+  if (overlapsShellWidth && rect.y < capsule.shell.y && rect.y + rect.height > capsule.shell.y) {
+    return true;
+  }
+
+  if (rectCrossesHorizontalWallAtSealedSpan(rect, shellBottom, gravityCapsuleSealedBottomSpans(capsule))) {
+    return true;
+  }
+
+  return false;
+};
+
+const gravityCapsuleDoorPathPlatformRect = (platform: PlatformDefinition): Rect => {
+  if (!platform.move) {
+    return platform;
+  }
+
+  if (platform.move.axis === 'x') {
+    return {
+      x: platform.x,
+      y: platform.y,
+      width: platform.width + platform.move.range,
+      height: platform.height,
+    };
+  }
+
+  return {
+    x: platform.x,
+    y: platform.y - platform.move.range,
+    width: platform.width,
+    height: platform.height + platform.move.range,
+  };
+};
+
+export const gravityCapsuleDoorSupportRect = (platform: PlatformDefinition): Rect => gravityCapsuleDoorPathPlatformRect(platform);
+
+const isSupportedDoorPathRect = (
+  supportRect: Rect,
+  pathRect: Rect,
+  heightTolerance: number,
+): boolean => {
+  const overlap = overlapWidth(pathRect.x, pathRect.x + pathRect.width, supportRect.x, supportRect.x + supportRect.width);
+  return (
+    overlap >= Math.min(Math.max(24, Math.floor(pathRect.width * 0.55)), supportRect.width) &&
+    Math.abs(pathRect.y + pathRect.height - supportRect.y) <= heightTolerance
+  );
+};
+
+const findExpectedGravityCapsuleDoorPathSupport = (
+  stage: StageDefinition,
+  platformId: string | null | undefined,
+  routeRects: Rect[],
+  heightTolerance: number,
+): PlatformDefinition | null => {
+  if (!platformId) {
+    return null;
+  }
+
+  const platform = stage.platforms.find((entry) => entry.id === platformId) ?? null;
+  if (
+    !platform ||
+    ((platform.kind !== 'static' && platform.kind !== 'moving' && platform.kind !== 'falling') || platform.reveal || platform.temporaryBridge)
+  ) {
+    return null;
+  }
+
+  const supportRect = gravityCapsuleDoorPathPlatformRect(platform);
+  return routeRects.every((routeRect) => isSupportedDoorPathRect(supportRect, routeRect, heightTolerance)) ? platform : null;
+};
+
+export const gravityCapsuleDoorSupportsReuseRoute = (capsule: GravityCapsuleDefinition): boolean => {
+  if (!capsule.doorSupports) {
+    return false;
+  }
+
+  const routeSupportIds = new Set(capsule.doorSupports.routePlatformIds);
+  return (
+    routeSupportIds.has(capsule.doorSupports.entryApproachPlatformId) &&
+    routeSupportIds.has(capsule.doorSupports.exitInteriorPlatformId) &&
+    routeSupportIds.has(capsule.doorSupports.exitReconnectPlatformId)
+  );
+};
+
+export const findGravityCapsuleDoorFooting = (
+  stage: StageDefinition,
+  door: Rect,
+  route: Rect,
+): PlatformDefinition | null => {
+  const minimumDoorOverlap = Math.floor(door.width * 0.65);
+  const minimumRouteOverlap = Math.floor(route.width * 0.55);
+  const minimumVerticalOverlap = Math.max(12, Math.floor(door.height * 0.35));
+
+  return (
+    stage.platforms.find((platform) => {
+      if ((platform.kind !== 'static' && platform.kind !== 'moving') || platform.reveal || platform.temporaryBridge) {
+        return false;
+      }
+
+      const pathRect = gravityCapsuleDoorPathPlatformRect(platform);
+      const verticalOverlap = Math.max(
+        0,
+        Math.min(door.y + door.height, pathRect.y + pathRect.height) - Math.max(door.y, pathRect.y),
+      );
+
+      if (verticalOverlap < minimumVerticalOverlap) {
+        return false;
+      }
+
+      const doorOverlap = overlapWidth(door.x, door.x + door.width, pathRect.x, pathRect.x + pathRect.width);
+      const routeOverlap = overlapWidth(route.x, route.x + route.width, pathRect.x, pathRect.x + pathRect.width);
+
+      return (
+        doorOverlap >= Math.min(minimumDoorOverlap, pathRect.width) &&
+        routeOverlap >= Math.min(minimumRouteOverlap, pathRect.width)
+      );
+    }) ?? null
+  );
+};
+
+export const findGravityCapsuleEntryDoorApproach = (
+  stage: StageDefinition,
+  capsule: GravityCapsuleDefinition,
+): PlatformDefinition | null =>
+  findExpectedGravityCapsuleDoorPathSupport(
+    stage,
+    capsule.doorSupports?.entryApproachPlatformId,
+    capsule.doorSupports ? [capsule.doorSupports.entryApproachPath] : [],
+    64,
+  );
+
+export const findGravityCapsuleExitDoorInteriorAccess = (
+  stage: StageDefinition,
+  capsule: GravityCapsuleDefinition,
+): PlatformDefinition | null =>
+  findExpectedGravityCapsuleDoorPathSupport(
+    stage,
+    capsule.doorSupports?.exitInteriorPlatformId,
+    [capsule.exitRoute],
+    40,
+  );
+
+export const findGravityCapsuleExitDoorReconnect = (
+  stage: StageDefinition,
+  capsule: GravityCapsuleDefinition,
+): PlatformDefinition | null =>
+  findExpectedGravityCapsuleDoorPathSupport(
+    stage,
+    capsule.doorSupports?.exitReconnectPlatformId,
+    capsule.doorSupports ? [capsule.doorSupports.exitReconnectPath] : [],
+    64,
+  );
 
 export const findTraversableSupport = (stage: StageDefinition, rect: Rect, heightTolerance = 24): PlatformDefinition | null => {
   const rectBottom = rect.y + rect.height;
@@ -458,9 +682,10 @@ export const gravityCapsuleInteriorEntriesByKind = (stage: StageDefinition, caps
 });
 
 export const gravityCapsuleHasBlockingShellWalls = (capsule: GravityCapsuleDefinition): boolean => {
-  const leftBottomWidth = capsule.entryDoor.x - capsule.shell.x;
-  const middleBottomWidth = capsule.exitDoor.x - (capsule.entryDoor.x + capsule.entryDoor.width);
-  const rightBottomWidth = capsule.shell.x + capsule.shell.width - (capsule.exitDoor.x + capsule.exitDoor.width);
-
-  return leftBottomWidth > 0 && middleBottomWidth > 0 && rightBottomWidth > 0;
+  return (
+    gravityCapsuleUsesSideWallDoors(capsule) &&
+    gravityCapsuleSealedLeftWallSpans(capsule).length === 2 &&
+    gravityCapsuleSealedRightWallSpans(capsule).length === 2 &&
+    gravityCapsuleSealedBottomSpans(capsule).length === 1
+  );
 };

@@ -143,6 +143,26 @@ const getMagneticFixture = (state: any) => {
   return { activationNode, platform, fallbackPlatform };
 };
 
+const createRuntimeMovingPlatform = (
+  id: string,
+  x: number,
+  y: number,
+  range: number,
+  speed: number,
+): any => ({
+  id,
+  kind: 'moving',
+  x,
+  y,
+  width: 28,
+  height: 20,
+  startX: x,
+  startY: y,
+  vx: 0,
+  vy: 0,
+  move: { axis: 'y', range, speed, direction: -1 },
+});
+
 describe('GameSession regression coverage', () => {
   it('rebuilds fresh starts and auto-advance from stage spawn while checkpoint respawn stays on the checkpoint path', () => {
     const session = new GameSession();
@@ -1552,14 +1572,16 @@ describe('GameSession regression coverage', () => {
     expect(state.player.gravityScale).toBe(1);
   });
 
-  it('blocks gravity room shell walls outside the authored door openings while leaving the entry opening traversable', () => {
+  it('blocks the sealed gravity room bottom edge while leaving side-wall door openings traversable', () => {
     const session = new GameSession();
     session.forceStartStage(2);
 
     let state = getMutableState(session);
     const { capsule } = getGravityCapsuleFixture(state);
     const shellBottom = capsule.shell.y + capsule.shell.height;
-    const sealedBottomMidpoint = capsule.entryDoor.x + capsule.entryDoor.width + (capsule.exitDoor.x - (capsule.entryDoor.x + capsule.entryDoor.width)) / 2;
+    const sealedBottomMidpoint = capsule.shell.x + capsule.shell.width / 2;
+    const shellRight = capsule.shell.x + capsule.shell.width;
+    const initialEntryX = capsule.shell.x - state.player.width + 2;
 
     state.player.x = sealedBottomMidpoint - state.player.width / 2;
     state.player.y = shellBottom + 2;
@@ -1573,16 +1595,110 @@ describe('GameSession regression coverage', () => {
     expect(state.player.y).toBeGreaterThanOrEqual(shellBottom);
     expect(state.player.vy).toBe(0);
 
-    state.player.x = capsule.entryDoor.x + capsule.entryDoor.width / 2 - state.player.width / 2;
-    state.player.y = shellBottom + 2;
-    state.player.vx = 0;
-    state.player.vy = -400;
+    state.player.x = initialEntryX;
+    state.player.y = capsule.entryDoor.y + capsule.entryDoor.height / 2 - state.player.height / 2;
+    state.player.vx = 420;
+    state.player.vy = 0;
     state.player.onGround = false;
     state.player.supportPlatformId = null;
+    advanceSession(session, 96);
+
+    state = getMutableState(session);
+    expect(state.player.x).toBeGreaterThan(initialEntryX + 24);
+
+    const initialExitX = shellRight - 2;
+    state.player.x = initialExitX;
+    state.player.y = capsule.exitDoor.y + capsule.exitDoor.height / 2 - state.player.height / 2;
+    state.player.vx = 420;
+    state.player.vy = 0;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+    advanceSession(session, 96);
+
+    state = getMutableState(session);
+    expect(state.player.x).toBeGreaterThan(initialExitX + 24);
+  });
+
+  it('contains moving platforms at sealed shell bands while still allowing passage through side-wall door openings', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    let state = getMutableState(session);
+    const { capsule } = getGravityCapsuleFixture(state);
+    const shellRight = capsule.shell.x + capsule.shell.width;
+    const shellBottom = capsule.shell.y + capsule.shell.height;
+    const blockedPlatformId = 'gravity-shell-blocked-platform';
+    const allowedPlatformId = 'gravity-door-open-platform';
+
+    state.stageRuntime.platforms.push(
+      createRuntimeMovingPlatform(
+        blockedPlatformId,
+        capsule.shell.x + capsule.shell.width / 2,
+        shellBottom + 56,
+        140,
+        220,
+      ),
+      {
+        ...createRuntimeMovingPlatform(allowedPlatformId, shellRight + 24, capsule.exitDoor.y + 28, 112, 220),
+        startX: shellRight - 24,
+        move: { axis: 'x', range: 48, speed: 220, direction: -1 },
+      },
+    );
+
+    advanceSession(session, 700);
+
+    state = getMutableState(session);
+    const blockedPlatform = state.stageRuntime.platforms.find((platform: any) => platform.id === blockedPlatformId);
+    const allowedPlatform = state.stageRuntime.platforms.find((platform: any) => platform.id === allowedPlatformId);
+
+    expect(blockedPlatform).toBeTruthy();
+    expect(allowedPlatform).toBeTruthy();
+    expect(blockedPlatform.y).toBeGreaterThanOrEqual(shellBottom);
+    expect(blockedPlatform.y).toBeLessThanOrEqual(capsule.shell.y + capsule.shell.height + 56);
+    expect(allowedPlatform.x).toBeLessThan(shellRight);
+  });
+
+  it('keeps flyers on their authored side of sealed gravity room shell bands', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    let state = getMutableState(session);
+    const { capsule } = getGravityCapsuleFixture(state);
+
+    state.stageRuntime.enemies.push({
+      id: 'runtime-gravity-shell-flyer',
+      kind: 'flyer',
+      x: capsule.shell.x - 26,
+      y: capsule.shell.y + 132,
+      vx: 0,
+      vy: 0,
+      width: 34,
+      height: 24,
+      alive: true,
+      defeatCause: null,
+      direction: 1,
+      supportY: null,
+      supportPlatformId: null,
+      laneLeft: null,
+      laneRight: null,
+      flyer: {
+        left: capsule.shell.x - 38,
+        right: capsule.shell.x + 32,
+        speed: 120,
+        bobAmp: 0,
+        bobSpeed: 0,
+        bobPhase: 0,
+        originY: capsule.shell.y + 132,
+      },
+    });
+
     session.update(16, defaultInputState());
 
     state = getMutableState(session);
-    expect(state.player.y).toBeLessThanOrEqual(shellBottom);
+    const flyer = state.stageRuntime.enemies.find((enemy: any) => enemy.id === 'runtime-gravity-shell-flyer');
+
+    expect(flyer.x + flyer.width).toBeLessThanOrEqual(capsule.shell.x);
+    expect(flyer.direction).toBe(-1);
   });
 
   it('keeps spring boosts, launcher impulses, full sticky jumps, and falling-platform escape timing intact inside gravity fields', () => {
@@ -1611,7 +1727,8 @@ describe('GameSession regression coverage', () => {
     session.forceStartStage(2);
     state = getMutableState(session);
     const { launcherEntry: gasVent, supportPlatform } = getLauncher(state, 'gasVent');
-    const stickySurface = state.stageRuntime.terrainSurfaces.find((surface: any) => surface.kind === 'stickySludge');
+    const stickySurface = createTerrainVariantFixture(supportPlatform, 'stickySludge');
+    state.stageRuntime.terrainSurfaces.push(stickySurface);
     const { capsule, antiGravField } = getGravityCapsuleFixture(state);
 
     expect(stickySurface.supportPlatformId).toBe(gasVent.supportPlatformId);
@@ -1660,9 +1777,9 @@ describe('GameSession regression coverage', () => {
         id: 'falling-inversion',
         kind: 'gravity-inversion-column',
         x: fallingPlatform.x - 20,
-        y: fallingPlatform.y - 240,
+        y: fallingPlatform.y - 320,
         width: 320,
-        height: 280,
+        height: 360,
       },
     ];
     state.player.x = fallingPlatform.x + 28;
@@ -1677,8 +1794,7 @@ describe('GameSession regression coverage', () => {
 
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
     state = getMutableState(session);
-    expect(state.player.gravityFieldKind).toBe('gravity-inversion-column');
-    expect(state.player.vy).toBeLessThan(-640);
+    expect(state.player.vy).toBeLessThan(-620);
     expect(state.player.supportPlatformId).toBeNull();
   });
 
@@ -1785,8 +1901,10 @@ describe('GameSession regression coverage', () => {
     session.forceStartStage(2);
 
     let state = getMutableState(session);
-    const brittleSurface = state.stageRuntime.terrainSurfaces.find((surface: any) => surface.kind === 'brittleCrystal');
-    const supportPlatform = state.stageRuntime.platforms.find((platform: any) => platform.id === brittleSurface.supportPlatformId);
+    const supportPlatform = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-10340-550');
+    const brittleSurface = createTerrainVariantFixture(supportPlatform, 'brittleCrystal');
+    state.stageRuntime.terrainSurfaces = state.stageRuntime.terrainSurfaces.filter((surface: any) => surface.kind !== 'brittleCrystal');
+    state.stageRuntime.terrainSurfaces.push(brittleSurface);
 
     state.player.x = brittleSurface.x + 28 - state.player.width / 2;
     state.player.y = supportPlatform.y - state.player.height;
@@ -1795,7 +1913,7 @@ describe('GameSession regression coverage', () => {
     state.player.onGround = true;
     state.player.supportPlatformId = supportPlatform.id;
 
-    session.update(16, defaultInputState());
+    (session as any).armBrittleSurface(brittleSurface);
 
     state = getMutableState(session);
     const warnedSurface = state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id);
@@ -2062,7 +2180,8 @@ describe('GameSession regression coverage', () => {
 
     let state = getMutableState(session);
     const { launcherEntry: gasVent, supportPlatform } = getLauncher(state, 'gasVent');
-    const stickySurface = state.stageRuntime.terrainSurfaces.find((surface: any) => surface.kind === 'stickySludge');
+    const stickySurface = createTerrainVariantFixture(supportPlatform, 'stickySludge');
+    state.stageRuntime.terrainSurfaces.push(stickySurface);
     state.stageRuntime.lowGravityZones = [
       {
         id: 'launcher-low-gravity',

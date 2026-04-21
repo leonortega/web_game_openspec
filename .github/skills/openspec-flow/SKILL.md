@@ -43,6 +43,10 @@ Each stage must pass a compact structured handoff to the next stage.
   - change decision
   - relevant skills consulted
   - relevant specs and changes
+  - interpreted user intent
+  - meaning of examples, annotations, sketches, or screenshots when present
+  - gameplay or design constraints that must be kept, removed, moved, or forbidden
+  - false-positive solutions that would satisfy code/spec wording but miss intended player-facing outcome
   - likely code touchpoints
   - current behavior summary
   - risks and ambiguities
@@ -84,6 +88,9 @@ Each stage must pass a compact structured handoff to the next stage.
   - Use the local `openspec-explore` skill behavior as the exploration stance.
   - Before exploring the codebase in depth, identify and read any relevant local skills that match the requested domain so exploration reflects repo best practices.
   - If no domain skill applies, say so explicitly in the explore handoff instead of implying a skill review happened.
+  - Normalize user intent before proposal: translate examples, images, annotations, sketches, and player-experience language into explicit constraints and anti-goals.
+  - Distinguish gameplay/design semantics from implementation wording so later stages do not optimize for validator/code success while missing intended player-facing behavior.
+  - When user-provided examples imply keep/remove/move/forbid semantics, capture those explicitly in the explore handoff.
   - Stay read-only.
   - Produce a proposal-ready context report.
 

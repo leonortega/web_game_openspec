@@ -6,11 +6,18 @@ import {
   enemyRect,
   expandRect,
   findExitSupport,
+  findGravityCapsuleEntryDoorApproach,
+  findGravityCapsuleExitDoorInteriorAccess,
+  findGravityCapsuleExitDoorReconnect,
   findSupportBelowSpan,
   findTraversableSupport,
   gravityCapsuleContentEntries,
+  gravityCapsuleDoorSupportsReuseRoute,
+  gravityCapsuleDoorSupportRect,
   gravityCapsuleHasBlockingShellWalls,
   gravityCapsuleInteriorEntriesByKind,
+  gravityCapsuleRectCrossesSealedShellBoundary,
+  gravityCapsuleUsesSideWallDoors,
   intersectsRect,
   isRectWithinRect,
   isRectWithinWorld,
@@ -33,6 +40,102 @@ const MAGNETIC_PLATFORM_STAGE_ID = 'forest-ruins';
 const MAGNETIC_NODE_MAX_HORIZONTAL_DISTANCE = 240;
 const MAGNETIC_NODE_MAX_VERTICAL_DISTANCE = 180;
 const MAGNETIC_ROUTE_FALLBACK_MAX_DROP = 240;
+const CURRENT_GRAVITY_ROOM_FLOW_IDS = new Set([
+  'forest-anti-grav-canopy-room',
+  'amber-inversion-smelter-room',
+  'sky-anti-grav-capsule',
+  'sky-gravity-inversion-capsule',
+]);
+const CURRENT_GRAVITY_ROOM_ENTRY_MAX_RATIO = 0.35;
+const CURRENT_GRAVITY_ROOM_EXIT_MIN_RATIO = 0.65;
+
+const rectCenterX = (rect: Rect): number => rect.x + rect.width / 2;
+const rectBottom = (rect: Rect): number => rect.y + rect.height;
+
+const gravityCapsuleRelativeCenterX = (capsule: StageDefinition['gravityCapsules'][number], x: number): number =>
+  (x - capsule.shell.x) / capsule.shell.width;
+
+const rectOverlapsY = (left: Rect, right: Rect): boolean => left.y < right.y + right.height && left.y + left.height > right.y;
+
+const pathReadsFromLeftWall = (capsule: StageDefinition['gravityCapsules'][number], path: Rect): boolean =>
+  path.x < capsule.shell.x &&
+  path.x + path.width >= capsule.shell.x &&
+  path.x + path.width <= capsule.shell.x + capsule.entryDoor.width &&
+  path.y < capsule.shell.y + capsule.shell.height &&
+  rectBottom(path) > capsule.shell.y + 16;
+
+const pathReadsFromRightWall = (capsule: StageDefinition['gravityCapsules'][number], path: Rect): boolean => {
+  const shellRight = capsule.shell.x + capsule.shell.width;
+  return (
+    path.x <= shellRight &&
+    path.x >= shellRight - capsule.exitDoor.width &&
+    path.x + path.width > shellRight &&
+    path.y < capsule.shell.y + capsule.shell.height &&
+    rectBottom(path) > capsule.shell.y + 16
+  );
+};
+
+const supportReadsFromLeftSide = (capsule: StageDefinition['gravityCapsules'][number], support: Rect): boolean =>
+  support.x < capsule.shell.x && rectBottom(support) > capsule.shell.y + 16;
+
+const supportReadsFromRightSide = (capsule: StageDefinition['gravityCapsules'][number], support: Rect): boolean =>
+  support.x + support.width > capsule.shell.x + capsule.shell.width && rectBottom(support) > capsule.shell.y + 16;
+
+const currentGravityRoomFlowReadsWrong = (stage: StageDefinition, capsule: StageDefinition['gravityCapsules'][number]): boolean => {
+  if (!CURRENT_GRAVITY_ROOM_FLOW_IDS.has(capsule.id)) {
+    return false;
+  }
+
+  const doorSupports = capsule.doorSupports;
+  if (!doorSupports) {
+    return true;
+  }
+
+  const entryDoorRatio = gravityCapsuleRelativeCenterX(capsule, rectCenterX(capsule.entryDoor));
+  const exitDoorRatio = gravityCapsuleRelativeCenterX(capsule, rectCenterX(capsule.exitDoor));
+  const shellMidX = capsule.shell.x + capsule.shell.width / 2;
+  const shellRight = capsule.shell.x + capsule.shell.width;
+  const shellBottom = capsule.shell.y + capsule.shell.height;
+  const buttonCenterX = rectCenterX(capsule.button);
+  const entrySupport = stage.platforms.find((platform) => platform.id === doorSupports.entryApproachPlatformId) ?? null;
+  const exitInteriorSupport = stage.platforms.find((platform) => platform.id === doorSupports.exitInteriorPlatformId) ?? null;
+  const exitReconnectSupport = stage.platforms.find((platform) => platform.id === doorSupports.exitReconnectPlatformId) ?? null;
+  const entrySupportRect = entrySupport ? gravityCapsuleDoorSupportRect(entrySupport) : null;
+  const exitInteriorSupportRect = exitInteriorSupport ? gravityCapsuleDoorSupportRect(exitInteriorSupport) : null;
+  const exitReconnectSupportRect = exitReconnectSupport ? gravityCapsuleDoorSupportRect(exitReconnectSupport) : null;
+
+  return (
+    !gravityCapsuleUsesSideWallDoors(capsule) ||
+    entryDoorRatio > CURRENT_GRAVITY_ROOM_ENTRY_MAX_RATIO ||
+    exitDoorRatio < CURRENT_GRAVITY_ROOM_EXIT_MIN_RATIO ||
+    buttonCenterX <= capsule.entryDoor.x + capsule.entryDoor.width ||
+    buttonCenterX >= capsule.exitDoor.x ||
+    capsule.entryDoor.x + capsule.entryDoor.width > shellMidX ||
+    capsule.exitDoor.x < shellMidX ||
+    capsule.entryDoor.y + capsule.entryDoor.height >= shellBottom ||
+    capsule.exitDoor.y + capsule.exitDoor.height >= shellBottom ||
+    doorSupports.entryApproachPlatformId === doorSupports.exitInteriorPlatformId ||
+    doorSupports.entryApproachPlatformId === doorSupports.exitReconnectPlatformId ||
+    !pathReadsFromLeftWall(capsule, doorSupports.entryApproachPath) ||
+    !pathReadsFromRightWall(capsule, doorSupports.exitReconnectPath) ||
+    doorSupports.entryApproachPath.x + doorSupports.entryApproachPath.width > shellMidX ||
+    doorSupports.exitReconnectPath.x < shellMidX ||
+    !entrySupport ||
+    !exitInteriorSupport ||
+    !exitReconnectSupport ||
+    !entrySupportRect ||
+    !exitInteriorSupportRect ||
+    !exitReconnectSupportRect ||
+    !supportReadsFromLeftSide(capsule, entrySupportRect) ||
+    !supportReadsFromRightSide(capsule, exitReconnectSupportRect) ||
+    rectCenterX(entrySupportRect) >= shellMidX ||
+    rectCenterX(exitReconnectSupportRect) <= shellMidX ||
+    rectCenterX(exitInteriorSupportRect) <= shellMidX ||
+    rectOverlapsY(doorSupports.entryApproachPath, capsule.entryDoor) === false && doorSupports.entryApproachPath.y < capsule.shell.y ||
+    rectOverlapsY(doorSupports.exitReconnectPath, capsule.exitDoor) === false && doorSupports.exitReconnectPath.y < capsule.shell.y ||
+    shellRight !== capsule.exitDoor.x + capsule.exitDoor.width
+  );
+};
 
 const isImmediateContinuationSupport = (
   blockSupport: PlatformDefinition,
@@ -176,6 +279,93 @@ const authoredStaticElements = (
   })),
   ...stage.rewardBlocks.map((rewardBlock) => ({ id: rewardBlock.id, rect: rewardBlock, category: 'rewardBlock' as const })),
   { id: 'exit', rect: stage.exit, category: 'exit' as const },
+];
+
+const collectibleBounds = (collectible: StageDefinition['collectibles'][number]): Rect => ({
+  x: collectible.position.x - 8,
+  y: collectible.position.y - 8,
+  width: 16,
+  height: 16,
+});
+
+const platformTraversalEnvelope = (platform: PlatformDefinition): Rect => {
+  if (!platform.move) {
+    return platform;
+  }
+
+  if (platform.move.axis === 'x') {
+    return {
+      x: platform.x,
+      y: platform.y,
+      width: platform.width + platform.move.range,
+      height: platform.height,
+    };
+  }
+
+  return {
+    x: platform.x,
+    y: platform.y - platform.move.range,
+    width: platform.width,
+    height: platform.height + platform.move.range,
+  };
+};
+
+const enemyTraversalEnvelope = (stage: StageDefinition, enemy: EnemyDefinition): Rect => {
+  const bounds = enemyRect(enemy);
+
+  if (enemy.kind === 'walker' && enemy.patrol) {
+    return {
+      x: enemy.patrol.left,
+      y: bounds.y,
+      width: Math.max(bounds.width, enemy.patrol.right - enemy.patrol.left),
+      height: bounds.height,
+    };
+  }
+
+  if (enemy.kind === 'charger' && enemy.charger) {
+    return {
+      x: enemy.charger.left,
+      y: bounds.y,
+      width: Math.max(bounds.width, enemy.charger.right - enemy.charger.left),
+      height: bounds.height,
+    };
+  }
+
+  if (enemy.kind === 'flyer' && enemy.flyer) {
+    return {
+      x: enemy.flyer.left,
+      y: enemy.position.y - enemy.flyer.bobAmp,
+      width: Math.max(bounds.width, enemy.flyer.right - enemy.flyer.left),
+      height: bounds.height + enemy.flyer.bobAmp * 2,
+    };
+  }
+
+  if (enemy.kind === 'hopper' && enemy.hop) {
+    const hangTimeSeconds = (2 * enemy.hop.impulse) / stage.world.gravity;
+    const horizontalReach = Math.max(60, enemy.hop.speed * hangTimeSeconds);
+    const verticalReach = (enemy.hop.impulse * enemy.hop.impulse) / (2 * stage.world.gravity);
+
+    return {
+      x: enemy.position.x - horizontalReach,
+      y: enemy.position.y - verticalReach,
+      width: bounds.width + horizontalReach * 2,
+      height: bounds.height + verticalReach,
+    };
+  }
+
+  return bounds;
+};
+
+const authoredTraversalContentEnvelopes = (
+  stage: StageDefinition,
+): { id: string; rect: Rect; kind: 'platform' | 'terrainSurface' | 'launcher' | 'collectible' | 'rewardBlock' | 'hazard' | 'enemy' }[] => [
+  ...stage.platforms.map((platform) => ({ id: platform.id, rect: platformTraversalEnvelope(platform), kind: 'platform' as const })),
+  ...stage.terrainSurfaces.map((surface) => ({ id: surface.id, rect: surface, kind: 'terrainSurface' as const })),
+  ...stage.launchers.map((launcherEntry) => ({ id: launcherEntry.id, rect: launcherEntry, kind: 'launcher' as const })),
+  ...stage.collectibles.map((collectible) => ({ id: collectible.id, rect: collectibleBounds(collectible), kind: 'collectible' as const })),
+  ...stage.rewardBlocks.map((block) => ({ id: block.id, rect: block, kind: 'rewardBlock' as const })),
+  ...stage.hazards.map((hazard) => ({ id: hazard.id, rect: hazard.rect, kind: 'hazard' as const })),
+  ...stage.enemies.map((enemy) => ({ id: enemy.id, rect: enemyTraversalEnvelope(stage, enemy), kind: 'enemy' as const })),
 ];
 
 const validateStaticElementCollisions = (stage: StageDefinition): StageDefinition => {
@@ -751,6 +941,7 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
 
   const invalidGravityCapsuleBounds = stage.gravityCapsules.filter((capsule) => {
     const field = stage.gravityFields.find((entry) => entry.id === capsule.fieldId);
+    const doorSupports = capsule.doorSupports;
     return (
       !isRectWithinWorld(stage, capsule.shell) ||
       !isRectWithinWorld(stage, capsule.entryDoor) ||
@@ -759,6 +950,8 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
       !isRectWithinWorld(stage, capsule.entryRoute) ||
       !isRectWithinWorld(stage, capsule.buttonRoute) ||
       !isRectWithinWorld(stage, capsule.exitRoute) ||
+      Boolean(doorSupports && !isRectWithinWorld(stage, doorSupports.entryApproachPath)) ||
+      Boolean(doorSupports && !isRectWithinWorld(stage, doorSupports.exitReconnectPath)) ||
       !field ||
       !isRectWithinRect(capsule.shell, field) ||
       !isRectWithinRect(capsule.shell, capsule.button) ||
@@ -778,11 +971,12 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
       intersectsRect(capsule.entryDoor, capsule.exitDoor) ||
       capsule.entryDoor.x >= capsule.exitDoor.x ||
       Math.abs(capsule.entryDoor.x - capsule.exitDoor.x) < 16 ||
+      !gravityCapsuleUsesSideWallDoors(capsule) ||
       !gravityCapsuleHasBlockingShellWalls(capsule),
   );
   if (invalidGravityCapsuleOpenings.length > 0) {
     throw new Error(
-      `Gravity rooms must author separate bottom entry and exit openings while keeping the rest of the shell blocked: ${invalidGravityCapsuleOpenings.map((capsule) => capsule.id).join(', ')}`,
+      `Gravity rooms must author separate side-wall entry and exit openings while keeping the full bottom edge sealed: ${invalidGravityCapsuleOpenings.map((capsule) => capsule.id).join(', ')}`,
     );
   }
 
@@ -806,6 +1000,16 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
   if (invalidGravityCapsuleContent.length > 0) {
     throw new Error(
       `Gravity rooms must keep all linked room content inside the authored shell: ${invalidGravityCapsuleContent.map((capsule) => capsule.id).join(', ')}`,
+    );
+  }
+
+  const traversalContentEnvelopes = authoredTraversalContentEnvelopes(stage);
+  const invalidGravityCapsuleShellIntrusion = stage.gravityCapsules.filter((capsule) =>
+    traversalContentEnvelopes.some((entry) => gravityCapsuleRectCrossesSealedShellBoundary(capsule, entry.rect)),
+  );
+  if (invalidGravityCapsuleShellIntrusion.length > 0) {
+    throw new Error(
+      `Gravity rooms must keep authored traversal content from intruding through sealed shell bands outside door openings: ${invalidGravityCapsuleShellIntrusion.map((capsule) => capsule.id).join(', ')}`,
     );
   }
 
@@ -848,6 +1052,75 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
     );
   }
 
+  if (MAIN_STAGE_IDS.includes(stage.id as (typeof MAIN_STAGE_IDS)[number])) {
+    const invalidGravityCapsuleDoorSupports = stage.gravityCapsules.filter((capsule) => {
+      const doorSupports = capsule.doorSupports;
+      const shellRight = capsule.shell.x + capsule.shell.width;
+      const entrySupport = doorSupports
+        ? stage.platforms.find((platform) => platform.id === doorSupports.entryApproachPlatformId) ?? null
+        : null;
+      const exitInteriorSupport = doorSupports
+        ? stage.platforms.find((platform) => platform.id === doorSupports.exitInteriorPlatformId) ?? null
+        : null;
+      const exitReconnectSupport = doorSupports
+        ? stage.platforms.find((platform) => platform.id === doorSupports.exitReconnectPlatformId) ?? null
+        : null;
+      return (
+        !doorSupports ||
+        !isRectWithinWorld(stage, doorSupports.entryApproachPath) ||
+        !isRectWithinWorld(stage, doorSupports.exitReconnectPath) ||
+        !pathReadsFromLeftWall(capsule, doorSupports.entryApproachPath) ||
+        !pathReadsFromRightWall(capsule, doorSupports.exitReconnectPath) ||
+        doorSupports.entryApproachPath.x + doorSupports.entryApproachPath.width > capsule.entryDoor.x + capsule.entryDoor.width ||
+        doorSupports.exitReconnectPath.x < shellRight - capsule.exitDoor.width ||
+        !gravityCapsuleDoorSupportsReuseRoute(capsule) ||
+        !entrySupport ||
+        !exitInteriorSupport ||
+        !exitReconnectSupport ||
+        !supportReadsFromLeftSide(capsule, gravityCapsuleDoorSupportRect(entrySupport)) ||
+        !supportReadsFromRightSide(capsule, gravityCapsuleDoorSupportRect(exitReconnectSupport))
+      );
+    });
+
+    if (invalidGravityCapsuleDoorSupports.length > 0) {
+      throw new Error(
+        `Current playable gravity rooms must reuse authored intended route supports for entry and exit doors: ${invalidGravityCapsuleDoorSupports.map((capsule) => capsule.id).join(', ')}`,
+      );
+    }
+  }
+
+  const unsupportedGravityCapsuleEntryApproaches = stage.gravityCapsules.filter(
+    (capsule) => !findGravityCapsuleEntryDoorApproach(stage, capsule),
+  );
+  if (unsupportedGravityCapsuleEntryApproaches.length > 0) {
+    throw new Error(
+      `Gravity rooms must author a continuous platform path into each entry door: ${unsupportedGravityCapsuleEntryApproaches
+        .map((capsule) => capsule.id)
+        .join(', ')}`,
+    );
+  }
+
+  const unsupportedGravityCapsuleExitAccess = stage.gravityCapsules.filter(
+    (capsule) =>
+      !findGravityCapsuleExitDoorInteriorAccess(stage, capsule) || !findGravityCapsuleExitDoorReconnect(stage, capsule),
+  );
+  if (unsupportedGravityCapsuleExitAccess.length > 0) {
+    throw new Error(
+      `Gravity rooms must author continuous platform-path exit access and reconnect support at each exit door: ${unsupportedGravityCapsuleExitAccess
+        .map((capsule) => capsule.id)
+        .join(', ')}`,
+    );
+  }
+
+  const wrongFlowGravityCapsules = stage.gravityCapsules.filter((capsule) => currentGravityRoomFlowReadsWrong(stage, capsule));
+  if (wrongFlowGravityCapsules.length > 0) {
+    throw new Error(
+      `Current playable gravity rooms must preserve player-facing side-wall IN-left and OUT-right flow: ${wrongFlowGravityCapsules
+        .map((capsule) => capsule.id)
+        .join(', ')}`,
+    );
+  }
+
   const uncontainedGravityCapsuleRoutes = stage.gravityCapsules.filter(
     (capsule) =>
       !findTraversableSupport(stage, capsule.entryRoute) ||
@@ -871,20 +1144,6 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
   if (invalidGravityCapsuleApproaches.length > 0) {
     throw new Error(
       `Gravity rooms must keep the interior disable button between the entry-side route and the disabled exit line: ${invalidGravityCapsuleApproaches
-        .map((capsule) => capsule.id)
-        .join(', ')}`,
-    );
-  }
-
-  const unsafeGravityCapsuleDormantPaths = stage.gravityCapsules.filter(
-    (capsule) =>
-      !findTraversableSupport(stage, capsule.entryDoor, 40) ||
-      !findTraversableSupport(stage, capsule.exitDoor, 40) ||
-      !findTraversableSupport(stage, capsule.entryRoute),
-  );
-  if (unsafeGravityCapsuleDormantPaths.length > 0) {
-    throw new Error(
-      `Gravity rooms must stay retry-safe from their active baseline with reachable entry and exit footing: ${unsafeGravityCapsuleDormantPaths
         .map((capsule) => capsule.id)
         .join(', ')}`,
     );

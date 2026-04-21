@@ -1,4 +1,5 @@
 import { stageDefinitions, type StageDefinition } from '../content/stages';
+import { gravityCapsuleShellWallThickness } from '../content/stages/builders';
 import type { InputState } from '../input/actions';
 import { AUDIO_CUES, type AudioCue } from '../../audio/audioContract';
 import { clamp } from './math';
@@ -537,10 +538,9 @@ const createSolidSurfaceList = (runtime: StageRuntime): SolidSurface[] => [
     rewardBlock,
   })),
   ...runtime.gravityCapsules.flatMap<SolidSurface>((capsule) => {
-    const wallThickness = Math.max(6, Math.min(12, Math.floor(Math.min(capsule.entryDoor.height, capsule.exitDoor.height) / 4)));
+    const wallThickness = gravityCapsuleShellWallThickness(capsule);
     const shellBottom = capsule.shell.y + capsule.shell.height;
-    const entryDoorRight = capsule.entryDoor.x + capsule.entryDoor.width;
-    const exitDoorRight = capsule.exitDoor.x + capsule.exitDoor.width;
+    const shellRight = capsule.shell.x + capsule.shell.width;
     const segments: GravityCapsuleWallSurface[] = [
       {
         id: `${capsule.id}-wall-top`,
@@ -554,55 +554,55 @@ const createSolidSurfaceList = (runtime: StageRuntime): SolidSurface[] => [
         gravityCapsuleId: capsule.id,
       },
       {
-        id: `${capsule.id}-wall-left`,
+        id: `${capsule.id}-wall-left-top`,
         kind: 'gravityCapsuleWall',
         x: capsule.shell.x,
-        y: capsule.shell.y + wallThickness,
+        y: capsule.shell.y,
         width: wallThickness,
-        height: capsule.shell.height - wallThickness,
+        height: capsule.entryDoor.y - capsule.shell.y,
         vx: 0,
         vy: 0,
         gravityCapsuleId: capsule.id,
       },
       {
-        id: `${capsule.id}-wall-right`,
+        id: `${capsule.id}-wall-left-bottom`,
         kind: 'gravityCapsuleWall',
-        x: capsule.shell.x + capsule.shell.width - wallThickness,
-        y: capsule.shell.y + wallThickness,
+        x: capsule.shell.x,
+        y: capsule.entryDoor.y + capsule.entryDoor.height,
         width: wallThickness,
-        height: capsule.shell.height - wallThickness,
+        height: shellBottom - (capsule.entryDoor.y + capsule.entryDoor.height),
         vx: 0,
         vy: 0,
         gravityCapsuleId: capsule.id,
       },
       {
-        id: `${capsule.id}-wall-bottom-left`,
+        id: `${capsule.id}-wall-right-top`,
+        kind: 'gravityCapsuleWall',
+        x: shellRight - wallThickness,
+        y: capsule.shell.y,
+        width: wallThickness,
+        height: capsule.exitDoor.y - capsule.shell.y,
+        vx: 0,
+        vy: 0,
+        gravityCapsuleId: capsule.id,
+      },
+      {
+        id: `${capsule.id}-wall-right-bottom`,
+        kind: 'gravityCapsuleWall',
+        x: shellRight - wallThickness,
+        y: capsule.exitDoor.y + capsule.exitDoor.height,
+        width: wallThickness,
+        height: shellBottom - (capsule.exitDoor.y + capsule.exitDoor.height),
+        vx: 0,
+        vy: 0,
+        gravityCapsuleId: capsule.id,
+      },
+      {
+        id: `${capsule.id}-wall-bottom`,
         kind: 'gravityCapsuleWall',
         x: capsule.shell.x,
         y: shellBottom - wallThickness,
-        width: capsule.entryDoor.x - capsule.shell.x,
-        height: wallThickness,
-        vx: 0,
-        vy: 0,
-        gravityCapsuleId: capsule.id,
-      },
-      {
-        id: `${capsule.id}-wall-bottom-middle`,
-        kind: 'gravityCapsuleWall',
-        x: entryDoorRight,
-        y: shellBottom - wallThickness,
-        width: capsule.exitDoor.x - entryDoorRight,
-        height: wallThickness,
-        vx: 0,
-        vy: 0,
-        gravityCapsuleId: capsule.id,
-      },
-      {
-        id: `${capsule.id}-wall-bottom-right`,
-        kind: 'gravityCapsuleWall',
-        x: exitDoorRight,
-        y: shellBottom - wallThickness,
-        width: capsule.shell.x + capsule.shell.width - exitDoorRight,
+        width: capsule.shell.width,
         height: wallThickness,
         vx: 0,
         vy: 0,
@@ -620,6 +620,62 @@ const surfaceRect = (surface: SolidSurface): Rect => ({
   width: surface.width,
   height: surface.height,
 });
+
+type GravityCapsuleContainmentResolution = {
+  x: number;
+  y: number;
+  hitHorizontalWall: boolean;
+  hitVerticalWall: boolean;
+};
+
+const resolveGravityCapsuleContainment = (
+  currentRect: Rect,
+  previousRect: Rect,
+  capsules: readonly GravityCapsuleState[],
+): GravityCapsuleContainmentResolution => {
+  let resolvedX = currentRect.x;
+  let resolvedY = currentRect.y;
+  let hitHorizontalWall = false;
+  let hitVerticalWall = false;
+
+  for (const capsule of capsules) {
+    const shellRight = capsule.shell.x + capsule.shell.width;
+    const shellBottom = capsule.shell.y + capsule.shell.height;
+    const resolvedRight = resolvedX + currentRect.width;
+    const resolvedBottom = resolvedY + currentRect.height;
+    const overlapsShellHeight = resolvedY < shellBottom && resolvedBottom > capsule.shell.y;
+    const overlapsShellWidth = resolvedX < shellRight && resolvedRight > capsule.shell.x;
+    const overlapsEntryDoor = resolvedY < capsule.entryDoor.y + capsule.entryDoor.height && resolvedBottom > capsule.entryDoor.y;
+    const overlapsExitDoor = resolvedY < capsule.exitDoor.y + capsule.exitDoor.height && resolvedBottom > capsule.exitDoor.y;
+
+    if (overlapsShellHeight && !overlapsEntryDoor && resolvedX < capsule.shell.x && resolvedRight > capsule.shell.x) {
+      resolvedX = previousRect.x < capsule.shell.x ? capsule.shell.x - currentRect.width : capsule.shell.x;
+      hitHorizontalWall = true;
+    }
+
+    if (overlapsShellHeight && !overlapsExitDoor && resolvedX < shellRight && resolvedRight > shellRight) {
+      resolvedX = previousRect.x >= shellRight ? shellRight : shellRight - currentRect.width;
+      hitHorizontalWall = true;
+    }
+
+    if (overlapsShellWidth && resolvedY < capsule.shell.y && resolvedBottom > capsule.shell.y) {
+      resolvedY = previousRect.y < capsule.shell.y ? capsule.shell.y - currentRect.height : capsule.shell.y;
+      hitVerticalWall = true;
+    }
+
+    if (resolvedY < shellBottom && resolvedBottom > shellBottom) {
+      resolvedY = previousRect.y + previousRect.height <= shellBottom ? shellBottom - currentRect.height : shellBottom;
+      hitVerticalWall = true;
+    }
+  }
+
+  return {
+    x: resolvedX,
+    y: resolvedY,
+    hitHorizontalWall,
+    hitVerticalWall,
+  };
+};
 
 const pointInRect = (point: { x: number; y: number }, rect: Rect): boolean =>
   point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
@@ -823,6 +879,7 @@ export class GameSession {
     this.updateTerrainSurfaces(deltaMs);
 
     const supportSurface = player.supportPlatformId ? this.findSupportSurface(player.supportPlatformId) : null;
+    let retainedSupportSurface: SolidSurface | null = null;
     const supportTerrainSurface =
       supportSurface?.kind === 'platform'
         ? this.findSupportingTerrainSurface(supportSurface.platform.id, player.x, player.y)
@@ -836,6 +893,7 @@ export class GameSession {
       if (stillSupported) {
         player.x = clamp(player.x + supportSurface.vx * deltaSec, 0, stage.world.width - player.width);
         player.y += supportSurface.vy * deltaSec;
+        retainedSupportSurface = supportSurface;
       } else {
         player.onGround = false;
         player.supportPlatformId = null;
@@ -967,7 +1025,9 @@ export class GameSession {
         continue;
       }
 
-      if (player.vy > 0) {
+      const wasAboveSurface = player.y + player.height <= surface.y + TERRAIN_SURFACE_TOP_EPSILON;
+
+      if (player.vy >= 0 && wasAboveSurface) {
         const terrainSurface =
           surface.kind === 'platform'
             ? this.findSupportingTerrainSurface(surface.id, nextX, surface.y - player.height)
@@ -979,6 +1039,7 @@ export class GameSession {
         player.onGround = true;
         player.supportPlatformId = surface.id;
         ridingSurface = surface;
+        this.armBrittleSurface(terrainSurface);
       } else if (player.vy < 0) {
         nextY = surface.y + surface.height;
         if (surface.kind === 'rewardBlock') {
@@ -987,6 +1048,13 @@ export class GameSession {
       }
       player.vy = 0;
       break;
+    }
+
+    if (!player.onGround && player.vy === 0 && wasOnGround && retainedSupportSurface) {
+      nextY = retainedSupportSurface.y - player.height;
+      player.onGround = true;
+      player.supportPlatformId = retainedSupportSurface.id;
+      ridingSurface = retainedSupportSurface;
     }
 
     player.x = clamp(nextX, 0, stage.world.width - player.width);
@@ -1110,6 +1178,7 @@ export class GameSession {
 
   private updatePlatforms(deltaMs: number, deltaSec: number): void {
     for (const platform of this.snapshot.stageRuntime.platforms) {
+      const previousRect = { x: platform.x, y: platform.y, width: platform.width, height: platform.height };
       platform.vx = 0;
       platform.vy = 0;
 
@@ -1159,6 +1228,27 @@ export class GameSession {
       if (platform.fall?.falling) {
         platform.vy += this.snapshot.stage.world.gravity * 0.75 * deltaSec;
         platform.y += platform.vy * deltaSec;
+      }
+
+      const containment = resolveGravityCapsuleContainment(
+        { x: platform.x, y: platform.y, width: platform.width, height: platform.height },
+        previousRect,
+        this.snapshot.stageRuntime.gravityCapsules,
+      );
+
+      platform.x = containment.x;
+      platform.y = containment.y;
+
+      if (platform.move?.axis === 'x' && containment.hitHorizontalWall) {
+        platform.vx = 0;
+        platform.move.direction = platform.move.direction === 1 ? -1 : 1;
+        this.emitCue(AUDIO_CUES.movingPlatform);
+      }
+
+      if (platform.move?.axis === 'y' && containment.hitVerticalWall) {
+        platform.vy = 0;
+        platform.move.direction = platform.move.direction === 1 ? -1 : 1;
+        this.emitCue(AUDIO_CUES.movingPlatform);
       }
     }
 
@@ -1314,6 +1404,8 @@ export class GameSession {
         this.visibleEnemyIds.delete(enemy.id);
         continue;
       }
+
+      const previousRect = enemyRect(enemy);
 
       let emittedCueThisFrame = false;
       const emitVisibleCue = (cue: AudioCue): void => {
@@ -1514,6 +1606,28 @@ export class GameSession {
           enemy.x = enemy.flyer.right - enemy.width;
           enemy.direction = -1;
           emitVisibleCue(AUDIO_CUES.enemyPatrol);
+        }
+      }
+
+      const containment = resolveGravityCapsuleContainment(enemyRect(enemy), previousRect, stageRuntime.gravityCapsules);
+      enemy.x = containment.x;
+      enemy.y = containment.y;
+
+      if (containment.hitHorizontalWall) {
+        enemy.vx = 0;
+        enemy.direction = enemy.direction === 1 ? -1 : 1;
+        if (enemy.kind === 'charger' && enemy.charger?.state === 'charge') {
+          enemy.charger.state = 'cooldown';
+          enemy.charger.timerMs = enemy.charger.cooldownMs;
+        }
+      }
+
+      if (containment.hitVerticalWall) {
+        enemy.vy = 0;
+        if (enemy.kind === 'hopper' && enemy.hop) {
+          enemy.hop.targetPlatformId = null;
+          enemy.hop.targetX = null;
+          enemy.hop.targetY = null;
         }
       }
 

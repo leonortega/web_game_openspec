@@ -17,6 +17,41 @@ const cloneAmberStage = (): StageDefinition =>
 const cloneSkyStage = (): StageDefinition =>
   JSON.parse(JSON.stringify(stageDefinitions.find((stage) => stage.id === 'sky-sanctum'))) as StageDefinition;
 
+const gravityRoomFlowSummary = (stage: StageDefinition, roomId: string) => {
+  const capsule = stage.gravityCapsules.find((entry) => entry.id === roomId);
+  if (!capsule?.doorSupports) {
+    throw new Error(`Expected gravity room fixture with door supports: ${roomId}`);
+  }
+
+  const shellMidX = capsule.shell.x + capsule.shell.width / 2;
+  const shellRight = capsule.shell.x + capsule.shell.width;
+  const shellBottom = capsule.shell.y + capsule.shell.height;
+  const buttonCenterX = capsule.button.x + capsule.button.width / 2;
+
+  return {
+    capsule,
+    entryDoorRatio: (capsule.entryDoor.x + capsule.entryDoor.width / 2 - capsule.shell.x) / capsule.shell.width,
+    exitDoorRatio: (capsule.exitDoor.x + capsule.exitDoor.width / 2 - capsule.shell.x) / capsule.shell.width,
+    entryDoorOnLeftWall: capsule.entryDoor.x === capsule.shell.x,
+    exitDoorOnRightWall: capsule.exitDoor.x + capsule.exitDoor.width === shellRight,
+    bottomEdgeSealed:
+      capsule.entryDoor.y + capsule.entryDoor.height < shellBottom &&
+      capsule.exitDoor.y + capsule.exitDoor.height < shellBottom,
+    buttonBetweenDoors:
+      buttonCenterX > capsule.entryDoor.x + capsule.entryDoor.width && buttonCenterX < capsule.exitDoor.x,
+    entryPathReadsLeft:
+      capsule.doorSupports.entryApproachPath.x < capsule.shell.x &&
+      capsule.doorSupports.entryApproachPath.x + capsule.doorSupports.entryApproachPath.width <= shellMidX,
+    exitPathReadsRight:
+      capsule.doorSupports.exitReconnectPath.x >= shellMidX &&
+      capsule.doorSupports.exitReconnectPath.x + capsule.doorSupports.exitReconnectPath.width > shellRight,
+    distinctExteriorSupport:
+      capsule.doorSupports.entryApproachPlatformId !== capsule.doorSupports.exitReconnectPlatformId,
+    distinctEntryAndExitSupport:
+      capsule.doorSupports.entryApproachPlatformId !== capsule.doorSupports.exitInteriorPlatformId,
+  };
+};
+
 const terrainBeatSummary = (stage: StageDefinition, kind: 'brittleCrystal' | 'stickySludge') =>
   new Set(
     terrainVariantPlatforms(stage, kind)
@@ -326,7 +361,7 @@ describe('gravity field stage validation', () => {
     );
   });
 
-  it('accepts authored enclosed gravity rooms with separate bottom doors and contained content', () => {
+  it('accepts authored enclosed gravity rooms with separate side-wall doors and contained content', () => {
     const stage = cloneSkyStage();
 
     const validated = validateStageDefinition(stage);
@@ -334,8 +369,62 @@ describe('gravity field stage validation', () => {
     expect(validated.gravityCapsules[0].button.id).toBe('sky-anti-grav-capsule-button');
     expect(validated.gravityCapsules[1].button.id).toBe('sky-gravity-inversion-room-button');
     expect(validated.gravityCapsules.every((capsule) => capsule.entryDoor.x < capsule.exitDoor.x)).toBe(true);
+    expect(validated.gravityCapsules.every((capsule) => capsule.entryDoor.x === capsule.shell.x)).toBe(true);
     expect(validated.gravityCapsules[0].contents.platformIds).toContain('platform-9010-480');
     expect(validated.gravityCapsules[1].contents.platformIds).toContain('platform-9490-540');
+  });
+
+  it('accepts current gravity rooms that reuse authored intended route supports without doorway-only helper ledges', () => {
+    const forest = validateStageDefinition(cloneStage());
+    const amber = validateStageDefinition(cloneAmberStage());
+    const sky = validateStageDefinition(cloneSkyStage());
+
+    expect(forest.platforms.some((platform) => platform.id === 'platform-8620-530')).toBe(false);
+    expect(forest.platforms.some((platform) => platform.id === 'platform-9384-530')).toBe(false);
+    expect(amber.platforms.some((platform) => platform.id === 'platform-9810-570')).toBe(false);
+    expect(amber.platforms.some((platform) => platform.id === 'platform-10760-570')).toBe(false);
+    expect(sky.platforms.some((platform) => platform.id === 'platform-9110-480')).toBe(false);
+    expect(sky.platforms.some((platform) => platform.id === 'platform-9232-480')).toBe(false);
+    expect(forest.gravityCapsules[0].doorSupports?.entryApproachPlatformId).toBe('platform-8610-450-moving');
+    expect(amber.gravityCapsules[0].doorSupports?.entryApproachPlatformId).toBe('platform-9730-500-falling');
+    expect(amber.gravityCapsules[0].doorSupports?.exitReconnectPlatformId).toBe('platform-10830-350');
+    expect(sky.gravityCapsules[0].doorSupports?.entryApproachPlatformId).toBe('platform-8740-560');
+    expect(sky.gravityCapsules[0].doorSupports?.exitReconnectPlatformId).toBe('platform-9490-540');
+  });
+
+  it('accepts the current four gravity rooms only when IN reads left, the button sits mid-room, and OUT reads right', () => {
+    const forestFlow = gravityRoomFlowSummary(validateStageDefinition(cloneStage()), 'forest-anti-grav-canopy-room');
+    const amberFlow = gravityRoomFlowSummary(validateStageDefinition(cloneAmberStage()), 'amber-inversion-smelter-room');
+    const skyAntiGravFlow = gravityRoomFlowSummary(validateStageDefinition(cloneSkyStage()), 'sky-anti-grav-capsule');
+    const skyInversionFlow = gravityRoomFlowSummary(validateStageDefinition(cloneSkyStage()), 'sky-gravity-inversion-capsule');
+
+    for (const flow of [forestFlow, amberFlow, skyAntiGravFlow, skyInversionFlow]) {
+      expect(flow.entryDoorRatio).toBeLessThanOrEqual(0.35);
+      expect(flow.exitDoorRatio).toBeGreaterThanOrEqual(0.65);
+      expect(flow.entryDoorOnLeftWall).toBe(true);
+      expect(flow.exitDoorOnRightWall).toBe(true);
+      expect(flow.bottomEdgeSealed).toBe(true);
+      expect(flow.buttonBetweenDoors).toBe(true);
+      expect(flow.entryPathReadsLeft).toBe(true);
+      expect(flow.exitPathReadsRight).toBe(true);
+      expect(flow.distinctExteriorSupport).toBe(true);
+      expect(flow.distinctEntryAndExitSupport).toBe(true);
+    }
+  });
+
+  it('rejects gravity rooms whose entry door loses its left-side platform-path continuation', () => {
+    const stage = cloneSkyStage();
+    stage.gravityCapsules[0].doorSupports = {
+      ...stage.gravityCapsules[0].doorSupports!,
+      entryApproachPath: {
+        ...stage.gravityCapsules[0].doorSupports!.entryApproachPath,
+        y: stage.gravityCapsules[0].doorSupports!.entryApproachPath.y - 72,
+      },
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Gravity rooms must author a continuous platform path into each entry door',
+    );
   });
 
   it('rejects gravity rooms whose linked button is not on a reachable interior route', () => {
@@ -351,12 +440,12 @@ describe('gravity field stage validation', () => {
     );
   });
 
-  it('rejects gravity rooms that reuse one bottom opening for both entry and exit', () => {
+  it('rejects gravity rooms that reuse one side-wall opening for both entry and exit', () => {
     const stage = cloneSkyStage();
     stage.gravityCapsules[0].exitDoor = { ...stage.gravityCapsules[0].entryDoor };
 
     expect(() => validateStageDefinition(stage)).toThrow(
-      'Gravity rooms must author separate bottom entry and exit openings while keeping the rest of the shell blocked: sky-anti-grav-capsule',
+      'Gravity rooms must author separate side-wall entry and exit openings while keeping the full bottom edge sealed: sky-anti-grav-capsule',
     );
   });
 
@@ -364,11 +453,25 @@ describe('gravity field stage validation', () => {
     const stage = cloneSkyStage();
     stage.gravityCapsules[0].entryDoor = {
       ...stage.gravityCapsules[0].entryDoor,
-      x: stage.gravityCapsules[0].shell.x,
+      y: stage.gravityCapsules[0].shell.y,
+      height: stage.gravityCapsules[0].shell.height,
     };
 
     expect(() => validateStageDefinition(stage)).toThrow(
-      'Gravity rooms must author separate bottom entry and exit openings while keeping the rest of the shell blocked: sky-anti-grav-capsule',
+      'Gravity rooms must author separate side-wall entry and exit openings while keeping the full bottom edge sealed: sky-anti-grav-capsule',
+    );
+  });
+
+  it('rejects gravity rooms that leave a bottom-edge doorway remnant', () => {
+    const stage = cloneSkyStage();
+    stage.gravityCapsules[0].entryDoor = {
+      ...stage.gravityCapsules[0].entryDoor,
+      x: stage.gravityCapsules[0].shell.x + 72,
+      y: stage.gravityCapsules[0].shell.y + stage.gravityCapsules[0].shell.height - 46,
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Gravity rooms must author separate side-wall entry and exit openings while keeping the full bottom edge sealed: sky-anti-grav-capsule',
     );
   });
 
@@ -381,6 +484,128 @@ describe('gravity field stage validation', () => {
 
     expect(() => validateStageDefinition(stage)).toThrow(
       'Gravity rooms must keep all linked room content inside the authored shell: sky-anti-grav-capsule',
+    );
+  });
+
+  it('rejects gravity rooms whose traversal content path intrudes through sealed shell bands', () => {
+    const stage = cloneSkyStage();
+    const capsule = stage.gravityCapsules[0];
+
+    stage.enemies.push({
+      id: 'sky-shell-band-trespass',
+      kind: 'flyer',
+      position: { x: capsule.shell.x - 36, y: capsule.shell.y + 132 },
+      flyer: {
+        left: capsule.shell.x - 64,
+        right: capsule.shell.x + 36,
+        speed: 84,
+        bobAmp: 12,
+        bobSpeed: 3.2,
+      },
+    });
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Gravity rooms must keep authored traversal content from intruding through sealed shell bands outside door openings: sky-anti-grav-capsule',
+    );
+  });
+
+  it('rejects gravity rooms whose exit door loses its exterior-side reconnect after crossing out of the room', () => {
+    const stage = cloneSkyStage();
+    stage.gravityCapsules[0].doorSupports = {
+      ...stage.gravityCapsules[0].doorSupports!,
+      exitReconnectPath: {
+        ...stage.gravityCapsules[0].doorSupports!.exitReconnectPath,
+        x: stage.gravityCapsules[0].doorSupports!.exitReconnectPath.x + 148,
+      },
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Current playable gravity rooms must reuse authored intended route supports for entry and exit doors: sky-anti-grav-capsule',
+    );
+  });
+
+  it('rejects current playable gravity rooms when a helper platform replaces the authored intended door support', () => {
+    const stage = cloneAmberStage();
+    stage.platforms = stage.platforms.filter((platform) => platform.id !== 'platform-9730-500-falling');
+    stage.gravityCapsules[0].doorSupports = {
+      ...stage.gravityCapsules[0].doorSupports!,
+      entryApproachPlatformId: 'amber-door-helper',
+      routePlatformIds: stage.gravityCapsules[0].doorSupports!.routePlatformIds.map((platformId) =>
+        platformId === 'platform-9730-500-falling' ? 'amber-door-helper' : platformId,
+      ),
+    };
+    stage.platforms.push({ id: 'amber-door-helper', kind: 'static', x: 9900, y: 570, width: 60, height: 32 });
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Gravity rooms must keep authored traversal content from intruding through sealed shell bands outside door openings: amber-inversion-smelter-room',
+    );
+  });
+
+  it('rejects door moves that are not coordinated with the affected route rectangle', () => {
+    const stage = cloneSkyStage();
+    stage.gravityCapsules[1].doorSupports = {
+      ...stage.gravityCapsules[1].doorSupports!,
+      exitReconnectPath: {
+        ...stage.gravityCapsules[1].doorSupports!.exitReconnectPath,
+        x: stage.gravityCapsules[1].doorSupports!.exitReconnectPath.x + 120,
+      },
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Current playable gravity rooms must reuse authored intended route supports for entry and exit doors: sky-gravity-inversion-capsule',
+    );
+  });
+
+  it('rejects current gravity rooms that technically validate but still keep the old surrogate IN/OUT read', () => {
+    const stage = cloneSkyStage();
+    stage.gravityCapsules[0] = {
+      ...stage.gravityCapsules[0],
+      shell: { x: 8928, y: 108, width: 304, height: 396 },
+      entryDoor: { x: 9004, y: 458, width: 42, height: 46 },
+      exitDoor: { x: 9140, y: 458, width: 42, height: 46 },
+      entryRoute: { x: 9022, y: 456, width: 84, height: 24 },
+      exitRoute: { x: 9098, y: 456, width: 82, height: 24 },
+      contents: {
+        platformIds: ['platform-9010-480', 'platform-9040-300'],
+      },
+      doorSupports: {
+        entryApproachPlatformId: 'platform-9010-480',
+        entryApproachPath: { x: 9016, y: 456, width: 40, height: 24 },
+        exitInteriorPlatformId: 'platform-9010-480',
+        exitReconnectPlatformId: 'platform-9010-480',
+        exitReconnectPath: { x: 9186, y: 456, width: 40, height: 24 },
+        routePlatformIds: ['platform-9010-480', 'platform-9040-300', 'platform-9270-420-moving'],
+      },
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Gravity rooms must author separate side-wall entry and exit openings while keeping the full bottom edge sealed: sky-anti-grav-capsule',
+    );
+  });
+
+  it('accepts gravity rooms whose doorway path is provided by a moving platform', () => {
+    const stage = cloneStage();
+    const entrySupport = stage.platforms.find((platform) => platform.id === 'platform-8610-450-moving');
+    if (!entrySupport) {
+      throw new Error('Expected forest gravity-room moving entry path fixture.');
+    }
+
+    entrySupport.kind = 'moving';
+    entrySupport.move = { axis: 'x', range: 60, speed: 86 };
+
+    const validated = validateStageDefinition(stage);
+    expect(validated.gravityCapsules[0].id).toBe('forest-anti-grav-canopy-room');
+  });
+
+  it('rejects current playable gravity rooms that use an above-room surrogate entry path', () => {
+    const stage = cloneSkyStage();
+    stage.gravityCapsules[0].doorSupports = {
+      ...stage.gravityCapsules[0].doorSupports!,
+      entryApproachPath: { x: stage.gravityCapsules[0].shell.x - 28, y: stage.gravityCapsules[0].shell.y - 40, width: 28, height: 24 },
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Current playable gravity rooms must reuse authored intended route supports for entry and exit doors: sky-anti-grav-capsule',
     );
   });
 
@@ -401,9 +626,9 @@ describe('gravity field stage validation', () => {
 
   it('rejects gravity rooms whose entry-to-exit route geometry is cut off inside the shell', () => {
     const stage = cloneSkyStage();
-    stage.gravityCapsules[0].exitRoute = {
-      ...stage.gravityCapsules[0].exitRoute,
-      y: stage.gravityCapsules[0].exitRoute.y - 88,
+    stage.gravityCapsules[0].buttonRoute = {
+      ...stage.gravityCapsules[0].buttonRoute,
+      y: stage.gravityCapsules[0].buttonRoute.y - 88,
     };
 
     expect(() => validateStageDefinition(stage)).toThrow(

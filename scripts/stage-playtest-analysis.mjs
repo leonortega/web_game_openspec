@@ -34,6 +34,7 @@ const CHANGE_RESULT_SCOPE = {
     'Mechanic Checks',
   ]),
   'enclosed-gravity-room-sections': new Set(['Mechanic Checks']),
+  'gravity-room-door-reposition-no-new-platforms': new Set(['Mechanic Checks']),
 };
 
 export function estimateMinutes(stage) {
