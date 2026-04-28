@@ -1,8 +1,8 @@
-import type { ActivationNodeState, GravityCapsuleState, GravityFieldState, LauncherState, PlatformState, TerrainSurfaceState } from '../../game/simulation/state';
+import type { ActivationNodeState, GravityCapsuleState, GravityFieldState, PlatformState } from '../../game/simulation/state';
 
 export type TraversalVisualCategory = 'terrain' | 'assistedMovement' | 'routeToggle' | 'gravityModifier' | 'neutral';
 
-export const getTerrainTraversalVisualCategory = (_surface: Pick<TerrainSurfaceState, 'kind'>): TraversalVisualCategory => 'terrain';
+export const getTerrainTraversalVisualCategory = (_platform: Pick<PlatformState, 'surfaceMechanic'>): TraversalVisualCategory => 'terrain';
 
 export const getPlatformTraversalVisualCategory = (
   platform: Pick<PlatformState, 'kind' | 'reveal' | 'temporaryBridge' | 'magnetic'>,
@@ -17,10 +17,6 @@ export const getPlatformTraversalVisualCategory = (
 
   return 'neutral';
 };
-
-export const getLauncherTraversalVisualCategory = (
-  _launcher: Pick<LauncherState, 'kind'>,
-): TraversalVisualCategory => 'assistedMovement';
 
 export const getActivationNodeTraversalVisualCategory = (
   _node: Pick<ActivationNodeState, 'activated'>,

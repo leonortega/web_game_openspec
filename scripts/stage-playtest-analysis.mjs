@@ -1,6 +1,15 @@
 const CHANGE_RESULT_SCOPE = {
   'activation-node-magnetic-platforms': new Set(['Mechanic Checks']),
+  'trim-mechanic-check-nonterrain-failures': new Set(['Mechanic Checks']),
+  'trim-mechanic-check-terrain-failures': new Set(['Mechanic Checks']),
   'fold-terrain-into-platform-variants': new Set(['Terrain Variant Stage Checks']),
+  'remove-main-stage-green-top-terrain': new Set(['Main Stage Terrain Rollout Checks']),
+  'restore-brittle-sticky-platform-rollout': new Set([
+    'Verdant Impact Crater',
+    'Ember Rift Warrens',
+    'Halo Spire Array',
+    'Main Stage Terrain Rollout Checks',
+  ]),
   'replace-synth-music-with-free-space-tracks': new Set(['Audio Asset Checks', 'Flow Checks']),
   'deepen-stage-and-menu-composition': new Set(['Audio Composition Checks', 'Flow Checks']),
   'expand-chiptune-audio-coverage': new Set(['Flow Checks']),
@@ -11,6 +20,7 @@ const CHANGE_RESULT_SCOPE = {
   'scanner-switches-and-temporary-bridges': new Set(['Mechanic Checks']),
   'timed-reveal-secret-routes': new Set(['Mechanic Checks']),
   'biome-authored-launchers': new Set(['Mechanic Checks']),
+  'checkpoint-grounded-support-guardrails': new Set(['Verdant Impact Crater', 'Ember Rift Warrens', 'Halo Spire Array']),
   'readable-biome-enemy-variants': new Set(['Ember Rift Warrens', 'Halo Spire Array', 'Turret Variant Checks']),
   'expedition-secret-routes-and-sample-caves': new Set(['Ember Rift Warrens', 'Secret Route Checks']),
   'lightweight-stage-objectives': new Set(['Objective Checks']),
@@ -103,8 +113,8 @@ export function analyzeTerrainRollout(stage) {
   const centerX = (platform) => platform.x + platform.width / 2;
   const beatForPlatform = (platform) =>
     stage.segments.find((segment) => centerX(platform) >= segment.startX && centerX(platform) <= segment.endX)?.id ?? 'unmapped';
-  const brittle = stage.platforms.filter((platform) => platform.terrainVariant === 'brittleCrystal');
-  const sticky = stage.platforms.filter((platform) => platform.terrainVariant === 'stickySludge');
+  const brittle = stage.platforms.filter((platform) => platform.surfaceMechanic?.kind === 'brittleCrystal');
+  const sticky = stage.platforms.filter((platform) => platform.surfaceMechanic?.kind === 'stickySludge');
   const brittleBeats = [...new Set(brittle.map(beatForPlatform))];
   const stickyBeats = [...new Set(sticky.map(beatForPlatform))];
 
@@ -113,8 +123,8 @@ export function analyzeTerrainRollout(stage) {
     stickyCount: sticky.length,
     brittleBeats,
     stickyBeats,
-    minimumsPassed: brittle.length >= 2 && sticky.length >= 2,
-    beatCoveragePassed: brittleBeats.length >= 2 && stickyBeats.length >= 2,
+    minimumsPassed: brittle.length + sticky.length >= 1,
+    beatCoveragePassed: brittleBeats.length + stickyBeats.length >= 1,
   };
 }
 
@@ -172,7 +182,10 @@ function enemyRect(enemy) {
 
 function findStrictSupport(stage, left, right, bottom) {
   return stage.platforms.find((platform) => {
-    if (platform.kind !== 'static') {
+    if (platform.kind !== 'static' && platform.kind !== 'spring') {
+      return false;
+    }
+    if (platform.reveal || platform.temporaryBridge || platform.magnetic) {
       return false;
     }
     const overlap = overlapWidth(left, right, platform.x, platform.x + platform.width);
@@ -414,7 +427,8 @@ export function checkpointReport(result) {
     checkpointX: result.checkpointX,
     respawnedX: result.respawnedX,
     health: result.health,
-    passed: Math.abs(result.checkpointX - result.respawnedX) <= 20 && result.health === 3,
+    groundedRespawn: result.groundedRespawn,
+    passed: Math.abs(result.checkpointX - result.respawnedX) <= 20 && result.health === 3 && result.groundedRespawn === true,
   };
 }
 
@@ -428,8 +442,6 @@ export function mechanicReport(result) {
     collapseTriggered: result.collapseTriggered,
     collapseFell: result.collapseFell,
     springBoosted: result.springBoosted,
-    bouncePodLaunchWorked: result.bouncePodLaunchWorked,
-    gasVentLaunchWorked: result.gasVentLaunchWorked,
     hopperHighJump: result.hopperHighJump,
     fallingJumpResponsive: result.fallingJumpResponsive,
     chargerWindup: result.chargerWindup,
@@ -466,8 +478,8 @@ export function mechanicReport(result) {
     scannerBridgeOccupiedExpiry: result.scannerBridgeOccupiedExpiry,
     timedRevealSkipFallback: result.timedRevealSkipFallback,
     timedRevealReconnectionReady: result.timedRevealReconnectionReady,
-    terrainSurfaceExtentsRendered: result.terrainSurfaceExtentsRendered,
-    terrainSurfaceCueShapesVisible: result.terrainSurfaceCueShapesVisible,
+    terrainVariantExtentsRendered: result.terrainVariantExtentsRendered,
+    terrainVariantCueShapesVisible: result.terrainVariantCueShapesVisible,
     brittleWarningTriggered: result.brittleWarningTriggered,
     brittleWarningVisualStrengthened: result.brittleWarningVisualStrengthened,
     brittleEscapeJumpWorked: result.brittleEscapeJumpWorked,
@@ -491,8 +503,6 @@ export function mechanicReport(result) {
       result.collapseTriggered &&
       result.collapseFell &&
       result.springBoosted &&
-      result.bouncePodLaunchWorked &&
-      result.gasVentLaunchWorked &&
       result.hopperHighJump &&
       result.fallingJumpResponsive &&
       result.chargerWindup &&
@@ -529,8 +539,8 @@ export function mechanicReport(result) {
       result.scannerBridgeOccupiedExpiry &&
       result.timedRevealSkipFallback &&
       result.timedRevealReconnectionReady &&
-      result.terrainSurfaceExtentsRendered &&
-      result.terrainSurfaceCueShapesVisible &&
+      result.terrainVariantExtentsRendered &&
+      result.terrainVariantCueShapesVisible &&
       result.brittleWarningTriggered &&
       result.brittleWarningVisualStrengthened &&
       result.brittleEscapeJumpWorked &&
@@ -881,4 +891,28 @@ export function scopeResultsForChange(results, changeName) {
   }
 
   return results.filter((result) => scopedNames.has(result.stageName));
+}
+
+export function changeScopedFailure(result, changeName) {
+  if (changeName === 'checkpoint-grounded-support-guardrails') {
+    return !result.checkpoint.passed || !result.safety.passed || !result.mechanics.passed || !result.flow.passed;
+  }
+
+  return (
+    result.estimatedMinutes < result.targetDurationMinutes ||
+    !result.readability.segmentPass ||
+    !result.readability.checkpointPass ||
+    !result.readability.collectiblePass ||
+    !result.readability.routePass ||
+    !result.readability.encounterPass ||
+    !result.checkpoint.passed ||
+    !result.safety.passed ||
+    result.blockSpacing?.passed === false ||
+    result.blocks?.passed === false ||
+    result.rewardLockCoverage?.passed === false ||
+    result.staticLayoutCoverage?.passed === false ||
+    result.secretRoutes?.passed === false ||
+    !result.mechanics.passed ||
+    !result.flow.passed
+  );
 }

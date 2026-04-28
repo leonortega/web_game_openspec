@@ -8,6 +8,9 @@ export const buildGameConfig = (parent: HTMLElement): Phaser.Types.Core.GameConf
   width: 960,
   height: 540,
   backgroundColor: '#091310',
+  pixelArt: true,
+  antialias: false,
+  antialiasGL: false,
   scene: GAME_SCENES,
   physics: {
     default: 'arcade',
@@ -16,7 +19,7 @@ export const buildGameConfig = (parent: HTMLElement): Phaser.Types.Core.GameConf
     },
   },
   scale: {
-    mode: Phaser.Scale.FIT,
+    mode: Phaser.Scale.NONE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
 });

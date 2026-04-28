@@ -27,14 +27,14 @@ import {
   getStageObjectiveBriefing,
   getStageObjectiveCompletionMessage,
   getStageObjectiveExitReminder,
-  isBrittleSurfaceBroken,
-  isBrittleSurfaceWarning,
+  isBrittlePlatformBroken,
+  isBrittlePlatformWarning,
   isPlatformActive,
+  isPlatformTerrainSupportActive,
   isTopSurfaceOnlyPlatform,
   isPlatformVisible,
   isPlatformRevealed,
   isTimedRevealBridgeLegible,
-  isTerrainSurfaceSupportActive,
   normalizeRevealedPlatformIds,
 } from './state';
 
@@ -215,49 +215,49 @@ describe('astronaut presentation mappings', () => {
 
   it('treats brittle terrain support as active until the broken phase and keeps sludge always supporting', () => {
     expect(
-      isTerrainSurfaceSupportActive({
-        kind: 'brittleCrystal',
-        brittle: { phase: 'intact', warningMs: 420 },
+      isPlatformTerrainSupportActive({
+        surfaceMechanic: { kind: 'brittleCrystal' },
+        brittle: { phase: 'intact', warningMs: 420, unsupportedGapMs: 0 },
       }),
     ).toBe(true);
     expect(
-      isTerrainSurfaceSupportActive({
-        kind: 'brittleCrystal',
-        brittle: { phase: 'warning', warningMs: 120 },
+      isPlatformTerrainSupportActive({
+        surfaceMechanic: { kind: 'brittleCrystal' },
+        brittle: { phase: 'warning', warningMs: 120, unsupportedGapMs: 0 },
       }),
     ).toBe(true);
     expect(
-      isTerrainSurfaceSupportActive({
-        kind: 'brittleCrystal',
-        brittle: { phase: 'expired', warningMs: 0 },
+      isPlatformTerrainSupportActive({
+        surfaceMechanic: { kind: 'brittleCrystal' },
+        brittle: { phase: 'ready', warningMs: 0, unsupportedGapMs: 0 },
       }),
     ).toBe(true);
     expect(
-      isTerrainSurfaceSupportActive({
-        kind: 'brittleCrystal',
-        brittle: { phase: 'broken', warningMs: 0 },
+      isPlatformTerrainSupportActive({
+        surfaceMechanic: { kind: 'brittleCrystal' },
+        brittle: { phase: 'broken', warningMs: 0, unsupportedGapMs: 0 },
       }),
     ).toBe(false);
-    expect(isTerrainSurfaceSupportActive({ kind: 'stickySludge', brittle: undefined })).toBe(true);
+    expect(isPlatformTerrainSupportActive({ surfaceMechanic: { kind: 'stickySludge' }, brittle: undefined })).toBe(true);
   });
 
   it('distinguishes brittle warning and broken phases for rendering and runtime checks', () => {
     expect(
-      isBrittleSurfaceWarning({
-        kind: 'brittleCrystal',
-        brittle: { phase: 'warning', warningMs: 120 },
+      isBrittlePlatformWarning({
+        surfaceMechanic: { kind: 'brittleCrystal' },
+        brittle: { phase: 'warning', warningMs: 120, unsupportedGapMs: 0 },
       }),
     ).toBe(true);
     expect(
-      isBrittleSurfaceBroken({
-        kind: 'brittleCrystal',
-        brittle: { phase: 'warning', warningMs: 120 },
+      isBrittlePlatformBroken({
+        surfaceMechanic: { kind: 'brittleCrystal' },
+        brittle: { phase: 'warning', warningMs: 120, unsupportedGapMs: 0 },
       }),
     ).toBe(false);
     expect(
-      isBrittleSurfaceBroken({
-        kind: 'brittleCrystal',
-        brittle: { phase: 'broken', warningMs: 0 },
+      isBrittlePlatformBroken({
+        surfaceMechanic: { kind: 'brittleCrystal' },
+        brittle: { phase: 'broken', warningMs: 0, unsupportedGapMs: 0 },
       }),
     ).toBe(true);
   });

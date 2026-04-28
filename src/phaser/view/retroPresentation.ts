@@ -373,15 +373,16 @@ export const getRetroEnemyPose = (
 
   if (enemy.kind === 'flyer' && enemy.flyer) {
     const hoverStep = getRetroMotionStep(timeMs + enemy.x * 2, 140, 3);
+    const shimmerStep = getRetroMotionStep(timeMs + enemy.x * 3, 300, 3);
     return {
       state: 'hover',
       yOffset: [-2, 0, 1][hoverStep] ?? 0,
       scaleX: [0.98, 1.02, 1][hoverStep] ?? 1,
       scaleY: [1.02, 0.98, 1][hoverStep] ?? 1,
       alpha: 0.97,
-      accentAlpha: [0.72, 0.94, 0.82][hoverStep] ?? 0.82,
-      accentOffsetX: [-1, 0, 1][hoverStep] ?? 0,
-      accentOffsetY: [1, 2, 3][hoverStep] ?? 2,
+      accentAlpha: [0.24, 0.38, 0.3][shimmerStep] ?? 0.3,
+      accentOffsetX: 0,
+      accentOffsetY: [0, 1, 1][hoverStep] ?? 1,
     };
   }
 

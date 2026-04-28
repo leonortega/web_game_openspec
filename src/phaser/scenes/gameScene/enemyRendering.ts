@@ -1,5 +1,12 @@
 import * as Phaser from 'phaser';
 
+import {
+  CHARGER_TEXTURE_SIZE,
+  FLYER_TEXTURE_SIZE,
+  HOPPER_TEXTURE_SIZE,
+  TURRET_TEXTURE_SIZE,
+  WALKER_TEXTURE_SIZE,
+} from '../../assets/bootTextures';
 import { TURRET_VARIANT_CONFIG, type EnemyState, type HazardState, type ProjectileState } from '../../../game/simulation/state';
 import {
   getRetroDefeatTweenPreset,
@@ -7,13 +14,40 @@ import {
   type RetroPresentationPalette,
 } from '../../view/retroPresentation';
 
+const ENEMY_VISUAL_HEIGHTS = {
+  walker: WALKER_TEXTURE_SIZE.height,
+  hopper: HOPPER_TEXTURE_SIZE.height,
+  turret: TURRET_TEXTURE_SIZE.height,
+  charger: CHARGER_TEXTURE_SIZE.height,
+  flyer: FLYER_TEXTURE_SIZE.height,
+} as const;
+
+const ENEMY_CONTACT_STRIP_DEPTH = -0.1;
+const ENEMY_CONTACT_STRIP_HEIGHT = 2;
+
 export type GameSceneEnemyRenderingContext = Phaser.Scene & {
   retroPalette: RetroPresentationPalette;
   hazardSprites: Map<string, Phaser.GameObjects.Rectangle>;
   enemySprites: Map<string, Phaser.GameObjects.Sprite>;
+  enemyContactStrips: Map<string, Phaser.GameObjects.Rectangle>;
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   projectileSprites: Map<string, Phaser.GameObjects.Sprite>;
   enemyDefeatVisibleUntilMs: Map<string, number>;
+};
+
+export const getSpikeHazardToothRects = (
+  hazardRect: { x: number; y: number; width: number; height: number },
+): Array<{ x: number; y: number; width: number; height: number }> => {
+  const toothWidth = Math.max(8, Math.floor(hazardRect.width / 3));
+  const toothHeight = Math.max(4, Math.floor(hazardRect.height / 2));
+  const toothCount = Math.max(2, Math.floor(hazardRect.width / toothWidth));
+
+  return Array.from({ length: toothCount }, (_entry, index) => ({
+    x: hazardRect.x + toothWidth / 2 + toothWidth * index,
+    y: hazardRect.y + 2,
+    width: Math.max(4, toothWidth - 2),
+    height: toothHeight,
+  }));
 };
 
 export function drawHazard(scene: GameSceneEnemyRenderingContext, hazard: HazardState): void {
@@ -29,14 +63,13 @@ export function drawHazard(scene: GameSceneEnemyRenderingContext, hazard: Hazard
     .setDepth(4)
     .setStrokeStyle(2, scene.retroPalette.ink, 1);
 
-  const toothWidth = Math.max(8, Math.floor(hazard.rect.width / 3));
-  for (let index = 0; index < Math.max(2, Math.floor(hazard.rect.width / toothWidth)); index += 1) {
+  for (const tooth of getSpikeHazardToothRects(hazard.rect)) {
     scene.add
       .rectangle(
-        hazard.rect.x + toothWidth / 2 + toothWidth * index,
-        hazard.rect.y + 2,
-        Math.max(4, toothWidth - 2),
-        Math.max(4, Math.floor(hazard.rect.height / 2)),
+        tooth.x,
+        tooth.y,
+        tooth.width,
+        tooth.height,
         scene.retroPalette.warm,
       )
       .setOrigin(0.5, 0)
@@ -44,6 +77,29 @@ export function drawHazard(scene: GameSceneEnemyRenderingContext, hazard: Hazard
   }
 
   scene.hazardSprites.set(hazard.id, base);
+}
+
+function syncEnemyContactStrip(scene: GameSceneEnemyRenderingContext, enemy: EnemyState, tintColor: number): void {
+  const supportY = enemy.supportY;
+  const isGrounded = enemy.kind !== 'flyer' && supportY !== null && Math.abs(enemy.y - supportY) <= 4;
+  if (!isGrounded) {
+    scene.enemyContactStrips.delete(enemy.id);
+    return;
+  }
+
+  let strip = scene.enemyContactStrips.get(enemy.id);
+  if (!strip) {
+    strip = scene.add
+      .rectangle(enemy.x, supportY + ENEMY_CONTACT_STRIP_HEIGHT / 2, enemy.width, ENEMY_CONTACT_STRIP_HEIGHT, tintColor)
+      .setOrigin(0.5, 0.5)
+      .setDepth(ENEMY_CONTACT_STRIP_DEPTH);
+    scene.enemyContactStrips.set(enemy.id, strip);
+  } else {
+    strip
+      .setPosition(enemy.x, supportY + ENEMY_CONTACT_STRIP_HEIGHT / 2)
+      .setDisplaySize(enemy.width, ENEMY_CONTACT_STRIP_HEIGHT)
+      .setFillStyle(tintColor);
+  }
 }
 
 export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemyState): void {
@@ -57,7 +113,13 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
   sprite.setVisible(enemy.alive || defeatHoldActive);
   if (enemy.alive) {
     const motion = getRetroEnemyPose(enemy, scene.time.now);
-    sprite.setPosition(enemy.x, enemy.y + motion.yOffset);
+    const visualHeight = ENEMY_VISUAL_HEIGHTS[enemy.kind];
+    const plantedOffsetY = enemy.kind !== 'flyer' && enemy.supportY !== null && Math.abs(enemy.y - enemy.supportY) <= 4 ? 0 : motion.yOffset;
+    const renderY =
+      enemy.kind === 'flyer'
+        ? enemy.y + motion.yOffset
+        : enemy.y + enemy.height - visualHeight * motion.scaleY + plantedOffsetY;
+    sprite.setPosition(enemy.x, renderY);
     sprite.setFlipX(enemy.direction < 0);
     sprite.setScale(motion.scaleX, motion.scaleY);
     sprite.setAlpha(motion.alpha);
@@ -86,14 +148,15 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
     }
     if (enemy.kind === 'flyer' && accents.length === 2) {
       accents[0]
-        .setPosition(enemy.x + 7 + motion.accentOffsetX, enemy.y + 13 + motion.accentOffsetY)
-        .setFillStyle(scene.retroPalette.bright, motion.accentAlpha)
+        .setPosition(enemy.x + 14, enemy.y + 7 + motion.accentOffsetY)
+        .setFillStyle(scene.retroPalette.cool, motion.accentAlpha)
         .setVisible(true);
       accents[1]
-        .setPosition(enemy.x + 11 - motion.accentOffsetX, enemy.y + 17 + motion.accentOffsetY)
-        .setFillStyle(scene.retroPalette.cool, Math.max(0.24, motion.accentAlpha * 0.76))
+        .setPosition(enemy.x + 10, enemy.y + 16 + motion.accentOffsetY)
+        .setFillStyle(scene.retroPalette.bright, 0.16 + motion.accentAlpha * 0.5)
         .setVisible(true);
     }
+    syncEnemyContactStrip(scene, enemy, tint);
     return;
   }
 
@@ -113,6 +176,8 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
   for (const accent of accents) {
     accent.setVisible(false);
   }
+
+  scene.enemyContactStrips.delete(enemy.id);
 }
 
 export function syncProjectile(scene: GameSceneEnemyRenderingContext, projectile: ProjectileState): void {

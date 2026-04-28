@@ -1,11 +1,24 @@
-import type { StageDefinition, EnemyDefinition, PlatformDefinition, RewardBlockDefinition, SecretRouteDefinition } from './types';
-import type { Rect, TerrainSurfaceKind, TurretVariantId } from '../../simulation/state';
+import {
+  EMPTY_PLATFORM_SUPPORTED_MECHANIC_FAMILIES,
+  type EmptyPlatformMechanicFamily,
+  type EmptyPlatformProgressionSegment,
+  type EmptyPlatformSupportedMechanicFamily,
+  type StageDefinition,
+  type EnemyDefinition,
+  type PlatformDefinition,
+  type RewardBlockDefinition,
+  type SecretRouteDefinition,
+} from './types';
+import type { PlatformSurfaceKind, PlatformSurfaceTerrainKind, Rect, TurretVariantId } from '../../simulation/state';
 import type { StageAudioThemeMetadata } from '../../../audio/audioContract';
-import { GRAVITY_FIELD_KINDS, LAUNCHER_KINDS, TURRET_VARIANT_CONFIG } from '../../simulation/state';
+import { GRAVITY_FIELD_KINDS, PLATFORM_SURFACE_TERRAIN_KINDS, TURRET_VARIANT_CONFIG } from '../../simulation/state';
 import {
   enemyRect,
   expandRect,
+  findCheckpointSupport,
   findExitSupport,
+  findGroundedEnemySupport,
+  findHazardSupport,
   findGravityCapsuleEntryDoorApproach,
   findGravityCapsuleExitDoorInteriorAccess,
   findGravityCapsuleExitDoorReconnect,
@@ -16,12 +29,17 @@ import {
   gravityCapsuleDoorSupportRect,
   gravityCapsuleHasBlockingShellWalls,
   gravityCapsuleInteriorEntriesByKind,
+  gravityCapsulePlayerFieldRect,
+  gravityCapsuleRectCrossesDoorBoundary,
   gravityCapsuleRectCrossesSealedShellBoundary,
   gravityCapsuleUsesSideWallDoors,
   intersectsRect,
+  isVisibleStableGroundSupport,
   isRectWithinRect,
   isRectWithinWorld,
+  rectEquals,
   rectContainsPoint,
+  rewardBlockNeedsSupportSnap,
 } from './builders';
 
 const GROUND_STOMP_ENEMY_KINDS: EnemyDefinition['kind'][] = ['walker', 'hopper', 'charger'];
@@ -30,10 +48,8 @@ const POWER_PICKUP_ESCAPE_DISTANCE = 150;
 const POWER_PICKUP_SUPPORT_GAP = 56;
 const POWER_PICKUP_SUPPORT_HEIGHT_TOLERANCE = 96;
 const SECRET_ROUTE_MIN_REWARD_SCORE = 3;
-const LAUNCHER_MAX_DIRECTION_RADIANS = (25 * Math.PI) / 180;
 const MAIN_STAGE_IDS = ['forest-ruins', 'amber-cavern', 'sky-sanctum'] as const;
 const MAIN_STAGE_TERRAIN_KINDS = ['brittleCrystal', 'stickySludge'] as const;
-const MAIN_STAGE_TERRAIN_MINIMUM = 2;
 const HALO_SPIRE_ARRAY_STAGE_ID = 'sky-sanctum';
 const GRAVITY_FIELD_CHECKPOINT_CLEARANCE = 56;
 const MAGNETIC_PLATFORM_STAGE_ID = 'forest-ruins';
@@ -48,14 +64,91 @@ const CURRENT_GRAVITY_ROOM_FLOW_IDS = new Set([
 ]);
 const CURRENT_GRAVITY_ROOM_ENTRY_MAX_RATIO = 0.35;
 const CURRENT_GRAVITY_ROOM_EXIT_MIN_RATIO = 0.65;
+const GRAVITY_ROOM_BUTTON_ROUTE_MIN_RISE = 48;
+const GRAVITY_ROOM_BUTTON_LANE_HORIZONTAL_PADDING = 36;
+const GRAVITY_ROOM_BUTTON_LANE_VERTICAL_PADDING = 56;
+const HOP_HORIZONTAL_REACH = 280;
+const HOP_VERTICAL_REACH = 170;
+const HOP_FLIGHT_TIME_MIN = 0.42;
+const HOP_FLIGHT_TIME_MAX = 0.82;
+const HOP_HORIZONTAL_SPEED_LIMIT = 420;
+const HOP_IMPULSE_LIMIT = 980;
+const EMPTY_PLATFORM_PROGRESSION_SEGMENTS: EmptyPlatformProgressionSegment[] = ['early', 'middle', 'late'];
 
 const rectCenterX = (rect: Rect): number => rect.x + rect.width / 2;
 const rectBottom = (rect: Rect): number => rect.y + rect.height;
+const rectOverlapWidth = (left: Rect, right: Rect): number =>
+  Math.max(0, Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x));
 
 const gravityCapsuleRelativeCenterX = (capsule: StageDefinition['gravityCapsules'][number], x: number): number =>
   (x - capsule.shell.x) / capsule.shell.width;
 
 const rectOverlapsY = (left: Rect, right: Rect): boolean => left.y < right.y + right.height && left.y + left.height > right.y;
+
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+
+const hasReachableInitialHopperLanding = (stage: StageDefinition, enemy: EnemyDefinition): boolean => {
+  if (enemy.kind !== 'hopper' || !enemy.hop) {
+    return true;
+  }
+
+  const hop = enemy.hop;
+
+  const currentSupport = findGroundedEnemySupport(stage, enemy);
+  if (!currentSupport) {
+    return false;
+  }
+
+  const bounds = enemyRect(enemy);
+  const currentCenterX = enemy.position.x + bounds.width / 2;
+  const currentY = currentSupport.y - bounds.height;
+  const currentSupportCenterX = currentSupport.x + currentSupport.width / 2;
+
+  return stage.platforms
+    .filter((platform) => platform.id !== currentSupport.id && isVisibleStableGroundSupport(platform, ['static', 'spring']))
+    .map((platform) => {
+      const targetLeft = platform.x;
+      const targetRight = platform.x + platform.width - bounds.width;
+      if (targetRight < targetLeft) {
+        return null;
+      }
+
+      const landingX = clamp(currentCenterX - bounds.width / 2, targetLeft, targetRight);
+      const landingCenterX = landingX + bounds.width / 2;
+      const dx = landingCenterX - currentCenterX;
+      const dy = platform.y - bounds.height - currentY;
+      if (Math.abs(dx) > HOP_HORIZONTAL_REACH || Math.abs(dy) > HOP_VERTICAL_REACH) {
+        return null;
+      }
+
+      const baseFlightTime = clamp(
+        Math.abs(dx) / Math.max(hop.speed, 1),
+        HOP_FLIGHT_TIME_MIN,
+        HOP_FLIGHT_TIME_MAX,
+      );
+      const vy = (dy - 0.5 * stage.world.gravity * baseFlightTime * baseFlightTime) / baseFlightTime;
+      const vx = dx / baseFlightTime;
+      if (vy >= -120 || Math.abs(vx) > HOP_HORIZONTAL_SPEED_LIMIT || Math.abs(vy) > HOP_IMPULSE_LIMIT) {
+        return null;
+      }
+
+      const apexTime = Math.abs(vy) / stage.world.gravity;
+      const apexY = currentY + vy * apexTime - 0.5 * stage.world.gravity * apexTime * apexTime;
+      if (apexY > Math.min(currentY, platform.y - bounds.height) + 24) {
+        return null;
+      }
+
+      return {
+        score: Math.abs(dx) + Math.abs(dy) * 0.75,
+        laneScore: Math.abs(platform.x + platform.width / 2 - currentSupportCenterX),
+        travelScore: Math.abs(landingX - enemy.position.x),
+        landingX,
+      };
+    })
+    .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null)
+    .sort((a, b) => a.score - b.score || a.laneScore - b.laneScore || a.travelScore - b.travelScore || a.landingX - b.landingX)
+    .length > 0;
+};
 
 const pathReadsFromLeftWall = (capsule: StageDefinition['gravityCapsules'][number], path: Rect): boolean =>
   path.x < capsule.shell.x &&
@@ -135,6 +228,61 @@ const currentGravityRoomFlowReadsWrong = (stage: StageDefinition, capsule: Stage
     rectOverlapsY(doorSupports.exitReconnectPath, capsule.exitDoor) === false && doorSupports.exitReconnectPath.y < capsule.shell.y ||
     shellRight !== capsule.exitDoor.x + capsule.exitDoor.width
   );
+};
+
+const gravityCapsuleButtonLaneRect = (capsule: StageDefinition['gravityCapsules'][number]): Rect => {
+  const left = Math.min(capsule.button.x, capsule.buttonRoute.x) - GRAVITY_ROOM_BUTTON_LANE_HORIZONTAL_PADDING;
+  const top = Math.min(capsule.button.y, capsule.buttonRoute.y) - GRAVITY_ROOM_BUTTON_LANE_VERTICAL_PADDING;
+  const right =
+    Math.max(capsule.button.x + capsule.button.width, capsule.buttonRoute.x + capsule.buttonRoute.width) +
+    GRAVITY_ROOM_BUTTON_LANE_HORIZONTAL_PADDING;
+  const bottom =
+    Math.max(capsule.button.y + capsule.button.height, capsule.buttonRoute.y + capsule.buttonRoute.height) +
+    GRAVITY_ROOM_BUTTON_LANE_VERTICAL_PADDING;
+
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  };
+};
+
+const gravityCapsuleActiveButtonRouteReadsWrong = (
+  stage: StageDefinition,
+  capsule: StageDefinition['gravityCapsules'][number],
+): boolean => {
+  const entrySupport = findTraversableSupport(stage, capsule.entryRoute);
+  const buttonSupport = findTraversableSupport(stage, capsule.buttonRoute);
+  const exitSupport = findTraversableSupport(stage, capsule.exitRoute);
+  const entryRise = rectBottom(capsule.entryRoute) - rectBottom(capsule.buttonRoute);
+  const exitRise = rectBottom(capsule.exitRoute) - rectBottom(capsule.buttonRoute);
+  const buttonOverlap = rectOverlapWidth(capsule.button, capsule.buttonRoute);
+
+  return (
+    !entrySupport ||
+    !buttonSupport ||
+    !exitSupport ||
+    entryRise < GRAVITY_ROOM_BUTTON_ROUTE_MIN_RISE ||
+    exitRise < GRAVITY_ROOM_BUTTON_ROUTE_MIN_RISE ||
+    buttonOverlap < Math.min(capsule.button.width, Math.max(20, Math.floor(capsule.buttonRoute.width * 0.35))) ||
+    capsule.button.y + capsule.button.height > buttonSupport.y + 12
+  );
+};
+
+const gravityCapsuleEnemyBlocksButtonLane = (
+  stage: StageDefinition,
+  capsule: StageDefinition['gravityCapsules'][number],
+): boolean => {
+  const linkedEnemyIds = new Set(capsule.contents.enemyIds ?? []);
+  if (linkedEnemyIds.size === 0) {
+    return false;
+  }
+
+  const buttonLane = gravityCapsuleButtonLaneRect(capsule);
+  return stage.enemies
+    .filter((enemy) => linkedEnemyIds.has(enemy.id))
+    .some((enemy) => intersectsRect(expandRect(enemyTraversalEnvelope(stage, enemy), 12), buttonLane));
 };
 
 const isImmediateContinuationSupport = (
@@ -233,8 +381,16 @@ const isRewardBlockForcedHitRoute = (stage: StageDefinition, block: RewardBlockD
 };
 
 const validateRewardBlocks = (stage: StageDefinition): StageDefinition => {
+  const unsupportedBlocks = stage.rewardBlocks.filter((block) => rewardBlockNeedsSupportSnap(stage.platforms, block));
   const lockedBlocks = stage.rewardBlocks.filter((block) => isRewardBlockLockedByEnemy(stage, block));
   const forcedHitBlocks = stage.rewardBlocks.filter((block) => isRewardBlockForcedHitRoute(stage, block));
+  if (unsupportedBlocks.length > 0) {
+    throw new Error(
+      `Reward blocks must keep authored visible-ground clearance without support snap: ${unsupportedBlocks
+        .map((block) => block.id)
+        .join(', ')}`,
+    );
+  }
   if (lockedBlocks.length > 0) {
     throw new Error(
       `Reward blocks cannot sit over stompable grounded enemies: ${lockedBlocks.map((block) => block.id).join(', ')}`,
@@ -358,15 +514,19 @@ const enemyTraversalEnvelope = (stage: StageDefinition, enemy: EnemyDefinition):
 
 const authoredTraversalContentEnvelopes = (
   stage: StageDefinition,
-): { id: string; rect: Rect; kind: 'platform' | 'terrainSurface' | 'launcher' | 'collectible' | 'rewardBlock' | 'hazard' | 'enemy' }[] => [
+): { id: string; rect: Rect; kind: 'platform' | 'launcher' | 'collectible' | 'rewardBlock' | 'hazard' | 'enemy' }[] => [
   ...stage.platforms.map((platform) => ({ id: platform.id, rect: platformTraversalEnvelope(platform), kind: 'platform' as const })),
-  ...stage.terrainSurfaces.map((surface) => ({ id: surface.id, rect: surface, kind: 'terrainSurface' as const })),
-  ...stage.launchers.map((launcherEntry) => ({ id: launcherEntry.id, rect: launcherEntry, kind: 'launcher' as const })),
   ...stage.collectibles.map((collectible) => ({ id: collectible.id, rect: collectibleBounds(collectible), kind: 'collectible' as const })),
   ...stage.rewardBlocks.map((block) => ({ id: block.id, rect: block, kind: 'rewardBlock' as const })),
   ...stage.hazards.map((hazard) => ({ id: hazard.id, rect: hazard.rect, kind: 'hazard' as const })),
   ...stage.enemies.map((enemy) => ({ id: enemy.id, rect: enemyTraversalEnvelope(stage, enemy), kind: 'enemy' as const })),
 ];
+
+const hasLegacyTerrainSurfaceOverlays = (stage: StageDefinition): boolean =>
+  Array.isArray((stage as StageDefinition & { terrainSurfaces?: unknown }).terrainSurfaces);
+
+const legacyTerrainSurfaceIds = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 
 const validateStaticElementCollisions = (stage: StageDefinition): StageDefinition => {
   if (!isRectWithinWorld(stage, stage.exit)) {
@@ -397,6 +557,11 @@ const validateStaticElementCollisions = (stage: StageDefinition): StageDefinitio
   return stage;
 };
 
+const findEntriesMissingAuthoredFlushSupport = <T extends { id: string }>(
+  entries: T[],
+  resolveSupport: (entry: T) => PlatformDefinition | null,
+): T[] => entries.filter((entry) => !resolveSupport(entry));
+
 const validateEnemyPlacement = (stage: StageDefinition): StageDefinition => {
   const groundedEnemies = stage.enemies.filter((enemy) => enemy.kind !== 'flyer');
   const outOfBoundsEnemies = groundedEnemies.filter((enemy) => !isRectWithinWorld(stage, enemyRect(enemy)));
@@ -409,10 +574,19 @@ const validateEnemyPlacement = (stage: StageDefinition): StageDefinition => {
     );
   }
 
-  const unsupportedEnemies = groundedEnemies.filter((enemy) => !findTraversableSupport(stage, enemyRect(enemy)));
+  const unsupportedEnemies = findEntriesMissingAuthoredFlushSupport(groundedEnemies, (enemy) =>
+    findGroundedEnemySupport(stage, enemy),
+  );
   if (unsupportedEnemies.length > 0) {
     throw new Error(
       `Non-flying enemies must sit on readable platform support: ${unsupportedEnemies.map((enemy) => enemy.id).join(', ')}`,
+    );
+  }
+
+  const unsupportedHopperRoutes = groundedEnemies.filter((enemy) => enemy.kind === 'hopper' && !hasReachableInitialHopperLanding(stage, enemy));
+  if (unsupportedHopperRoutes.length > 0) {
+    throw new Error(
+      `Grounded hoppers must author a reachable supported first landing: ${unsupportedHopperRoutes.map((enemy) => enemy.id).join(', ')}`,
     );
   }
 
@@ -506,16 +680,15 @@ const routeUsesReadableMechanic = (stage: StageDefinition, route: SecretRouteDef
             stage.lowGravityZones.some((zone) => zone.id === zoneId && intersectsRect(routeBounds, zone)),
           ) ?? false
         );
-      case 'launcher':
+      case 'terrainVariant':
         return (
-          route.cue.launcherIds?.every((launcherId) =>
-            stage.launchers.some((launcherEntry) => launcherEntry.id === launcherId && intersectsRect(routeBounds, launcherEntry)),
-          ) ?? false
-        );
-      case 'terrainSurface':
-        return (
-          route.cue.terrainSurfaceIds?.every((surfaceId) =>
-            stage.terrainSurfaces.some((surface) => surface.id === surfaceId && intersectsRect(routeBounds, surface)),
+          route.cue.platformIds?.every((platformId) =>
+            stage.platforms.some(
+              (platform) =>
+                platform.id === platformId &&
+                (platform.surfaceMechanic?.kind === 'brittleCrystal' || platform.surfaceMechanic?.kind === 'stickySludge') &&
+                intersectsRect(routeBounds, platform),
+            ),
           ) ?? false
         );
       default:
@@ -646,35 +819,58 @@ export const validateStageCatalogSecretRoutes = (stages: StageDefinition[]): Sta
   return stages;
 };
 
-const authoredTerrainVariantPlatforms = (
-  stage: StageDefinition,
-  kind?: TerrainSurfaceKind,
-): (PlatformDefinition & { terrainVariant: TerrainSurfaceKind })[] =>
-  stage.platforms.filter(
-    (platform): platform is PlatformDefinition & { terrainVariant: TerrainSurfaceKind } =>
-      Boolean(platform.terrainVariant) && (kind == null || platform.terrainVariant === kind),
+export const validateStageCatalogTerrainRollout = (stages: StageDefinition[]): StageDefinition[] => {
+  const mainStages = MAIN_STAGE_IDS.map((stageId) => stages.find((stage) => stage.id === stageId)).filter(
+    (stage): stage is StageDefinition => Boolean(stage),
   );
 
-const terrainBeatForPlatform = (stage: StageDefinition, platform: PlatformDefinition): string => {
-  const routeBeat = stage.secretRoutes.find(
-    (route) =>
-      intersectsRect(platform, route.entry) ||
-      intersectsRect(platform, route.mainPath) ||
-      intersectsRect(platform, route.reconnect) ||
-      intersectsRect(platform, route.interior),
-  );
-
-  if (routeBeat) {
-    if (intersectsRect(platform, routeBeat.mainPath) || intersectsRect(platform, routeBeat.reconnect)) {
-      return `${routeBeat.id}:reconnect`;
-    }
-
-    return `${routeBeat.id}:branch`;
+  if (mainStages.length !== MAIN_STAGE_IDS.length) {
+    throw new Error('Stage catalog must include all shipped main stages before validating terrain rollout.');
   }
 
-  const centerX = platform.x + platform.width / 2;
-  return stage.segments.find((segment) => centerX >= segment.startX && centerX <= segment.endX)?.id ?? 'unmapped';
+  const missingStageTerrain = mainStages.filter((stage) => mainStageTerrainKinds(stage).length === 0);
+  if (missingStageTerrain.length > 0) {
+    throw new Error(
+      `Main stage terrain rollout must keep at least one brittle crystal or sticky sludge beat in each shipped stage: ${missingStageTerrain.map((stage) => stage.id).join(', ')}`,
+    );
+  }
+
+  const campaignTerrainKinds = new Set<PlatformSurfaceTerrainKind>(mainStages.flatMap((stage) => mainStageTerrainKinds(stage)));
+  const missingTerrainKinds = MAIN_STAGE_TERRAIN_KINDS.filter((kind) => !campaignTerrainKinds.has(kind));
+  if (missingTerrainKinds.length > 0) {
+    throw new Error(
+      `Main stage terrain rollout must include both brittle crystal and sticky sludge across Verdant Impact Crater, Ember Rift Warrens, and Halo Spire Array: missing ${missingTerrainKinds.join(', ')}`,
+    );
+  }
+
+  const springStageIds = new Set(
+    mainStages.filter((stage) => stage.platforms.some((platform) => platform.kind === 'spring')).map((stage) => stage.id),
+  );
+  if (springStageIds.size < 2) {
+    throw new Error('Main stage rollout must place spring platforms in at least two shipped stages.');
+  }
+
+  return stages;
 };
+
+const authoredSurfacePlatforms = (
+  stage: StageDefinition,
+  kind?: PlatformSurfaceKind,
+): (PlatformDefinition & { surfaceMechanic: NonNullable<PlatformDefinition['surfaceMechanic']> })[] =>
+  stage.platforms.filter(
+    (platform): platform is PlatformDefinition & { surfaceMechanic: NonNullable<PlatformDefinition['surfaceMechanic']> } =>
+      platform.surfaceMechanic !== undefined && (kind == null || platform.surfaceMechanic.kind === kind),
+  );
+
+const authoredTerrainVariantPlatforms = (
+  stage: StageDefinition,
+  kind?: PlatformSurfaceTerrainKind,
+): (PlatformDefinition & { surfaceMechanic: { kind: PlatformSurfaceTerrainKind } })[] =>
+  authoredSurfacePlatforms(stage).filter(
+    (platform): platform is PlatformDefinition & { surfaceMechanic: { kind: PlatformSurfaceTerrainKind } } =>
+      PLATFORM_SURFACE_TERRAIN_KINDS.includes(platform.surfaceMechanic.kind as PlatformSurfaceTerrainKind) &&
+      (kind == null || platform.surfaceMechanic.kind === kind),
+  );
 
 const isTerrainVariantInteriorOnlyDeadEnd = (route: SecretRouteDefinition, platform: PlatformDefinition): boolean =>
   intersectsRect(platform, route.interior) &&
@@ -682,7 +878,7 @@ const isTerrainVariantInteriorOnlyDeadEnd = (route: SecretRouteDefinition, platf
   !intersectsRect(platform, route.mainPath) &&
   !intersectsRect(platform, route.reconnect);
 
-const terrainKindsConfinedToDeadEnds = (stage: StageDefinition): TerrainSurfaceKind[] =>
+const terrainKindsConfinedToDeadEnds = (stage: StageDefinition): PlatformSurfaceTerrainKind[] =>
   MAIN_STAGE_TERRAIN_KINDS.filter((kind) => {
     const authored = authoredTerrainVariantPlatforms(stage, kind);
     return (
@@ -691,22 +887,53 @@ const terrainKindsConfinedToDeadEnds = (stage: StageDefinition): TerrainSurfaceK
     );
   });
 
-const hasValidLauncherDirection = (direction?: { x: number; y: number }): boolean => {
-  if (!direction) {
-    return true;
+const mainStageTerrainKinds = (stage: StageDefinition): PlatformSurfaceTerrainKind[] =>
+  MAIN_STAGE_TERRAIN_KINDS.filter((kind) => authoredTerrainVariantPlatforms(stage, kind).length > 0);
+
+const isSupportedEmptyPlatformFamily = (
+  family: EmptyPlatformMechanicFamily,
+): family is EmptyPlatformSupportedMechanicFamily =>
+  EMPTY_PLATFORM_SUPPORTED_MECHANIC_FAMILIES.includes(family as EmptyPlatformSupportedMechanicFamily);
+
+const validateEmptyPlatformVariety = (stage: StageDefinition): StageDefinition => {
+  const runIds = stage.emptyPlatformRuns.map((run) => run.id);
+  if (new Set(runIds).size !== runIds.length) {
+    throw new Error(`Empty-platform traversal run ids must be unique: ${stage.id}`);
   }
 
-  const magnitude = Math.hypot(direction.x, direction.y);
-  if (magnitude <= 0.0001) {
-    return false;
+  for (const run of stage.emptyPlatformRuns) {
+    if (!run.traversalChallenge) {
+      continue;
+    }
+
+    const supportedFamilies = [...new Set(run.mechanicFamilies.filter(isSupportedEmptyPlatformFamily))];
+    if (supportedFamilies.length === 0) {
+      throw new Error(
+        `Empty-platform traversal challenge cannot be jump-only: ${stage.id}/${run.id} (segment: ${run.progressionSegment}, missing supported mechanic-family composition)`,
+      );
+    }
+
+    if (supportedFamilies.length < 2) {
+      throw new Error(
+        `Empty-platform traversal challenge must include at least two supported mechanic families: ${stage.id}/${run.id} (segment: ${run.progressionSegment}, missing families: ${2 - supportedFamilies.length})`,
+      );
+    }
   }
 
-  const normalizedY = direction.y / magnitude;
-  if (normalizedY >= 0) {
-    return false;
+  const qualifyingRuns = stage.emptyPlatformRuns.filter((run) => run.traversalChallenge);
+  if (qualifyingRuns.length === 0) {
+    return stage;
   }
 
-  return Math.acos(Math.min(1, Math.max(-1, -normalizedY))) <= LAUNCHER_MAX_DIRECTION_RADIANS + 0.0001;
+  const coveredSegments = new Set(qualifyingRuns.map((run) => run.progressionSegment));
+  const missingSegments = EMPTY_PLATFORM_PROGRESSION_SEGMENTS.filter((segment) => !coveredSegments.has(segment));
+  if (missingSegments.length > 0) {
+    throw new Error(
+      `Empty-platform traversal challenge distribution must cover early, middle, and late segments: ${stage.id} (missing segments: ${missingSegments.join(', ')})`,
+    );
+  }
+
+  return stage;
 };
 
 export const validateTraversalMechanics = (stage: StageDefinition): StageDefinition => {
@@ -722,10 +949,6 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
   const uniqueTemporaryBridgeIds = new Set(temporaryBridgeIds);
   const scannerIds = stage.scannerVolumes.map((volume) => volume.id);
   const uniqueScannerIds = new Set(scannerIds);
-  const terrainSurfaceIds = stage.terrainSurfaces.map((surface) => surface.id);
-  const uniqueTerrainSurfaceIds = new Set(terrainSurfaceIds);
-  const launcherIds = stage.launchers.map((launcherEntry) => launcherEntry.id);
-  const uniqueLauncherIds = new Set(launcherIds);
   const checkpointIds = new Set(stage.checkpoints.map((checkpoint) => checkpoint.id));
   const revealVolumeIds = new Set(stage.revealVolumes.map((volume) => volume.id));
 
@@ -749,19 +972,6 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
       throw new Error('Activation-node magnetic-platform rollout must author exactly one node and one linked platform.');
     }
   }
-
-  const findSupportingPlatformForLauncher = (launcherEntry: StageDefinition['launchers'][number]): PlatformDefinition | null =>
-    stage.platforms.find(
-      (platform) =>
-        platform.kind === 'static' &&
-        !platform.reveal &&
-        !platform.temporaryBridge &&
-        launcherEntry.x >= platform.x &&
-        launcherEntry.x + launcherEntry.width <= platform.x + platform.width &&
-        Math.abs(launcherEntry.y - platform.y) <= 1 &&
-        launcherEntry.height > 0 &&
-        launcherEntry.height <= Math.min(platform.height, 20),
-    ) ?? null;
 
   if (uniqueRevealIds.size !== revealIds.length) {
     throw new Error('Reveal platform ids must be unique.');
@@ -844,21 +1054,50 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
     throw new Error('Scanner volume ids must be unique.');
   }
 
-  if (uniqueTerrainSurfaceIds.size !== terrainSurfaceIds.length) {
-    throw new Error('Terrain surface ids must be unique.');
-  }
-
   const terrainVariantPlatforms = authoredTerrainVariantPlatforms(stage);
-  if (stage.terrainSurfaces.length > 0 && terrainVariantPlatforms.length > 0) {
+  const legacyLaunchers = (stage as StageDefinition & { launchers?: unknown }).launchers;
+  if (hasLegacyTerrainSurfaceOverlays(stage)) {
+    const legacyIds = legacyTerrainSurfaceIds((stage as StageDefinition & { terrainSurfaces?: unknown }).terrainSurfaces).join(', ');
     throw new Error(
-      `Brittle crystal and sticky sludge cannot mix platform terrain variants with legacy terrain surfaces: ${stage.terrainSurfaces.map((surface) => surface.id).join(', ')}`,
+      `Brittle crystal and sticky sludge must be authored on platform terrainVariant instead of terrain surfaces${legacyIds ? `: ${legacyIds}` : ''}`,
     );
   }
 
-  if (stage.terrainSurfaces.length > 0) {
+  if (Array.isArray(legacyLaunchers) && legacyLaunchers.length > 0) {
+    const legacyIds = legacyLaunchers
+      .map((entry) => (typeof entry === 'object' && entry && 'id' in entry ? String((entry as { id: unknown }).id) : 'unknown'))
+      .join(', ');
     throw new Error(
-      `Brittle crystal and sticky sludge must be authored on platform terrainVariant instead of terrain surfaces: ${stage.terrainSurfaces.map((surface) => surface.id).join(', ')}`,
+      `Spring platforms must be authored as platform kinds instead of stage launchers${legacyIds ? `: ${legacyIds}` : ''}`,
     );
+  }
+
+  const mixedLegacyRouteSupport = stage.secretRoutes.flatMap((route) =>
+    [
+      ...legacyTerrainSurfaceIds((route.cue as typeof route.cue & { terrainSurfaceIds?: unknown }).terrainSurfaceIds).map(
+        (surfaceId) => `${route.id}->${surfaceId}`,
+      ),
+      ...legacyTerrainSurfaceIds((route.cue as typeof route.cue & { launcherIds?: unknown }).launcherIds).map(
+        (surfaceId) => `${route.id}->${surfaceId}`,
+      ),
+    ],
+  );
+  if (mixedLegacyRouteSupport.length > 0) {
+    throw new Error(`Secret routes must reference platform-owned surface mechanics through platform ids: ${mixedLegacyRouteSupport.join(', ')}`);
+  }
+
+  const mixedLegacyCapsuleSupport = stage.gravityCapsules.flatMap((capsule) =>
+    [
+      ...legacyTerrainSurfaceIds(
+        (capsule.contents as typeof capsule.contents & { terrainSurfaceIds?: unknown }).terrainSurfaceIds,
+      ).map((surfaceId) => `${capsule.id}->${surfaceId}`),
+      ...legacyTerrainSurfaceIds(
+        (capsule.contents as typeof capsule.contents & { launcherIds?: unknown }).launcherIds,
+      ).map((surfaceId) => `${capsule.id}->${surfaceId}`),
+    ],
+  );
+  if (mixedLegacyCapsuleSupport.length > 0) {
+    throw new Error(`Gravity rooms must reference platform-owned surface mechanics through platform ids: ${mixedLegacyCapsuleSupport.join(', ')}`);
   }
 
   const invalidTerrainVariantPlatforms = terrainVariantPlatforms.filter(
@@ -867,12 +1106,40 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
   );
   if (invalidTerrainVariantPlatforms.length > 0) {
     throw new Error(
-      `Brittle crystal and sticky sludge variants must stay on plain static platforms: ${invalidTerrainVariantPlatforms.map((platform) => platform.id).join(', ')}`,
+      `Platform surface mechanics must stay on plain static platforms: ${invalidTerrainVariantPlatforms.map((platform) => platform.id).join(', ')}`,
     );
   }
 
-  if (uniqueLauncherIds.size !== launcherIds.length) {
-    throw new Error('Launcher ids must be unique.');
+  const retiredSurfaceMechanicPlatforms = authoredSurfacePlatforms(stage).filter(
+    (platform) => !PLATFORM_SURFACE_TERRAIN_KINDS.includes(platform.surfaceMechanic.kind as PlatformSurfaceTerrainKind),
+  );
+  if (retiredSurfaceMechanicPlatforms.length > 0) {
+    throw new Error(
+      `Platform surface mechanics only support brittle crystal and sticky sludge on static platforms: ${retiredSurfaceMechanicPlatforms
+        .map((platform) => `${platform.id}:${platform.surfaceMechanic.kind}`)
+        .join(', ')}`,
+    );
+  }
+
+  const overlappingSpringPlatforms: string[] = [];
+  const springPlatforms = stage.platforms.filter((platform) => platform.kind === 'spring');
+  for (let index = 0; index < springPlatforms.length; index += 1) {
+    const current = springPlatforms[index];
+    for (const platform of stage.platforms) {
+      if (platform.id === current.id) {
+        continue;
+      }
+
+      if (intersectsRect(current, platform)) {
+        overlappingSpringPlatforms.push(`${current.id}<->${platform.id}`);
+      }
+    }
+  }
+
+  if (overlappingSpringPlatforms.length > 0) {
+    throw new Error(
+      `Spring platforms must use one full-footprint authored support beat instead of overlapping plain-support stand-ins: ${overlappingSpringPlatforms.join(', ')}`,
+    );
   }
 
   const missingRevealLinks = stage.revealVolumes.flatMap((volume) =>
@@ -942,6 +1209,7 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
   const invalidGravityCapsuleBounds = stage.gravityCapsules.filter((capsule) => {
     const field = stage.gravityFields.find((entry) => entry.id === capsule.fieldId);
     const doorSupports = capsule.doorSupports;
+    const playerField = gravityCapsulePlayerFieldRect(capsule);
     return (
       !isRectWithinWorld(stage, capsule.shell) ||
       !isRectWithinWorld(stage, capsule.entryDoor) ||
@@ -953,7 +1221,7 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
       Boolean(doorSupports && !isRectWithinWorld(stage, doorSupports.entryApproachPath)) ||
       Boolean(doorSupports && !isRectWithinWorld(stage, doorSupports.exitReconnectPath)) ||
       !field ||
-      !isRectWithinRect(capsule.shell, field) ||
+      !rectEquals(field, playerField) ||
       !isRectWithinRect(capsule.shell, capsule.button) ||
       !isRectWithinRect(capsule.shell, capsule.entryRoute) ||
       !isRectWithinRect(capsule.shell, capsule.buttonRoute) ||
@@ -984,8 +1252,6 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
     const contentEntries = gravityCapsuleContentEntries(stage, capsule);
     const expectedCount =
       (capsule.contents.platformIds?.length ?? 0) +
-      (capsule.contents.terrainSurfaceIds?.length ?? 0) +
-      (capsule.contents.launcherIds?.length ?? 0) +
       (capsule.contents.collectibleIds?.length ?? 0) +
       (capsule.contents.rewardBlockIds?.length ?? 0) +
       (capsule.contents.hazardIds?.length ?? 0) +
@@ -1013,26 +1279,49 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
     );
   }
 
+  const invalidGravityCapsuleEnemyContainment = stage.gravityCapsules.filter((capsule) => {
+    const linkedEnemyIds = new Set(capsule.contents.enemyIds ?? []);
+
+    return stage.enemies.some((enemy) => {
+      const startRect = enemyRect(enemy);
+      const traversalEnvelope = enemyTraversalEnvelope(stage, enemy);
+      const startsInside = isRectWithinRect(capsule.shell, startRect);
+      const overlapsShell = intersectsRect(startRect, capsule.shell);
+
+      if (linkedEnemyIds.has(enemy.id)) {
+        return !startsInside || gravityCapsuleRectCrossesDoorBoundary(capsule, traversalEnvelope);
+      }
+
+      if (overlapsShell) {
+        return true;
+      }
+
+      return gravityCapsuleRectCrossesDoorBoundary(capsule, traversalEnvelope);
+    });
+  });
+  if (invalidGravityCapsuleEnemyContainment.length > 0) {
+    throw new Error(
+      `Gravity rooms must keep enemies assigned to their authored side of side-wall doors: ${invalidGravityCapsuleEnemyContainment.map((capsule) => capsule.id).join(', ')}`,
+    );
+  }
+
   if (MAIN_STAGE_IDS.includes(stage.id as (typeof MAIN_STAGE_IDS)[number])) {
     const unfocusedGravityCapsules = stage.gravityCapsules.filter((capsule) => {
       const interiorEntries = gravityCapsuleInteriorEntriesByKind(stage, capsule);
       const linkedPlatformIds = new Set(capsule.contents.platformIds ?? []);
+      const linkedEnemyIds = new Set(capsule.contents.enemyIds ?? []);
       const unexpectedPlatformIds = interiorEntries.platformIds.filter((platformId) => !linkedPlatformIds.has(platformId));
+      const unexpectedEnemyIds = interiorEntries.enemyIds.filter((enemyId) => !linkedEnemyIds.has(enemyId));
 
       return (
         unexpectedPlatformIds.length > 0 ||
-        interiorEntries.terrainSurfaceIds.length > 0 ||
-        interiorEntries.launcherIds.length > 0 ||
+        unexpectedEnemyIds.length > 0 ||
         interiorEntries.collectibleIds.length > 0 ||
         interiorEntries.rewardBlockIds.length > 0 ||
         interiorEntries.hazardIds.length > 0 ||
-        interiorEntries.enemyIds.length > 0 ||
-        (capsule.contents.terrainSurfaceIds?.length ?? 0) > 0 ||
-        (capsule.contents.launcherIds?.length ?? 0) > 0 ||
         (capsule.contents.collectibleIds?.length ?? 0) > 0 ||
         (capsule.contents.rewardBlockIds?.length ?? 0) > 0 ||
-        (capsule.contents.hazardIds?.length ?? 0) > 0 ||
-        (capsule.contents.enemyIds?.length ?? 0) > 0
+        (capsule.contents.hazardIds?.length ?? 0) > 0
       );
     });
 
@@ -1047,6 +1336,28 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
   if (unreachableGravityCapsuleButtons.length > 0) {
     throw new Error(
       `Gravity rooms must place their linked interior disable button on a reachable authored route: ${unreachableGravityCapsuleButtons
+        .map((capsule) => capsule.id)
+        .join(', ')}`,
+    );
+  }
+
+  const unreadableGravityCapsuleButtons = stage.gravityCapsules.filter((capsule) =>
+    gravityCapsuleActiveButtonRouteReadsWrong(stage, capsule),
+  );
+  if (unreadableGravityCapsuleButtons.length > 0) {
+    throw new Error(
+      `Gravity rooms must keep the active-field inverse-jump route to their interior disable button readable and reachable: ${unreadableGravityCapsuleButtons
+        .map((capsule) => capsule.id)
+        .join(', ')}`,
+    );
+  }
+
+  const blockedGravityCapsuleButtonLanes = stage.gravityCapsules.filter((capsule) =>
+    gravityCapsuleEnemyBlocksButtonLane(stage, capsule),
+  );
+  if (blockedGravityCapsuleButtonLanes.length > 0) {
+    throw new Error(
+      `Gravity rooms must keep contained interior enemies from blocking the only button lane: ${blockedGravityCapsuleButtonLanes
         .map((capsule) => capsule.id)
         .join(', ')}`,
     );
@@ -1150,26 +1461,11 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
   }
 
   if (MAIN_STAGE_IDS.includes(stage.id as (typeof MAIN_STAGE_IDS)[number])) {
-    const terrainKindCounts = new Map(
-      MAIN_STAGE_TERRAIN_KINDS.map((kind) => [kind, authoredTerrainVariantPlatforms(stage, kind).length]),
-    );
-    const insufficientTerrainKinds = MAIN_STAGE_TERRAIN_KINDS.filter(
-      (kind) => (terrainKindCounts.get(kind) ?? 0) < MAIN_STAGE_TERRAIN_MINIMUM,
-    );
-    if (insufficientTerrainKinds.length > 0) {
+    const restoredTerrainPlatforms = authoredTerrainVariantPlatforms(stage);
+    if (restoredTerrainPlatforms.length === 0) {
       throw new Error(
-        `Main stages must author at least ${MAIN_STAGE_TERRAIN_MINIMUM} brittle crystal and sticky sludge surfaces: ${stage.id}`,
+        `Main stages must author at least one readable brittle crystal or sticky sludge terrain variant: ${stage.id}`,
       );
-    }
-
-    const insufficientTerrainBeatCoverage = MAIN_STAGE_TERRAIN_KINDS.filter((kind) => {
-      const beatCount = new Set(
-        authoredTerrainVariantPlatforms(stage, kind).map((platform) => terrainBeatForPlatform(stage, platform)),
-      ).size;
-      return beatCount < 2;
-    });
-    if (insufficientTerrainBeatCoverage.length > 0) {
-      throw new Error(`Main stages must spread brittle crystal and sticky sludge across at least two traversal beats: ${stage.id}`);
     }
 
     const deadEndTerrainKinds = terrainKindsConfinedToDeadEnds(stage);
@@ -1252,70 +1548,11 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
     throw new Error(`Scanner volumes reference unknown temporary bridges: ${missingTemporaryBridgeLinks.join(', ')}`);
   }
 
-  const invalidLaunchers = stage.launchers.filter(
-    (launcherEntry) =>
-      launcherEntry.width <= 0 ||
-      launcherEntry.height <= 0 ||
-      launcherEntry.x < 0 ||
-      launcherEntry.y < 0 ||
-      launcherEntry.x + launcherEntry.width > stage.world.width ||
-      launcherEntry.y + launcherEntry.height > stage.world.height,
-  );
-  if (invalidLaunchers.length > 0) {
-    throw new Error(
-      `Launchers must use positive bounded rectangles: ${invalidLaunchers.map((launcherEntry) => launcherEntry.id).join(', ')}`,
-    );
-  }
-
-  const unsupportedLaunchers = stage.launchers.filter((launcherEntry) => !LAUNCHER_KINDS.includes(launcherEntry.kind));
-  if (unsupportedLaunchers.length > 0) {
-    throw new Error(
-      `Launchers must use a supported kind: ${unsupportedLaunchers.map((launcherEntry) => launcherEntry.id).join(', ')}`,
-    );
-  }
-
-  const invalidLauncherDirections = stage.launchers.filter((launcherEntry) => !hasValidLauncherDirection(launcherEntry.direction));
-  if (invalidLauncherDirections.length > 0) {
-    throw new Error(
-      `Launchers must use an upward-biased direction within 25 degrees of vertical: ${invalidLauncherDirections.map((launcherEntry) => launcherEntry.id).join(', ')}`,
-    );
-  }
-
-  const unsupportedLauncherAlignment = stage.launchers.filter((launcherEntry) => !findSupportingPlatformForLauncher(launcherEntry));
-  if (unsupportedLauncherAlignment.length > 0) {
-    throw new Error(
-      `Launchers must align to solid static platform support: ${unsupportedLauncherAlignment.map((launcherEntry) => launcherEntry.id).join(', ')}`,
-    );
-  }
-
-  const ambiguousLauncherContacts: string[] = [];
-  for (let index = 0; index < stage.launchers.length; index += 1) {
-    for (let nextIndex = index + 1; nextIndex < stage.launchers.length; nextIndex += 1) {
-      const current = stage.launchers[index];
-      const next = stage.launchers[nextIndex];
-      if (intersectsRect(current, next)) {
-        ambiguousLauncherContacts.push(`${current.id}<->${next.id}`);
-      }
-    }
-
-    const current = stage.launchers[index];
-    for (const platform of stage.platforms) {
-      if (platform.kind === 'spring' && intersectsRect(current, platform)) {
-        ambiguousLauncherContacts.push(`${current.id}<->${platform.id}`);
-      }
-    }
-  }
-
-  if (ambiguousLauncherContacts.length > 0) {
-    throw new Error(`Launchers cannot overlap another launcher or spring contact area: ${ambiguousLauncherContacts.join(', ')}`);
-  }
-
   if (stage.stageObjective) {
-    const objectiveTargets: Record<'checkpoint' | 'revealVolume' | 'scannerVolume' | 'launcher', Set<string>> = {
+    const objectiveTargets: Record<'checkpoint' | 'revealVolume' | 'scannerVolume', Set<string>> = {
       checkpoint: checkpointIds,
       revealVolume: revealVolumeIds,
       scannerVolume: uniqueScannerIds,
-      launcher: uniqueLauncherIds,
     };
 
     if (!objectiveTargets[stage.stageObjective.target.kind].has(stage.stageObjective.target.id)) {
@@ -1355,6 +1592,24 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
       `Checkpoints must stay outside immediate gravity-field motion: ${unsafeGravityFieldCheckpoints
         .map((checkpoint) => checkpoint.id)
         .join(', ')}`,
+    );
+  }
+
+  const unsupportedCheckpoints = findEntriesMissingAuthoredFlushSupport(stage.checkpoints, (checkpoint) =>
+    findCheckpointSupport(stage, checkpoint.rect),
+  );
+  if (unsupportedCheckpoints.length > 0) {
+    throw new Error(
+      `Checkpoints must stand on visible stable route support: ${unsupportedCheckpoints.map((checkpoint) => checkpoint.id).join(', ')}`,
+    );
+  }
+
+  const unsupportedHazards = findEntriesMissingAuthoredFlushSupport(stage.hazards, (hazard) =>
+    findHazardSupport(stage, hazard.rect),
+  );
+  if (unsupportedHazards.length > 0) {
+    throw new Error(
+      `Hazards must sit on readable grounded support: ${unsupportedHazards.map((hazard) => hazard.id).join(', ')}`,
     );
   }
 
@@ -1437,6 +1692,8 @@ export const validateStageCatalogMagneticRollout = (stages: StageDefinition[]): 
 export const validateStageDefinition = (stage: StageDefinition): StageDefinition =>
   validateEnemyVariants(
     validateSecretRoutes(
-      validateTraversalMechanics(validateEnemyPlacement(validateStaticElementCollisions(validateRewardBlocks(stage)))),
+      validateTraversalMechanics(
+        validateEmptyPlatformVariety(validateEnemyPlacement(validateStaticElementCollisions(validateRewardBlocks(stage)))),
+      ),
     ),
   );

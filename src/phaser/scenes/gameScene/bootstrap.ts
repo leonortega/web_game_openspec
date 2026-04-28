@@ -5,7 +5,6 @@ import { isPlatformVisible } from '../../../game/simulation/state';
 import type {
   GravityCapsuleState,
   GravityFieldState,
-  LauncherState,
   PlatformState,
   RewardBlockState,
 } from '../../../game/simulation/state';
@@ -49,13 +48,10 @@ export type GameSceneCleanupContext = Phaser.Scene & {
   platformShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
   platformDetailSprites: Map<string, Phaser.GameObjects.Rectangle>;
   platformCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  terrainSurfaceSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  terrainSurfaceShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  terrainSurfaceAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  terrainSurfaceDetailSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  launcherSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  launcherCoreSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  launcherCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
+  terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantDetailSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   gravityZoneSprites: Phaser.GameObjects.Rectangle[];
   gravityFieldSprites: Map<string, Phaser.GameObjects.Rectangle>;
   gravityFieldCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
@@ -103,13 +99,10 @@ export type GameSceneBaseDisplayContext = Phaser.Scene & {
   platformShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
   platformDetailSprites: Map<string, Phaser.GameObjects.Rectangle>;
   platformCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  terrainSurfaceSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  terrainSurfaceShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  terrainSurfaceAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  terrainSurfaceDetailSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  launcherSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  launcherCoreSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  launcherCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
+  terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantDetailSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   checkpointSprites: Map<string, Phaser.GameObjects.Sprite>;
   collectibleSprites: Map<string, Phaser.GameObjects.Sprite>;
   rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle>;
@@ -161,10 +154,9 @@ export type GameSceneBaseDisplayContext = Phaser.Scene & {
   activationNodeColor(node: { activated: boolean }): number;
   platformColor(platform: PlatformState): number;
   platformDetailColor(platform: PlatformState): number;
-  terrainSurfaceColor(surface: SessionSnapshot['stageRuntime']['terrainSurfaces'][number]): number;
-  terrainSurfaceAlpha(surface: SessionSnapshot['stageRuntime']['terrainSurfaces'][number]): number;
-  terrainSurfaceAccentColor(surface: SessionSnapshot['stageRuntime']['terrainSurfaces'][number]): number;
-  launcherColor(launcherEntry: LauncherState): number;
+  terrainVariantColor(platform: PlatformState): number;
+  terrainVariantAlpha(platform: PlatformState): number;
+  terrainVariantAccentColor(platform: PlatformState): number;
   rewardBlockColor(rewardBlock: RewardBlockState): number;
   rewardBlockLabel(rewardBlock: RewardBlockState): string;
   createTraversalMarkerRects(count: number, depth: number): Phaser.GameObjects.Rectangle[];
@@ -252,13 +244,10 @@ export function cleanupGameScene(scene: GameSceneCleanupContext): void {
   scene.platformShadowSprites.clear();
   scene.platformDetailSprites.clear();
   scene.platformCategoryMarkerSprites.clear();
-  scene.terrainSurfaceSprites.clear();
-  scene.terrainSurfaceShadowSprites.clear();
-  scene.terrainSurfaceAccentSprites.clear();
-  scene.terrainSurfaceDetailSprites.clear();
-  scene.launcherSprites.clear();
-  scene.launcherCoreSprites.clear();
-  scene.launcherCategoryMarkerSprites.clear();
+  scene.terrainVariantSprites.clear();
+  scene.terrainVariantShadowSprites.clear();
+  scene.terrainVariantAccentSprites.clear();
+  scene.terrainVariantDetailSprites.clear();
   scene.gravityZoneSprites = [];
   scene.gravityFieldSprites.clear();
   scene.gravityFieldCategoryMarkerSprites.clear();
@@ -412,6 +401,7 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
   }
 
   for (const platform of state.stageRuntime.platforms) {
+    const topSurfaceHeight = Math.min(platform.height, 8);
     const sprite = scene.add
       .rectangle(platform.x + platform.width / 2, platform.y + platform.height / 2, platform.width, platform.height, scene.platformColor(platform))
       .setOrigin(0.5);
@@ -429,9 +419,9 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
     const detail = scene.add
       .rectangle(
         platform.x + platform.width / 2,
-        platform.y + Math.min(platform.height / 2, 4),
+        platform.y + topSurfaceHeight / 2,
         platform.width,
-        Math.min(platform.height, 6),
+        topSurfaceHeight,
         scene.platformDetailColor(platform),
       )
       .setOrigin(0.5)
@@ -449,24 +439,24 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
     scene.platformCategoryMarkerSprites.set(platform.id, scene.createTraversalMarkerRects(3, 1.1));
   }
 
-  for (const terrainSurface of state.stageRuntime.terrainSurfaces) {
+  for (const terrainVariantPlatform of state.stageRuntime.platforms.filter((platform) => platform.surfaceMechanic)) {
     const sprite = scene.add
       .rectangle(
-        terrainSurface.x + terrainSurface.width / 2,
-        terrainSurface.y + terrainSurface.height / 2,
-        terrainSurface.width,
-        terrainSurface.height,
-        scene.terrainSurfaceColor(terrainSurface),
-        scene.terrainSurfaceAlpha(terrainSurface),
+        terrainVariantPlatform.x + terrainVariantPlatform.width / 2,
+        terrainVariantPlatform.y + terrainVariantPlatform.height / 2,
+        terrainVariantPlatform.width,
+        terrainVariantPlatform.height,
+        scene.terrainVariantColor(terrainVariantPlatform),
+        scene.terrainVariantAlpha(terrainVariantPlatform),
       )
       .setOrigin(0.5)
       .setDepth(2);
     const shadow = scene.add
       .rectangle(
-        terrainSurface.x + terrainSurface.width / 2,
-        terrainSurface.y + terrainSurface.height / 2 + Math.max(2, Math.floor(terrainSurface.height * 0.16)),
-        Math.max(8, terrainSurface.width - 8),
-        Math.max(4, Math.floor(terrainSurface.height * 0.32)),
+        terrainVariantPlatform.x + terrainVariantPlatform.width / 2,
+        terrainVariantPlatform.y + terrainVariantPlatform.height / 2 + Math.max(2, Math.floor(terrainVariantPlatform.height * 0.16)),
+        Math.max(8, terrainVariantPlatform.width - 8),
+        Math.max(4, Math.floor(terrainVariantPlatform.height * 0.32)),
         scene.retroPalette.ink,
         0.2,
       )
@@ -474,52 +464,23 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
       .setDepth(2.5);
     const accent = scene.add
       .rectangle(
-        terrainSurface.x + terrainSurface.width / 2,
-        terrainSurface.y + Math.max(2, Math.floor(terrainSurface.height / 2)),
-        terrainSurface.width,
-        Math.min(terrainSurface.height, 4),
-        scene.terrainSurfaceAccentColor(terrainSurface),
+        terrainVariantPlatform.x + terrainVariantPlatform.width / 2,
+        terrainVariantPlatform.y + Math.max(2, Math.floor(terrainVariantPlatform.height / 2)),
+        terrainVariantPlatform.width,
+        Math.min(terrainVariantPlatform.height, 4),
+        scene.terrainVariantAccentColor(terrainVariantPlatform),
         0.9,
       )
       .setOrigin(0.5)
       .setDepth(3);
     const details = Array.from({ length: 3 }, () =>
-      scene.add.rectangle(terrainSurface.x, terrainSurface.y, 8, 8, scene.retroPalette.bright, 0.5).setOrigin(0.5).setDepth(3.2),
+      scene.add.rectangle(terrainVariantPlatform.x, terrainVariantPlatform.y, 8, 8, scene.retroPalette.bright, 0.5).setOrigin(0.5).setDepth(3.2),
     );
-    sprite.setStrokeStyle(2, scene.retroPalette.border, terrainSurface.kind === 'stickySludge' ? 0.24 : 0.38);
-    scene.terrainSurfaceSprites.set(terrainSurface.id, sprite);
-    scene.terrainSurfaceShadowSprites.set(terrainSurface.id, shadow);
-    scene.terrainSurfaceAccentSprites.set(terrainSurface.id, accent);
-    scene.terrainSurfaceDetailSprites.set(terrainSurface.id, details);
-  }
-
-  for (const launcherEntry of state.stageRuntime.launchers) {
-    const sprite = scene.add
-      .rectangle(
-        launcherEntry.x + launcherEntry.width / 2,
-        launcherEntry.y + launcherEntry.height / 2,
-        launcherEntry.width,
-        launcherEntry.height,
-        scene.launcherColor(launcherEntry),
-        0.86,
-      )
-      .setOrigin(0.5)
-      .setDepth(3);
-    const core = scene.add
-      .rectangle(
-        launcherEntry.x + launcherEntry.width / 2,
-        launcherEntry.y + launcherEntry.height / 2,
-        Math.max(6, launcherEntry.width - 8),
-        Math.max(6, launcherEntry.height - 8),
-        scene.retroPalette.bright,
-        0.46,
-      )
-      .setOrigin(0.5)
-      .setDepth(3.5);
-    sprite.setStrokeStyle(2, scene.retroPalette.border, 0.5);
-    scene.launcherSprites.set(launcherEntry.id, sprite);
-    scene.launcherCoreSprites.set(launcherEntry.id, core);
-    scene.launcherCategoryMarkerSprites.set(launcherEntry.id, scene.createTraversalMarkerRects(3, 3.6));
+    sprite.setStrokeStyle(2, scene.retroPalette.border, terrainVariantPlatform.surfaceMechanic?.kind === 'stickySludge' ? 0.24 : 0.38);
+    scene.terrainVariantSprites.set(terrainVariantPlatform.id, sprite);
+    scene.terrainVariantShadowSprites.set(terrainVariantPlatform.id, shadow);
+    scene.terrainVariantAccentSprites.set(terrainVariantPlatform.id, accent);
+    scene.terrainVariantDetailSprites.set(terrainVariantPlatform.id, details);
   }
 
   for (const hazard of state.stageRuntime.hazards) {
@@ -550,7 +511,10 @@ function createPlayerRenderables(scene: GameSceneBaseDisplayContext): void {
 
 function createRewardRenderables(scene: GameSceneBaseDisplayContext, state: Readonly<SessionSnapshot>): void {
   for (const checkpoint of state.stageRuntime.checkpoints) {
-    const sprite = scene.add.sprite(checkpoint.rect.x, checkpoint.rect.y, 'checkpoint').setOrigin(0, 0);
+    const sprite = scene.add
+      .sprite(checkpoint.rect.x, checkpoint.rect.y, 'checkpoint')
+      .setOrigin(0, 0)
+      .setDisplaySize(checkpoint.rect.width, checkpoint.rect.height);
     scene.checkpointSprites.set(checkpoint.id, sprite);
   }
 
@@ -589,8 +553,8 @@ function createEnemyRenderables(scene: GameSceneBaseDisplayContext, state: Reado
     scene.enemySprites.set(enemy.id, sprite);
     if (enemy.kind === 'flyer') {
       const accents = [
-        scene.add.rectangle(enemy.x + 7, enemy.y + 13, 8, 4, scene.retroPalette.bright, 0).setOrigin(0, 0).setDepth(10),
-        scene.add.rectangle(enemy.x + 11, enemy.y + 17, 6, 2, scene.retroPalette.cool, 0).setOrigin(0, 0).setDepth(10),
+        scene.add.rectangle(enemy.x + 14, enemy.y + 7, 6, 2, scene.retroPalette.cool, 0).setOrigin(0, 0).setDepth(10),
+        scene.add.rectangle(enemy.x + 10, enemy.y + 16, 14, 2, scene.retroPalette.bright, 0).setOrigin(0, 0).setDepth(10),
       ];
       scene.enemyAccentSprites.set(enemy.id, accents);
     }

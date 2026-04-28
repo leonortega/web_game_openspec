@@ -2,14 +2,12 @@ import type {
   EnemyKind,
   GravityFieldKind,
   HazardKind,
-  LauncherKind,
   PlatformKind,
-  PlatformTerrainVariant,
+  PlatformSurfaceMechanic,
   Rect,
   RewardDefinition,
   StageObjectiveKind,
   StageObjectiveTargetKind,
-  TerrainSurfaceKind,
   TurretVariantId,
   Vector2,
 } from '../../simulation/state';
@@ -25,8 +23,6 @@ export type GravityCapsuleButtonDefinition = Rect & {
 
 export type GravityCapsuleRoomContentDefinition = {
   platformIds?: string[];
-  terrainSurfaceIds?: string[];
-  launcherIds?: string[];
   collectibleIds?: string[];
   rewardBlockIds?: string[];
   hazardIds?: string[];
@@ -45,9 +41,9 @@ export type GravityCapsuleDoorSupportsDefinition = {
 export type PlatformDefinition = Rect & {
   id: string;
   kind: PlatformKind;
-  terrainVariant?: PlatformTerrainVariant;
+  surfaceMechanic?: PlatformSurfaceMechanic;
   move?: { axis: 'x' | 'y'; range: number; speed: number };
-  fall?: { triggerDelayMs: number };
+  fall?: { triggerDelayMs: number; stayArmThresholdMs?: number; hopGapThresholdMs?: number };
   spring?: { boost: number; cooldownMs: number };
   reveal?: { id: string };
   temporaryBridge?: { scannerId: string; durationMs: number };
@@ -89,17 +85,6 @@ export type ScannerVolumeDefinition = Rect & {
   temporaryBridgeIds: string[];
 };
 
-export type TerrainSurfaceDefinition = Rect & {
-  id: string;
-  kind: TerrainSurfaceKind;
-};
-
-export type LauncherDefinition = Rect & {
-  id: string;
-  kind: LauncherKind;
-  direction?: Vector2;
-};
-
 export type EnemyDefinition = {
   id: string;
   kind: EnemyKind;
@@ -120,13 +105,12 @@ export type RewardBlockDefinition = Rect & {
 export type SecretRouteCueDefinition = {
   description: string;
   rect: Rect;
+  platformIds?: string[];
   revealVolumeIds?: string[];
   revealPlatformIds?: string[];
   scannerVolumeIds?: string[];
   temporaryBridgeIds?: string[];
   lowGravityZoneIds?: string[];
-  launcherIds?: string[];
-  terrainSurfaceIds?: string[];
 };
 
 export type SecretRouteRewardDefinition = {
@@ -145,8 +129,7 @@ export type SecretRouteDefinition = {
     | 'scannerBridge'
     | 'timedReveal'
     | 'lowGravity'
-    | 'launcher'
-    | 'terrainSurface'
+    | 'terrainVariant'
   )[];
   cue: SecretRouteCueDefinition;
   entry: Rect;
@@ -154,6 +137,32 @@ export type SecretRouteDefinition = {
   reconnect: Rect;
   mainPath: Rect;
   reward: SecretRouteRewardDefinition;
+};
+
+export const EMPTY_PLATFORM_SUPPORTED_MECHANIC_FAMILIES = [
+  'moving',
+  'unstableOrCollapsing',
+  'springTraversal',
+  'sticky',
+  'brittle',
+  'revealPlatform',
+  'scannerSwitchTemporaryBridge',
+  'activationNodeMagneticPlatform',
+  'boundedGravityFieldTraversal',
+] as const;
+
+export type EmptyPlatformSupportedMechanicFamily = (typeof EMPTY_PLATFORM_SUPPORTED_MECHANIC_FAMILIES)[number];
+
+export type EmptyPlatformMechanicFamily = EmptyPlatformSupportedMechanicFamily | 'jumpTiming';
+
+export type EmptyPlatformProgressionSegment = 'early' | 'middle' | 'late';
+
+export type EmptyPlatformTraversalRunDefinition = {
+  id: string;
+  traversalChallenge: boolean;
+  progressionSegment: EmptyPlatformProgressionSegment;
+  platformIds: string[];
+  mechanicFamilies: EmptyPlatformMechanicFamily[];
 };
 
 export type StageObjectiveDefinition = {
@@ -190,6 +199,7 @@ export type StageDefinition = {
     endX: number;
     focus: string;
   }[];
+  emptyPlatformRuns: EmptyPlatformTraversalRunDefinition[];
   palette: {
     skyTop: number;
     skyBottom: number;
@@ -204,8 +214,6 @@ export type StageDefinition = {
   playerSpawn: Vector2;
   startCabin: StartCabinDefinition;
   platforms: PlatformDefinition[];
-  terrainSurfaces: TerrainSurfaceDefinition[];
-  launchers: LauncherDefinition[];
   lowGravityZones: LowGravityZoneDefinition[];
   gravityFields: GravityFieldDefinition[];
   gravityCapsules: GravityCapsuleDefinition[];
@@ -227,9 +235,8 @@ export type StageExtension = {
   targetDurationMinutes: number;
   worldWidth: number;
   segments: StageDefinition['segments'];
+  emptyPlatformRuns?: EmptyPlatformTraversalRunDefinition[];
   platforms: PlatformDefinition[];
-  terrainSurfaces?: TerrainSurfaceDefinition[];
-  launchers?: LauncherDefinition[];
   lowGravityZones?: LowGravityZoneDefinition[];
   gravityFields?: GravityFieldDefinition[];
   gravityCapsules?: GravityCapsuleDefinition[];

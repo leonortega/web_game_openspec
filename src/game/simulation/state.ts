@@ -14,13 +14,15 @@ export type HazardKind = 'spikes';
 export type EnemyKind = 'walker' | 'hopper' | 'turret' | 'charger' | 'flyer';
 export type TurretVariantId = 'resinBurst' | 'ionPulse';
 export type PlatformKind = 'static' | 'moving' | 'falling' | 'spring';
-export type LauncherKind = 'bouncePod' | 'gasVent';
-export type TerrainSurfaceKind = 'brittleCrystal' | 'stickySludge';
-export type PlatformTerrainVariant = TerrainSurfaceKind;
+export type PlatformSurfaceTerrainKind = 'brittleCrystal' | 'stickySludge';
+export type PlatformSurfaceKind = PlatformSurfaceTerrainKind;
+export type PlatformSurfaceMechanic = {
+  kind: PlatformSurfaceTerrainKind;
+};
 export type GravityFieldKind = 'anti-grav-stream' | 'gravity-inversion-column';
 export type StageObjectiveKind = 'restoreBeacon' | 'reactivateRelay' | 'powerLiftTower';
-export type StageObjectiveTargetKind = 'checkpoint' | 'revealVolume' | 'scannerVolume' | 'launcher';
-export type BrittleSurfacePhase = 'intact' | 'warning' | 'expired' | 'broken';
+export type StageObjectiveTargetKind = 'checkpoint' | 'revealVolume' | 'scannerVolume';
+export type BrittleSurfacePhase = 'intact' | 'warning' | 'ready' | 'broken';
 export type PowerType = 'doubleJump' | 'shooter' | 'invincible' | 'dash';
 export type DifficultySetting = 'casual' | 'standard' | 'expert';
 export type EnemyPressureSetting = 'low' | 'normal' | 'high';
@@ -119,30 +121,20 @@ export type TemporaryBridgeState = {
   pendingHide: boolean;
 };
 
-export type TerrainSurfaceState = Rect & {
-  id: string;
-  kind: TerrainSurfaceKind;
-  supportPlatformId: string;
-  brittle?: {
-    phase: BrittleSurfacePhase;
-    warningMs: number;
-  };
-};
-
-export type LauncherState = Rect & {
-  id: string;
-  kind: LauncherKind;
-  supportPlatformId: string;
-  direction: Vector2;
-  impulse: number;
-  cooldownMs: number;
-  timerMs: number;
+export type BrittlePlatformState = {
+  phase: BrittleSurfacePhase;
+  warningMs: number;
+  unsupportedGapMs?: number;
+  readyBreakDelayMs?: number;
+  readyElapsedMs?: number;
+  readyRemainingMs?: number;
 };
 
 export type PlatformState = {
   id: string;
   kind: PlatformKind;
-  terrainVariant?: PlatformTerrainVariant;
+  surfaceMechanic?: PlatformSurfaceMechanic;
+  brittle?: BrittlePlatformState;
   x: number;
   y: number;
   width: number;
@@ -152,7 +144,16 @@ export type PlatformState = {
   vx: number;
   vy: number;
   move?: { axis: 'x' | 'y'; range: number; speed: number; direction: 1 | -1 };
-  fall?: { triggerDelayMs: number; timerMs: number; triggered: boolean; falling: boolean };
+  fall?: {
+    triggerDelayMs: number;
+    stayArmThresholdMs: number;
+    hopGapThresholdMs: number;
+    timerMs: number;
+    triggered: boolean;
+    falling: boolean;
+    accumulatedSupportMs: number;
+    unsupportedGapMs: number;
+  };
   spring?: { boost: number; cooldownMs: number; timerMs: number };
   reveal?: PlatformRevealState;
   temporaryBridge?: { scannerId: string; durationMs: number };
@@ -163,6 +164,8 @@ export type CheckpointState = {
   id: string;
   rect: Rect;
   activated: boolean;
+  supportPlatformId: string;
+  respawn: Vector2;
 };
 
 export type CollectibleState = {
@@ -228,6 +231,7 @@ export type EnemyState = {
     timerMs: number;
     impulse: number;
     speed: number;
+    committedHops?: number;
     targetPlatformId: string | null;
     targetX: number | null;
     targetY: number | null;
@@ -294,7 +298,10 @@ export type PlayerState = {
   airJumpsRemaining: number;
   presentationPower: PowerType | null;
   supportPlatformId: string | null;
-  launcherContactId: string | null;
+  jumpSourceGravityCapsuleId: string | null;
+  jumpSourceSupportPlatformId: string | null;
+  phaseThroughSupportPlatformId: string | null;
+  springContactPlatformId: string | null;
   lowGravityZoneId: string | null;
   gravityFieldId: string | null;
   gravityFieldKind: GravityFieldKind | null;
@@ -305,8 +312,6 @@ export type PlayerState = {
 
 export type StageRuntime = {
   platforms: PlatformState[];
-  terrainSurfaces: TerrainSurfaceState[];
-  launchers: LauncherState[];
   lowGravityZones: LowGravityZoneState[];
   gravityFields: GravityFieldState[];
   gravityCapsules: GravityCapsuleState[];
@@ -454,10 +459,10 @@ export const TURRET_VARIANT_CONFIG: Record<
   },
 };
 
-export const LAUNCHER_KINDS: LauncherKind[] = ['bouncePod', 'gasVent'];
 export const GRAVITY_FIELD_KINDS: GravityFieldKind[] = ['anti-grav-stream', 'gravity-inversion-column'];
-export const TERRAIN_SURFACE_KINDS: TerrainSurfaceKind[] = ['brittleCrystal', 'stickySludge'];
+export const PLATFORM_SURFACE_TERRAIN_KINDS: PlatformSurfaceTerrainKind[] = ['brittleCrystal', 'stickySludge'];
 export const BRITTLE_WARNING_MS = 420;
+export const BRITTLE_READY_BREAK_DELAY_MS = 220;
 export const SLUDGE_GROUND_ACCEL_MULTIPLIER = 0.48;
 export const SLUDGE_MAX_SPEED_MULTIPLIER = 0.58;
 
@@ -618,25 +623,6 @@ export const isTopSurfaceOnlyPlatform = (
   platform: Pick<PlatformState, 'magnetic'>,
 ): boolean => Boolean(platform.magnetic);
 
-export const createTerrainSurfaceState = (
-  platform: Pick<PlatformState, 'id' | 'x' | 'y' | 'width' | 'height'> & { terrainVariant: TerrainSurfaceKind },
-): TerrainSurfaceState => ({
-  id: platform.id,
-  kind: platform.terrainVariant,
-  x: platform.x,
-  y: platform.y,
-  width: platform.width,
-  height: platform.height,
-  supportPlatformId: platform.id,
-  brittle:
-    platform.terrainVariant === 'brittleCrystal'
-      ? {
-          phase: 'intact',
-          warningMs: BRITTLE_WARNING_MS,
-        }
-      : undefined,
-});
-
 export const isTimedRevealBridgeLegible = (
   bridge: Pick<TemporaryBridgeState, 'revealId'>,
   revealedPlatformIds: readonly string[],
@@ -686,17 +672,21 @@ export const createInactiveTemporaryBridgeState = (
   pendingHide: false,
 });
 
-export const isBrittleSurfaceBroken = (
-  surface: Pick<TerrainSurfaceState, 'kind' | 'brittle'>,
-): boolean => surface.kind === 'brittleCrystal' && surface.brittle?.phase === 'broken';
+export const isBrittlePlatformBroken = (
+  platform: Pick<PlatformState, 'surfaceMechanic' | 'brittle'>,
+): boolean => platform.surfaceMechanic?.kind === 'brittleCrystal' && platform.brittle?.phase === 'broken';
 
-export const isBrittleSurfaceWarning = (
-  surface: Pick<TerrainSurfaceState, 'kind' | 'brittle'>,
-): boolean => surface.kind === 'brittleCrystal' && surface.brittle?.phase === 'warning';
+export const isBrittlePlatformWarning = (
+  platform: Pick<PlatformState, 'surfaceMechanic' | 'brittle'>,
+): boolean => platform.surfaceMechanic?.kind === 'brittleCrystal' && platform.brittle?.phase === 'warning';
 
-export const isTerrainSurfaceSupportActive = (
-  surface: Pick<TerrainSurfaceState, 'kind' | 'brittle'>,
-): boolean => !isBrittleSurfaceBroken(surface);
+export const isBrittlePlatformReady = (
+  platform: Pick<PlatformState, 'surfaceMechanic' | 'brittle'>,
+): boolean => platform.surfaceMechanic?.kind === 'brittleCrystal' && platform.brittle?.phase === 'ready';
+
+export const isPlatformTerrainSupportActive = (
+  platform: Pick<PlatformState, 'surfaceMechanic' | 'brittle'>,
+): boolean => !isBrittlePlatformBroken(platform);
 
 export const formatActivePowerSummary = (powers: PowerInventory, timers: PowerTimers): string => {
   const activeLabels = getActivePowerLabels(powers, timers);

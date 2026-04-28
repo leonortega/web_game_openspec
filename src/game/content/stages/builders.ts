@@ -6,16 +6,14 @@ import type {
   GravityCapsuleDoorSupportsDefinition,
   GravityCapsuleRoomContentDefinition,
   GravityFieldDefinition,
-  LauncherDefinition,
   PlatformDefinition,
   RevealVolumeDefinition,
   RewardBlockDefinition,
   ScannerVolumeDefinition,
   StageDefinition,
   StartCabinDefinition,
-  TerrainSurfaceDefinition,
 } from './types';
-import type { GravityFieldKind, LauncherKind, Rect, RewardDefinition, TerrainSurfaceKind, Vector2 } from '../../simulation/state';
+import type { GravityFieldKind, PlatformSurfaceKind, Rect, RewardDefinition, Vector2 } from '../../simulation/state';
 
 const BLOCK_CLEARANCE_ABOVE_FLOOR = 72;
 
@@ -46,14 +44,22 @@ export const moving = (
   move: { axis, range, speed },
 });
 
-export const falling = (x: number, y: number, width: number, height = 32, triggerDelayMs = 650): PlatformDefinition => ({
+export const falling = (
+  x: number,
+  y: number,
+  width: number,
+  height = 32,
+  triggerDelayMs = 650,
+  stayArmThresholdMs = 120,
+  hopGapThresholdMs = 50,
+): PlatformDefinition => ({
   id: `platform-${x}-${y}-falling`,
   kind: 'falling',
   x,
   y,
   width,
   height,
-  fall: { triggerDelayMs },
+  fall: { triggerDelayMs, stayArmThresholdMs, hopGapThresholdMs },
 });
 
 export const spring = (x: number, y: number, width: number, height = 32, boost = 860): PlatformDefinition => ({
@@ -190,46 +196,12 @@ export const magneticPlatform = (
   magnetic: { activationNodeId },
 });
 
-export const withTerrainVariant = <T extends PlatformDefinition>(
+export const withSurfaceMechanic = <T extends PlatformDefinition>(
   platform: T,
-  terrainVariant: TerrainSurfaceKind,
-): T & { terrainVariant: TerrainSurfaceKind } => ({
+  kind: PlatformSurfaceKind,
+): T & { surfaceMechanic: NonNullable<PlatformDefinition['surfaceMechanic']> } => ({
   ...platform,
-  terrainVariant,
-});
-
-export const terrainSurface = (
-  id: string,
-  kind: TerrainSurfaceKind,
-  x: number,
-  y: number,
-  width: number,
-  height = 12,
-): TerrainSurfaceDefinition => ({
-  id,
-  kind,
-  x,
-  y,
-  width,
-  height,
-});
-
-export const launcher = (
-  id: string,
-  kind: LauncherKind,
-  x: number,
-  y: number,
-  width: number,
-  height = 14,
-  direction?: Vector2,
-): LauncherDefinition => ({
-  id,
-  kind,
-  x,
-  y,
-  width,
-  height,
-  direction,
+  surfaceMechanic: { kind },
 });
 
 export const rewardBlock = (
@@ -268,6 +240,12 @@ export const isRectWithinRect = (outer: Rect, inner: Rect): boolean =>
   inner.y >= outer.y &&
   inner.x + inner.width <= outer.x + outer.width &&
   inner.y + inner.height <= outer.y + outer.height;
+
+export const rectEquals = (left: Rect, right: Rect): boolean =>
+  left.x === right.x &&
+  left.y === right.y &&
+  left.width === right.width &&
+  left.height === right.height;
 
 export const rectContainsPoint = (rect: Rect, point: Vector2): boolean =>
   point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
@@ -320,6 +298,12 @@ export const gravityCapsule = (
   doorSupports,
 });
 
+export const gravityCapsulePlayerFieldRect = (
+  capsule: Pick<GravityCapsuleDefinition, 'shell'>,
+): Rect => ({
+  ...capsule.shell,
+});
+
 export const findSupportBelowSpan = (
   platforms: PlatformDefinition[],
   x: number,
@@ -356,6 +340,11 @@ const repositionRewardBlock = (
   };
 };
 
+export const rewardBlockNeedsSupportSnap = (
+  platforms: PlatformDefinition[],
+  block: RewardBlockDefinition,
+): boolean => repositionRewardBlock(block, platforms, block.y).y !== block.y;
+
 export const normalizeRewardBlocks = (
   platforms: PlatformDefinition[],
   blocks: RewardBlockDefinition[],
@@ -376,6 +365,71 @@ export const overlapWidth = (leftStart: number, leftEnd: number, rightStart: num
 
 export const overlapHeight = (topStart: number, topEnd: number, bottomStart: number, bottomEnd: number): number =>
   Math.max(0, Math.min(topEnd, bottomEnd) - Math.max(topStart, bottomStart));
+
+const groundedSupportSortScore = (rect: Rect, platform: PlatformDefinition): [number, number, number] => {
+  const overlap = overlapWidth(rect.x, rect.x + rect.width, platform.x, platform.x + platform.width);
+  return [Math.abs(rect.y + rect.height - platform.y), -overlap, platform.x];
+};
+
+export const isVisibleStableGroundSupport = (
+  platform: PlatformDefinition,
+  supportKinds: readonly PlatformDefinition['kind'][],
+): boolean =>
+  supportKinds.includes(platform.kind) &&
+  !platform.reveal &&
+  !platform.temporaryBridge &&
+  !platform.magnetic;
+
+export const findVisibleGroundSupport = (
+  stage: StageDefinition,
+  rect: Rect,
+  overlapRatio: number,
+  heightTolerance: number,
+  supportKinds: readonly PlatformDefinition['kind'][],
+): PlatformDefinition | null =>
+  (
+    stage.platforms
+      .filter((platform) => {
+        if (!isVisibleStableGroundSupport(platform, supportKinds)) {
+          return false;
+        }
+
+        const overlap = overlapWidth(rect.x, rect.x + rect.width, platform.x, platform.x + platform.width);
+        return overlap >= Math.min(rect.width * overlapRatio, platform.width) && Math.abs(rect.y + rect.height - platform.y) <= heightTolerance;
+      })
+      .sort((left, right) => {
+        const leftScore = groundedSupportSortScore(rect, left);
+        const rightScore = groundedSupportSortScore(rect, right);
+        return leftScore[0] - rightScore[0] || leftScore[1] - rightScore[1] || leftScore[2] - rightScore[2];
+      })[0] ?? null
+  );
+
+export const findVisibleFlushGroundSupport = (
+  stage: StageDefinition,
+  rect: Rect,
+  overlapRatio: number,
+  supportKinds: readonly PlatformDefinition['kind'][],
+): PlatformDefinition | null => findVisibleGroundSupport(stage, rect, overlapRatio, 0, supportKinds);
+
+export const resolveAuthoredFlushRectOnSupport = (
+  stage: StageDefinition,
+  rect: Rect,
+  overlapRatio: number,
+  supportKinds: readonly PlatformDefinition['kind'][],
+): { rect: Rect; support: PlatformDefinition } | null => {
+  const support = findVisibleGroundSupport(stage, rect, overlapRatio, 3, supportKinds);
+  if (!support) {
+    return null;
+  }
+
+  return {
+    rect: {
+      ...rect,
+      y: support.y - rect.height,
+    },
+    support,
+  };
+};
 
 export const gravityCapsuleShellWallThickness = (capsule: Pick<GravityCapsuleDefinition, 'entryDoor' | 'exitDoor'>): number =>
   Math.max(6, Math.min(12, Math.floor(Math.min(capsule.entryDoor.height, capsule.exitDoor.height) / 4)));
@@ -453,6 +507,20 @@ export const gravityCapsuleRectCrossesSealedShellBoundary = (capsule: GravityCap
   }
 
   return false;
+};
+
+export const gravityCapsuleRectCrossesDoorBoundary = (capsule: GravityCapsuleDefinition, rect: Rect): boolean => {
+  const shellRight = capsule.shell.x + capsule.shell.width;
+  const crossesEntryDoor =
+    rect.x < capsule.shell.x &&
+    rect.x + rect.width > capsule.shell.x &&
+    overlapHeight(rect.y, rect.y + rect.height, capsule.entryDoor.y, capsule.entryDoor.y + capsule.entryDoor.height) > 0;
+  const crossesExitDoor =
+    rect.x < shellRight &&
+    rect.x + rect.width > shellRight &&
+    overlapHeight(rect.y, rect.y + rect.height, capsule.exitDoor.y, capsule.exitDoor.y + capsule.exitDoor.height) > 0;
+
+  return crossesEntryDoor || crossesExitDoor;
 };
 
 const gravityCapsuleDoorPathPlatformRect = (platform: PlatformDefinition): Rect => {
@@ -605,18 +673,60 @@ export const findTraversableSupport = (stage: StageDefinition, rect: Rect, heigh
   );
 };
 
-export const findExitSupport = (stage: StageDefinition, exitRect: Rect): PlatformDefinition | null => {
-  const exitBottom = exitRect.y + exitRect.height;
-  return (
-    stage.platforms.find((platform) => {
-      if (platform.kind !== 'static' || platform.reveal || platform.temporaryBridge) {
-        return false;
-      }
+const CHECKPOINT_SUPPORT_OVERLAP_RATIO = 0.75;
 
-      const overlap = overlapWidth(exitRect.x, exitRect.x + exitRect.width, platform.x, platform.x + platform.width);
-      return overlap >= Math.min(exitRect.width * 0.55, platform.width) && Math.abs(exitBottom - platform.y) <= 12;
-    }) ?? null
+const HAZARD_SUPPORT_OVERLAP_RATIO = 0.55;
+const GROUNDED_ENEMY_SUPPORT_OVERLAP_RATIO = 0.55;
+
+export const findGroundedEnemySupport = (stage: StageDefinition, enemy: EnemyDefinition): PlatformDefinition | null =>
+  resolveAuthoredFlushRectOnSupport(stage, enemyRect(enemy), GROUNDED_ENEMY_SUPPORT_OVERLAP_RATIO, ['static', 'spring'])?.support ??
+  null;
+
+export const resolveGroundedEnemyRect = (stage: StageDefinition, enemy: EnemyDefinition): Rect | null =>
+  resolveAuthoredFlushRectOnSupport(stage, enemyRect(enemy), GROUNDED_ENEMY_SUPPORT_OVERLAP_RATIO, ['static', 'spring'])?.rect ?? null;
+
+export const findCheckpointSupport = (stage: StageDefinition, checkpointRect: Rect): PlatformDefinition | null =>
+  resolveAuthoredFlushRectOnSupport(stage, checkpointRect, CHECKPOINT_SUPPORT_OVERLAP_RATIO, ['static'])?.support ?? null;
+
+export const resolveCheckpointRect = (stage: StageDefinition, checkpointRect: Rect): Rect | null => {
+  return resolveAuthoredFlushRectOnSupport(stage, checkpointRect, CHECKPOINT_SUPPORT_OVERLAP_RATIO, ['static'])?.rect ?? null;
+};
+
+export const findHazardSupport = (stage: StageDefinition, hazardRect: Rect): PlatformDefinition | null =>
+  resolveAuthoredFlushRectOnSupport(stage, hazardRect, HAZARD_SUPPORT_OVERLAP_RATIO, ['static', 'falling', 'spring'])?.support ??
+  null;
+
+export const resolveHazardRect = (stage: StageDefinition, hazardRect: Rect): Rect | null => {
+  return (
+    resolveAuthoredFlushRectOnSupport(stage, hazardRect, HAZARD_SUPPORT_OVERLAP_RATIO, ['static', 'falling', 'spring'])?.rect ??
+    null
   );
+};
+
+export const resolveCheckpointRespawnPoint = (
+  stage: StageDefinition,
+  checkpointRect: Rect,
+  playerWidth: number,
+  playerHeight: number,
+): { x: number; y: number; supportPlatformId: string } | null => {
+  const support = findCheckpointSupport(stage, checkpointRect);
+  const resolvedRect = resolveCheckpointRect(stage, checkpointRect);
+  if (!support || !resolvedRect) {
+    return null;
+  }
+
+  const desiredX = resolvedRect.x + Math.floor(resolvedRect.width / 2);
+  const maxSpawnX = support.x + Math.max(0, support.width - playerWidth);
+
+  return {
+    x: Math.min(Math.max(desiredX, support.x), maxSpawnX),
+    y: support.y - playerHeight,
+    supportPlatformId: support.id,
+  };
+};
+
+export const findExitSupport = (stage: StageDefinition, exitRect: Rect): PlatformDefinition | null => {
+  return resolveAuthoredFlushRectOnSupport(stage, exitRect, 0.55, ['static'])?.support ?? null;
 };
 
 const collectibleRect = (collectible: StageDefinition['collectibles'][number]): Rect => ({
@@ -636,14 +746,6 @@ export const gravityCapsuleContentEntries = (stage: StageDefinition, capsule: Gr
 
   for (const id of capsule.contents.platformIds ?? []) {
     pushRect(id, stage.platforms.find((platform) => platform.id === id) ?? null);
-  }
-
-  for (const id of capsule.contents.terrainSurfaceIds ?? []) {
-    pushRect(id, stage.terrainSurfaces.find((surface) => surface.id === id) ?? null);
-  }
-
-  for (const id of capsule.contents.launcherIds ?? []) {
-    pushRect(id, stage.launchers.find((launcherEntry) => launcherEntry.id === id) ?? null);
   }
 
   for (const id of capsule.contents.collectibleIds ?? []) {
@@ -669,10 +771,6 @@ export const gravityCapsuleContentEntries = (stage: StageDefinition, capsule: Gr
 
 export const gravityCapsuleInteriorEntriesByKind = (stage: StageDefinition, capsule: GravityCapsuleDefinition) => ({
   platformIds: stage.platforms.filter((platform) => intersectsRect(platform, capsule.shell)).map((platform) => platform.id),
-  terrainSurfaceIds: stage.terrainSurfaces
-    .filter((surface) => intersectsRect(surface, capsule.shell))
-    .map((surface) => surface.id),
-  launcherIds: stage.launchers.filter((launcherEntry) => intersectsRect(launcherEntry, capsule.shell)).map((launcherEntry) => launcherEntry.id),
   collectibleIds: stage.collectibles
     .filter((collectible) => intersectsRect(collectibleRect(collectible), capsule.shell))
     .map((collectible) => collectible.id),

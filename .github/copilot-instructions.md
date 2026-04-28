@@ -27,4 +27,4 @@
 	- the change no longer exists as an active folder under `openspec/changes/`, and
 	- the change exists under `openspec/changes/archive/` unless the user explicitly accepted stopping early.
 - If the target change still exists as an active folder after `apply` or `verify`, do not end the request as complete; continue the flow or report the exact blocker.
-- If a validation task requires active-play or manual evidence, do not mark the OpenSpec workflow complete until that evidence is recorded or the user explicitly accepts the gap.
+- Do not require active-play, scripted playtest, or manual gameplay evidence to complete an OpenSpec workflow unless the user explicitly asks for that validation.

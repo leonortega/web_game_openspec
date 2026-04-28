@@ -43,7 +43,7 @@ The game SHALL play synthesized sound effects for major gameplay events so playe
 - **AND** those action cues remain audibly distinct from damage, reward, and menu feedback
 
 #### Scenario: Triggering an interactive gameplay object
-- **WHEN** the player activates a spring, launcher, collapsing surface, reward block, bounce pod, gas vent, or equivalent authored interactive object that changes movement or state
+- **WHEN** the player activates a spring platform, collapsing surface, reward block, or equivalent authored interactive object that changes movement or state
 - **THEN** the game plays a synthesized cue that matches the interaction outcome
 
 #### Scenario: Resolving a threat interaction

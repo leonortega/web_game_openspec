@@ -1,11 +1,14 @@
 export type {
   ActivationNodeDefinition,
+  EmptyPlatformMechanicFamily,
+  EmptyPlatformProgressionSegment,
+  EmptyPlatformSupportedMechanicFamily,
+  EmptyPlatformTraversalRunDefinition,
   EnemyDefinition,
   GravityCapsuleButtonDefinition,
   GravityCapsuleDefinition,
   GravityCapsuleRoomContentDefinition,
   GravityFieldDefinition,
-  LauncherDefinition,
   LowGravityZoneDefinition,
   PlatformDefinition,
   RevealVolumeDefinition,
@@ -16,7 +19,6 @@ export type {
   StageExtension,
   StageObjectiveDefinition,
   StartCabinDefinition,
-  TerrainSurfaceDefinition,
 } from './types';
 
 export {
@@ -25,10 +27,8 @@ export {
   gravityCapsule,
   gravityField,
   ground,
-  launcher,
   magneticPlatform,
   moving,
-  normalizeRewardBlocks,
   revealPlatform,
   revealVolume,
   rewardBlock,
@@ -36,12 +36,13 @@ export {
   spring,
   startCabin,
   temporaryBridgePlatform,
-  terrainSurface,
+  withSurfaceMechanic,
 } from './builders';
 
 export {
   validateStageCatalogMagneticRollout,
   validateStageCatalogSecretRoutes,
+  validateStageCatalogTerrainRollout,
   validateStageDefinition,
   validateTraversalMechanics,
 } from './validation';

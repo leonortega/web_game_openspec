@@ -6,10 +6,22 @@ import {
   MENU_SUSTAINED_MUSIC,
   getStageSustainedMusic,
 } from '../../audio/musicAssets';
-import { stageDefinitions, validateStageDefinition, type StageDefinition } from './stages';
+import { stageDefinitions, validateStageCatalogTerrainRollout, validateStageDefinition, type StageDefinition } from './stages';
+import {
+  enemyRect,
+  findCheckpointSupport,
+  findExitSupport,
+  findGroundedEnemySupport,
+  findHazardSupport,
+  rewardBlockNeedsSupportSnap,
+} from './stages/builders';
 
 const terrainVariantPlatforms = (stage: StageDefinition, kind: 'brittleCrystal' | 'stickySludge') =>
-  stage.platforms.filter((platform) => platform.terrainVariant === kind);
+  stage.platforms.filter((platform) => platform.surfaceMechanic?.kind === kind);
+
+const springPlatforms = (stage: StageDefinition) => stage.platforms.filter((platform) => platform.kind === 'spring');
+
+const STAGE_START_CABIN_BASE_HEIGHT = 12;
 
 const cloneStage = (): StageDefinition => JSON.parse(JSON.stringify(stageDefinitions[0])) as StageDefinition;
 const cloneAmberStage = (): StageDefinition =>
@@ -58,7 +70,18 @@ const terrainBeatSummary = (stage: StageDefinition, kind: 'brittleCrystal' | 'st
       .map((platform) => stage.segments.find((segment) => platform.x + platform.width / 2 >= segment.startX && platform.x + platform.width / 2 <= segment.endX)?.id ?? 'unmapped'),
   );
 
-describe('launcher stage validation', () => {
+const terrainKindsPresent = (stage: StageDefinition) =>
+  new Set(
+    stage.platforms.flatMap((platform) =>
+      platform.surfaceMechanic?.kind === 'brittleCrystal' || platform.surfaceMechanic?.kind === 'stickySludge'
+        ? [platform.surfaceMechanic.kind]
+        : [],
+    ),
+  );
+
+const qualifyingEmptyPlatformRuns = (stage: StageDefinition) => stage.emptyPlatformRuns.filter((run) => run.traversalChallenge);
+
+describe('spring stage validation', () => {
   it('accepts exits that stay grounded on a supported final platform', () => {
     const stage = cloneStage();
 
@@ -76,40 +99,88 @@ describe('launcher stage validation', () => {
     expect(() => validateStageDefinition(stage)).toThrow('Stage exits must sit on readable grounded support');
   });
 
-  it('accepts supported launcher kinds with bounded upward-biased directions', () => {
+  it('rejects exits that only stand on reveal-only helper support', () => {
     const stage = cloneStage();
+    stage.exit = {
+      ...stage.exit,
+      x: stage.world.width - 60,
+    };
 
-    stage.launchers = [
-      { id: 'valid-bounce', kind: 'bouncePod', x: 530, y: 575, width: 80, height: 14, direction: { x: 0.24, y: -1 } },
-      { id: 'valid-gas', kind: 'gasVent', x: 620, y: 575, width: 50, height: 14 },
+    stage.platforms = [
+      ...stage.platforms,
+      {
+        id: 'exit-reveal-support',
+        kind: 'static',
+        x: stage.exit.x - 12,
+        y: stage.exit.y + stage.exit.height,
+        width: 72,
+        height: 24,
+        reveal: { id: 'exit-reveal' },
+      },
     ];
 
-    expect(validateStageDefinition(stage).launchers).toHaveLength(2);
+    expect(() => validateStageDefinition(stage)).toThrow('Stage exits must sit on readable grounded support');
   });
 
-  it('rejects launcher directions beyond the upward-biased clamp', () => {
-    const stage = cloneStage();
+  it('rejects retired bounce and gas surface mechanics authored on static support', () => {
+    const stage = cloneStage() as StageDefinition & { platforms: Array<StageDefinition['platforms'][number] & { surfaceMechanic?: unknown }> };
 
-    stage.launchers = [
-      { id: 'bad-angle', kind: 'bouncePod', x: 530, y: 575, width: 80, height: 14, direction: { x: 1, y: -0.2 } },
-    ];
+    stage.platforms = stage.platforms.map((platform) =>
+      platform.id === 'platform-510-575'
+        ? { ...platform, surfaceMechanic: { kind: 'bouncePod' } }
+        : platform.id === 'platform-760-525'
+          ? { ...platform, surfaceMechanic: { kind: 'gasVent' } }
+          : platform,
+    ) as typeof stage.platforms;
 
-    expect(() => validateStageDefinition(stage)).toThrow(
-      'Launchers must use an upward-biased direction within 25 degrees of vertical',
+    expect(() => validateStageDefinition(stage as StageDefinition)).toThrow(
+      'Platform surface mechanics only support brittle crystal and sticky sludge on static platforms',
     );
   });
 
-  it('rejects ambiguous overlapping launcher contact areas', () => {
+  it('rejects overlapping spring platforms that fake a token overlay conversion', () => {
     const stage = cloneStage();
 
+    stage.platforms.push(
+      { id: 'overlap-a', kind: 'spring', x: 530, y: 575, width: 80, height: 32, spring: { boost: 860, cooldownMs: 350 } },
+      { id: 'overlap-b', kind: 'static', x: 580, y: 575, width: 80, height: 32 },
+    );
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Spring platforms must use one full-footprint authored support beat instead of overlapping plain-support stand-ins',
+    );
+  });
+
+  it('rejects deprecated spring launcher metadata encoded as launcher annotations', () => {
+    const stage = cloneStage() as StageDefinition & { launchers?: unknown[] };
+
     stage.launchers = [
-      { id: 'overlap-a', kind: 'bouncePod', x: 530, y: 575, width: 80, height: 14 },
-      { id: 'overlap-b', kind: 'gasVent', x: 580, y: 575, width: 80, height: 14 },
+      { id: 'deprecated-spring', kind: 'spring', x: 530, y: 575, width: 80, height: 14 },
     ];
 
     expect(() => validateStageDefinition(stage)).toThrow(
-      'Launchers cannot overlap another launcher or spring contact area',
+      'Spring platforms must be authored as platform kinds instead of stage launchers',
     );
+  });
+
+  it('accepts shipped spring-platform conversions while keeping the shipped catalog free of launcher annotations', () => {
+    const forest = validateStageDefinition(cloneStage());
+    const amber = validateStageDefinition(cloneAmberStage());
+    const sky = validateStageDefinition(cloneSkyStage());
+
+    expect((stageDefinitions as Array<StageDefinition & { launchers?: unknown[] }>).flatMap((stage) => stage.launchers ?? [])).toHaveLength(0);
+    expect(springPlatforms(forest)).toHaveLength(5);
+    expect(springPlatforms(amber)).toHaveLength(4);
+    expect(springPlatforms(sky)).toHaveLength(4);
+    expect(forest.platforms.find((platform) => platform.id === 'platform-6940-460-spring')?.kind).toBe('spring');
+    expect(forest.platforms.find((platform) => platform.id === 'platform-3890-420')?.kind).toBe('spring');
+    expect(forest.platforms.find((platform) => platform.id === 'platform-5820-450')?.kind).toBe('falling');
+    expect(amber.platforms.find((platform) => platform.id === 'platform-2110-480')?.kind).toBe('spring');
+    expect(amber.platforms.find((platform) => platform.id === 'platform-4630-460')?.kind).toBe('spring');
+    expect(sky.platforms.find((platform) => platform.id === 'platform-2280-520')?.kind).toBe('spring');
+    expect(sky.platforms.find((platform) => platform.id === 'platform-4460-430')?.kind).toBe('falling');
+    expect(sky.platforms.find((platform) => platform.id === 'platform-6590-470')?.kind).toBe('spring');
+    expect(sky.platforms.find((platform) => platform.id === 'platform-10640-480-spring')?.kind).toBe('spring');
   });
 });
 
@@ -118,6 +189,104 @@ describe('enemy placement validation', () => {
     const stage = cloneStage();
 
     expect(validateStageDefinition(stage).enemies).toEqual(stage.enemies);
+  });
+
+  it('keeps shipped grounded enemies authored flush to their resolved support across current stages', () => {
+    const stages = [cloneStage(), cloneAmberStage(), cloneSkyStage()];
+
+    for (const stage of stages) {
+      for (const enemy of stage.enemies.filter((entry) => entry.kind !== 'flyer')) {
+        const support = findGroundedEnemySupport(stage, enemy);
+        const bounds = enemyRect(enemy);
+
+        expect(support, `${stage.id}:${enemy.id} should resolve visible support`).toBeTruthy();
+        expect(bounds.y + bounds.height, `${stage.id}:${enemy.id} should sit flush on authored support`).toBe(support!.y);
+      }
+    }
+  });
+
+  it('keeps shipped spike hazards authored flush to their resolved support across current stages', () => {
+    const stages = [cloneStage(), cloneAmberStage(), cloneSkyStage()];
+
+    for (const stage of stages) {
+      for (const hazard of stage.hazards.filter((entry) => entry.kind === 'spikes')) {
+        const support = findHazardSupport(stage, hazard.rect);
+
+        expect(support, `${stage.id}:${hazard.id} should resolve visible support`).toBeTruthy();
+        expect(
+          hazard.rect.y + hazard.rect.height,
+          `${stage.id}:${hazard.id} should sit flush on authored support`,
+        ).toBe(support!.y);
+      }
+    }
+  });
+
+  it('keeps shipped checkpoints authored flush to their resolved support across current stages', () => {
+    const stages = [cloneStage(), cloneAmberStage(), cloneSkyStage()];
+
+    for (const stage of stages) {
+      for (const checkpoint of stage.checkpoints) {
+        const support = findCheckpointSupport(stage, checkpoint.rect);
+
+        expect(support, `${stage.id}:${checkpoint.id} should resolve visible support`).toBeTruthy();
+        expect(
+          checkpoint.rect.y + checkpoint.rect.height,
+          `${stage.id}:${checkpoint.id} should sit flush on authored support`,
+        ).toBe(support!.y);
+      }
+    }
+  });
+
+  it('keeps shipped exits authored flush to their resolved support across current stages', () => {
+    const stages = [cloneStage(), cloneAmberStage(), cloneSkyStage()];
+
+    for (const stage of stages) {
+      const support = findExitSupport(stage, stage.exit);
+
+      expect(support, `${stage.id}:exit should resolve visible support`).toBeTruthy();
+      expect(stage.exit.y + stage.exit.height, `${stage.id}:exit should sit flush on authored support`).toBe(support!.y);
+    }
+  });
+
+  it('keeps shipped stage-start cabin bases planted on the start platform surface', () => {
+    const stages = [cloneStage(), cloneAmberStage(), cloneSkyStage()];
+
+    for (const stage of stages) {
+      const support = stage.platforms.find(
+        (platform) =>
+          stage.startCabin.centerX >= platform.x &&
+          stage.startCabin.centerX <= platform.x + platform.width &&
+          Math.abs(stage.startCabin.baseY + STAGE_START_CABIN_BASE_HEIGHT / 2 - platform.y) <= 0,
+      );
+
+      expect(support, `${stage.id}:start cabin should sit on visible start support`).toBeTruthy();
+      expect(stage.startCabin.baseY + STAGE_START_CABIN_BASE_HEIGHT / 2).toBe(support!.y);
+    }
+  });
+
+  it('keeps shipped reward blocks authored high enough that visible support never snaps them upward', () => {
+    const stages = [cloneStage(), cloneAmberStage(), cloneSkyStage()];
+
+    for (const stage of stages) {
+      for (const block of stage.rewardBlocks) {
+        expect(
+          rewardBlockNeedsSupportSnap(stage.platforms, block),
+          `${stage.id}:${block.id} should not depend on hidden support snap`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('accepts grounded hoppers that start on real support and have a reachable supported first landing', () => {
+    const stage = cloneStage();
+    const hopper = stage.enemies.find((enemy) => enemy.id === 'hopper-1');
+    if (!hopper || hopper.kind !== 'hopper') {
+      throw new Error('Expected forest hopper fixture.');
+    }
+
+    hopper.position.y = 510;
+
+    expect(validateStageDefinition(stage).enemies.find((enemy) => enemy.id === 'hopper-1')?.position.y).toBe(510);
   });
 
   it('rejects non-flying enemies that sit off readable platform support', () => {
@@ -131,6 +300,25 @@ describe('enemy placement validation', () => {
     walker.position.y = 640;
 
     expect(() => validateStageDefinition(stage)).toThrow('Non-flying enemies must sit on readable platform support');
+  });
+
+  it('rejects grounded hoppers that would start floating above nearby support', () => {
+    const stage = cloneStage();
+    const hopper = stage.enemies.find((enemy) => enemy.id === 'hopper-1');
+    if (!hopper || hopper.kind !== 'hopper') {
+      throw new Error('Expected forest hopper fixture.');
+    }
+
+    hopper.position.y = 472;
+
+    expect(() => validateStageDefinition(stage)).toThrow('Non-flying enemies must sit on readable platform support');
+  });
+
+  it('rejects grounded hoppers whose first hop has no reachable supported landing', () => {
+    const stage = cloneStage();
+    stage.platforms = stage.platforms.filter((platform) => platform.id !== 'platform-2180-495');
+
+    expect(() => validateStageDefinition(stage)).toThrow('Grounded hoppers must author a reachable supported first landing');
   });
 
   it('rejects non-flying enemies hidden below the stage floor while allowing flyers off platforms', () => {
@@ -148,6 +336,47 @@ describe('enemy placement validation', () => {
     hopper.position.y = stage.world.height;
 
     expect(() => validateStageDefinition(stage)).toThrow('Non-flying enemies must stay within the visible stage bounds');
+  });
+
+  it('rejects hazards that float off readable grounded support', () => {
+    const stage = cloneStage();
+    const hazard = stage.hazards.find((entry) => entry.id === 'spikes-1');
+    if (!hazard) {
+      throw new Error('Expected forest hazard fixture.');
+    }
+
+    hazard.rect.y -= 40;
+
+    expect(() => validateStageDefinition(stage)).toThrow('Hazards must sit on readable grounded support');
+  });
+
+  it('rejects hazards that only pass by tolerant normalization instead of authored flush support', () => {
+    const stage = cloneStage();
+    const hazard = stage.hazards.find((entry) => entry.id === 'spikes-1');
+    if (!hazard) {
+      throw new Error('Expected forest hazard fixture.');
+    }
+
+    hazard.rect.y -= 4;
+
+    expect(() => validateStageDefinition(stage)).toThrow('Hazards must sit on readable grounded support');
+  });
+
+  it('rejects grounded enemies that only stand on reveal-only helper support', () => {
+    const stage = cloneStage();
+
+    stage.platforms = stage.platforms.filter((platform) => platform.id !== 'platform-1020-470');
+    stage.platforms.push({
+      id: 'reveal-only-support',
+      kind: 'static',
+      x: 1020,
+      y: 468,
+      width: 190,
+      height: 32,
+      reveal: { id: 'test-reveal' },
+    });
+
+    expect(() => validateStageDefinition(stage)).toThrow('Non-flying enemies must sit on readable platform support');
   });
 });
 
@@ -231,64 +460,88 @@ describe('activation-node magnetic platform stage validation', () => {
 });
 
 describe('gravity field stage validation', () => {
-  it('requires every main stage to author at least two brittle and two sticky terrain sections across multiple beats plus one gravity section', () => {
-    const forest = cloneStage();
-    const amber = cloneAmberStage();
-    const sky = cloneSkyStage();
+  it('requires every main stage to keep live brittle or sticky rollout while still authoring gravity sections', () => {
+    const forest = validateStageDefinition(cloneStage());
+    const amber = validateStageDefinition(cloneAmberStage());
+    const sky = validateStageDefinition(cloneSkyStage());
 
-    expect(terrainVariantPlatforms(validateStageDefinition(forest), 'brittleCrystal').length).toBeGreaterThanOrEqual(2);
-    expect(terrainVariantPlatforms(validateStageDefinition(forest), 'stickySludge').length).toBeGreaterThanOrEqual(2);
-    expect(terrainBeatSummary(validateStageDefinition(forest), 'brittleCrystal').size).toBeGreaterThanOrEqual(2);
-    expect(terrainBeatSummary(validateStageDefinition(forest), 'stickySludge').size).toBeGreaterThanOrEqual(2);
-    expect(validateStageDefinition(forest).gravityFields.length).toBeGreaterThan(0);
-    expect(terrainVariantPlatforms(validateStageDefinition(amber), 'brittleCrystal').length).toBeGreaterThanOrEqual(2);
-    expect(terrainVariantPlatforms(validateStageDefinition(amber), 'stickySludge').length).toBeGreaterThanOrEqual(2);
-    expect(terrainBeatSummary(validateStageDefinition(amber), 'brittleCrystal').size).toBeGreaterThanOrEqual(2);
-    expect(terrainBeatSummary(validateStageDefinition(amber), 'stickySludge').size).toBeGreaterThanOrEqual(2);
-    expect(validateStageDefinition(amber).gravityFields.length).toBeGreaterThan(0);
-    expect(terrainVariantPlatforms(validateStageDefinition(sky), 'brittleCrystal').length).toBeGreaterThanOrEqual(2);
-    expect(terrainVariantPlatforms(validateStageDefinition(sky), 'stickySludge').length).toBeGreaterThanOrEqual(2);
-    expect(terrainBeatSummary(validateStageDefinition(sky), 'brittleCrystal').size).toBeGreaterThanOrEqual(2);
-    expect(terrainBeatSummary(validateStageDefinition(sky), 'stickySludge').size).toBeGreaterThanOrEqual(2);
-    expect(validateStageDefinition(sky).gravityFields.length).toBeGreaterThan(0);
+    expect(terrainVariantPlatforms(forest, 'stickySludge')).toHaveLength(1);
+    expect(terrainBeatSummary(forest, 'stickySludge').size).toBeGreaterThanOrEqual(1);
+    expect(terrainKindsPresent(forest)).toEqual(new Set(['stickySludge']));
+    expect(forest.gravityFields.length).toBeGreaterThan(0);
 
-    forest.platforms = forest.platforms.map((platform) =>
-      platform.terrainVariant === 'stickySludge' ? { ...platform, terrainVariant: undefined } : platform,
+    expect(terrainVariantPlatforms(amber, 'brittleCrystal')).toHaveLength(1);
+    expect(terrainBeatSummary(amber, 'brittleCrystal').size).toBeGreaterThanOrEqual(1);
+    expect(terrainKindsPresent(amber)).toEqual(new Set(['brittleCrystal']));
+    expect(amber.gravityFields.length).toBeGreaterThan(0);
+    expect(springPlatforms(amber)).toHaveLength(4);
+
+    expect(terrainVariantPlatforms(sky, 'stickySludge')).toHaveLength(1);
+    expect(terrainBeatSummary(sky, 'stickySludge').size).toBeGreaterThanOrEqual(1);
+    expect(terrainKindsPresent(sky)).toEqual(new Set(['stickySludge']));
+    expect(sky.gravityFields.length).toBeGreaterThan(0);
+    expect(springPlatforms(sky)).toHaveLength(4);
+
+    expect(springPlatforms(forest)).toHaveLength(5);
+
+    const combinedKinds = new Set([...terrainKindsPresent(forest), ...terrainKindsPresent(amber), ...terrainKindsPresent(sky)]);
+    expect(combinedKinds).toEqual(new Set(['brittleCrystal', 'stickySludge']));
+
+    const forestWithoutTerrain = cloneStage();
+    forestWithoutTerrain.platforms = forestWithoutTerrain.platforms.map((platform) =>
+      platform.id === 'platform-9920-540' ? { ...platform, surfaceMechanic: undefined } : platform,
     );
-    expect(() => validateStageDefinition(forest)).toThrow(
-      'Main stages must author at least 2 brittle crystal and sticky sludge surfaces: forest-ruins',
-    );
-
-    const clusteredAmber = cloneAmberStage();
-    clusteredAmber.platforms = clusteredAmber.platforms.map((platform) => {
-      if (platform.id === 'platform-8160-520') {
-        return { ...platform, terrainVariant: undefined };
-      }
-
-      if (platform.id === 'platform-11090-420') {
-        return { ...platform, terrainVariant: undefined };
-      }
-
-      if (platform.id === 'platform-10290-500' || platform.id === 'platform-10550-430') {
-        return { ...platform, terrainVariant: 'stickySludge' };
-      }
-
-      return platform;
-    });
-    expect(() => validateStageDefinition(clusteredAmber)).toThrow(
-      'Main stages must spread brittle crystal and sticky sludge across at least two traversal beats: amber-cavern',
+    expect(() => validateStageDefinition(forestWithoutTerrain)).toThrow(
+      'Main stages must author at least one readable brittle crystal or sticky sludge terrain variant: forest-ruins',
     );
 
-    amber.gravityFields = [];
-    amber.gravityCapsules = [];
-    expect(() => validateStageDefinition(amber)).toThrow(
+    const stickyOnlyCatalog = stageDefinitions.map((stage) => ({
+      ...stage,
+      platforms: stage.platforms.map((platform) =>
+        platform.surfaceMechanic?.kind === 'brittleCrystal'
+          ? { ...platform, surfaceMechanic: { kind: 'stickySludge' as const } }
+          : platform,
+      ),
+    }));
+    expect(() => validateStageCatalogTerrainRollout(stickyOnlyCatalog)).toThrow(
+      'Main stage terrain rollout must include both brittle crystal and sticky sludge across Verdant Impact Crater, Ember Rift Warrens, and Halo Spire Array: missing brittleCrystal',
+    );
+
+    const amberWithoutGravity = cloneAmberStage();
+    amberWithoutGravity.gravityFields = [];
+    amberWithoutGravity.gravityCapsules = [];
+    expect(() => validateStageDefinition(amberWithoutGravity)).toThrow(
       'Main stages must author at least one bounded gravity-field section: amber-cavern',
     );
   });
 
+  it('keeps brittle and sticky terrain authoring valid outside the current main stages', () => {
+    const sideStage = cloneAmberStage();
+    sideStage.id = 'terrain-variant-regression-fixture';
+    sideStage.enemies = sideStage.enemies.map((enemy) =>
+      enemy.kind === 'turret' ? { ...enemy, variant: undefined } : enemy,
+    );
+    sideStage.platforms = sideStage.platforms.map((platform) => {
+      if (platform.id === 'platform-8160-520') {
+        return { ...platform, surfaceMechanic: { kind: 'stickySludge' } };
+      }
+
+      if (platform.id === 'platform-9460-420') {
+        return { ...platform, surfaceMechanic: { kind: 'brittleCrystal' } };
+      }
+
+      return platform;
+    });
+
+    expect(terrainVariantPlatforms(validateStageDefinition(sideStage), 'stickySludge')).toHaveLength(1);
+    expect(terrainVariantPlatforms(validateStageDefinition(sideStage), 'brittleCrystal')).toHaveLength(1);
+    expect(terrainBeatSummary(validateStageDefinition(sideStage), 'stickySludge').size).toBeGreaterThanOrEqual(1);
+    expect(terrainBeatSummary(validateStageDefinition(sideStage), 'brittleCrystal').size).toBeGreaterThanOrEqual(1);
+  });
+
   it('rejects legacy brittle and sticky terrain overlays and non-static platform variant usage', () => {
-    const legacyOverlayStage = cloneStage();
-    legacyOverlayStage.platforms = legacyOverlayStage.platforms.map((platform) => ({ ...platform, terrainVariant: undefined }));
+    const legacyOverlayStage = cloneStage() as ReturnType<typeof cloneStage> & { terrainSurfaces?: unknown[] };
+    legacyOverlayStage.platforms = legacyOverlayStage.platforms.map((platform) => ({ ...platform, surfaceMechanic: undefined }));
     legacyOverlayStage.terrainSurfaces = [
       { id: 'legacy-sticky', kind: 'stickySludge', x: 8350, y: 520, width: 132, height: 12 },
     ];
@@ -298,21 +551,29 @@ describe('gravity field stage validation', () => {
     );
 
     const mixedAuthoringStage = cloneStage();
-    mixedAuthoringStage.terrainSurfaces = [
-      { id: 'legacy-brittle', kind: 'brittleCrystal', x: 8480, y: 340, width: 110, height: 12 },
-    ];
+    mixedAuthoringStage.gravityCapsules = mixedAuthoringStage.gravityCapsules.map((capsule, index) =>
+      index === 0
+        ? {
+            ...capsule,
+            contents: {
+              ...capsule.contents,
+              terrainSurfaceIds: ['legacy-brittle'],
+            },
+          }
+        : capsule,
+    ) as typeof mixedAuthoringStage.gravityCapsules;
 
     expect(() => validateStageDefinition(mixedAuthoringStage)).toThrow(
-      'Brittle crystal and sticky sludge cannot mix platform terrain variants with legacy terrain surfaces',
+      'Gravity rooms must reference platform-owned surface mechanics through platform ids',
     );
 
     const movingVariantStage = cloneStage();
     movingVariantStage.platforms = movingVariantStage.platforms.map((platform) =>
-      platform.kind === 'moving' ? { ...platform, terrainVariant: 'stickySludge' } : platform,
+      platform.kind === 'moving' ? { ...platform, surfaceMechanic: { kind: 'stickySludge' } } : platform,
     );
 
     expect(() => validateStageDefinition(movingVariantStage)).toThrow(
-      'Brittle crystal and sticky sludge variants must stay on plain static platforms',
+      'Platform surface mechanics must stay on plain static platforms',
     );
   });
 
@@ -370,8 +631,88 @@ describe('gravity field stage validation', () => {
     expect(validated.gravityCapsules[1].button.id).toBe('sky-gravity-inversion-room-button');
     expect(validated.gravityCapsules.every((capsule) => capsule.entryDoor.x < capsule.exitDoor.x)).toBe(true);
     expect(validated.gravityCapsules.every((capsule) => capsule.entryDoor.x === capsule.shell.x)).toBe(true);
+    expect(
+      validated.gravityCapsules.every((capsule) => {
+        const field = validated.gravityFields.find((entry) => entry.id === capsule.fieldId);
+        return Boolean(
+          field &&
+            field.x === capsule.shell.x &&
+            field.y === capsule.shell.y &&
+            field.width === capsule.shell.width &&
+            field.height === capsule.shell.height,
+        );
+      }),
+    ).toBe(true);
     expect(validated.gravityCapsules[0].contents.platformIds).toContain('platform-9010-480');
+    expect(validated.gravityCapsules[0].contents.enemyIds).toContain('sky-room-walker-1');
+    expect(validated.gravityCapsules[1].contents.enemyIds).toContain('sky-room-walker-2');
     expect(validated.gravityCapsules[1].contents.platformIds).toContain('platform-9490-540');
+  });
+
+  it('accepts gravity rooms with authored interior enemies when they stay contained to the room interior', () => {
+    const stage = cloneSkyStage();
+
+    stage.enemies.push({
+      id: 'sky-room-walker-test',
+      kind: 'walker',
+      position: { x: 9040, y: 450 },
+      patrol: { left: 9010, right: 9180, speed: 96 },
+    });
+    stage.gravityCapsules[0].contents = {
+      ...stage.gravityCapsules[0].contents,
+      enemyIds: [...(stage.gravityCapsules[0].contents.enemyIds ?? []), 'sky-room-walker-test'],
+    };
+
+    const validated = validateStageDefinition(stage);
+    expect(validated.gravityCapsules[0].contents.enemyIds).toContain('sky-room-walker-test');
+  });
+
+  it('rejects gravity rooms whose interior enemy envelope can leave through a side-wall door', () => {
+    const stage = cloneSkyStage();
+    const capsule = stage.gravityCapsules[0];
+
+    stage.enemies.push({
+      id: 'sky-room-flyer-escape-test',
+      kind: 'flyer',
+      position: { x: capsule.shell.x + capsule.shell.width - 70, y: capsule.exitDoor.y + 24 },
+      flyer: {
+        left: capsule.shell.x + capsule.shell.width - 100,
+        right: capsule.shell.x + capsule.shell.width + 84,
+        speed: 84,
+        bobAmp: 0,
+        bobSpeed: 3.2,
+      },
+    });
+    stage.gravityCapsules[0].contents = {
+      ...stage.gravityCapsules[0].contents,
+      enemyIds: [...(stage.gravityCapsules[0].contents.enemyIds ?? []), 'sky-room-flyer-escape-test'],
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Gravity rooms must keep enemies assigned to their authored side of side-wall doors: sky-anti-grav-capsule',
+    );
+  });
+
+  it('rejects gravity rooms whose exterior enemy envelope can enter through a side-wall door', () => {
+    const stage = cloneSkyStage();
+    const capsule = stage.gravityCapsules[0];
+
+    stage.enemies.push({
+      id: 'sky-room-flyer-intrusion-test',
+      kind: 'flyer',
+      position: { x: capsule.shell.x - 70, y: capsule.entryDoor.y + 24 },
+      flyer: {
+        left: capsule.shell.x - 96,
+        right: capsule.shell.x + 84,
+        speed: 84,
+        bobAmp: 0,
+        bobSpeed: 3.2,
+      },
+    });
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Gravity rooms must keep enemies assigned to their authored side of side-wall doors: sky-anti-grav-capsule',
+    );
   });
 
   it('accepts current gravity rooms that reuse authored intended route supports without doorway-only helper ledges', () => {
@@ -412,6 +753,29 @@ describe('gravity field stage validation', () => {
     }
   });
 
+  it('accepts current gravity rooms only when the inverse-jump button route rises above the entry and exit supports', () => {
+    const rooms = [
+      validateStageDefinition(cloneStage()).gravityCapsules[0],
+      validateStageDefinition(cloneAmberStage()).gravityCapsules[0],
+      ...validateStageDefinition(cloneSkyStage()).gravityCapsules,
+    ];
+
+    for (const capsule of rooms) {
+      const entryRise = capsule.entryRoute.y + capsule.entryRoute.height - (capsule.buttonRoute.y + capsule.buttonRoute.height);
+      const exitRise = capsule.exitRoute.y + capsule.exitRoute.height - (capsule.buttonRoute.y + capsule.buttonRoute.height);
+      const buttonOverlap = Math.max(
+        0,
+        Math.min(capsule.button.x + capsule.button.width, capsule.buttonRoute.x + capsule.buttonRoute.width) -
+          Math.max(capsule.button.x, capsule.buttonRoute.x),
+      );
+
+      expect(entryRise).toBeGreaterThanOrEqual(48);
+      expect(exitRise).toBeGreaterThanOrEqual(48);
+      expect(buttonOverlap).toBeGreaterThanOrEqual(Math.min(capsule.button.width, Math.max(20, Math.floor(capsule.buttonRoute.width * 0.35))));
+      expect(capsule.button.y + capsule.button.height).toBeLessThanOrEqual(capsule.buttonRoute.y + capsule.buttonRoute.height + 12);
+    }
+  });
+
   it('rejects gravity rooms whose entry door loses its left-side platform-path continuation', () => {
     const stage = cloneSkyStage();
     stage.gravityCapsules[0].doorSupports = {
@@ -437,6 +801,45 @@ describe('gravity field stage validation', () => {
 
     expect(() => validateStageDefinition(stage)).toThrow(
       'Gravity rooms must place their linked interior disable button on a reachable authored route: sky-anti-grav-capsule',
+    );
+  });
+
+  it('rejects gravity rooms whose active-field button route drops back to entry-floor readability', () => {
+    const stage = cloneSkyStage();
+    stage.gravityCapsules[0].button = {
+      ...stage.gravityCapsules[0].button,
+      x: 9056,
+      y: 448,
+    };
+    stage.gravityCapsules[0].buttonRoute = {
+      ...stage.gravityCapsules[0].buttonRoute,
+      x: 9022,
+      y: 456,
+      width: 92,
+      height: 24,
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Gravity rooms must keep the active-field inverse-jump route to their interior disable button readable and reachable: sky-anti-grav-capsule',
+    );
+  });
+
+  it('rejects gravity rooms whose contained interior enemies block the only button lane', () => {
+    const stage = cloneSkyStage();
+
+    stage.enemies.push({
+      id: 'sky-room-button-lane-blocker',
+      kind: 'turret',
+      position: { x: 9150, y: 262 },
+      turret: { intervalMs: 1400 },
+    });
+    stage.gravityCapsules[0].contents = {
+      ...stage.gravityCapsules[0].contents,
+      enemyIds: [...(stage.gravityCapsules[0].contents.enemyIds ?? []), 'sky-room-button-lane-blocker'],
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Gravity rooms must keep contained interior enemies from blocking the only button lane: sky-anti-grav-capsule',
     );
   });
 
@@ -558,6 +961,13 @@ describe('gravity field stage validation', () => {
 
   it('rejects current gravity rooms that technically validate but still keep the old surrogate IN/OUT read', () => {
     const stage = cloneSkyStage();
+    stage.gravityFields[0] = {
+      ...stage.gravityFields[0],
+      x: 8928,
+      y: 108,
+      width: 304,
+      height: 396,
+    };
     stage.gravityCapsules[0] = {
       ...stage.gravityCapsules[0],
       shell: { x: 8928, y: 108, width: 304, height: 396 },
@@ -632,7 +1042,7 @@ describe('gravity field stage validation', () => {
     };
 
     expect(() => validateStageDefinition(stage)).toThrow(
-      'Gravity rooms must contain readable traversable route geometry from entry to exit: sky-anti-grav-capsule',
+      'Gravity rooms must keep the active-field inverse-jump route to their interior disable button readable and reachable: sky-anti-grav-capsule',
     );
   });
 
@@ -661,8 +1071,125 @@ describe('gravity field stage validation', () => {
     expect(() => validateStageDefinition(stage)).toThrow('Checkpoints must stay outside immediate gravity-field motion');
   });
 
+  it('accepts checkpoints that stand on visible stable authored support', () => {
+    const stage = cloneStage();
+
+    expect(validateStageDefinition(stage).checkpoints.map((checkpoint) => checkpoint.id)).toContain('cp-1');
+  });
+
+  it('rejects checkpoints that only stand on reveal-platform support', () => {
+    const stage = cloneStage();
+    stage.stageObjective = undefined;
+    stage.platforms = [
+      ...stage.platforms.filter(
+        (platform) => !(platform.x <= 1420 && platform.x + platform.width >= 1444 && Math.abs(platform.y - 540) <= 4),
+      ),
+      {
+        id: 'checkpoint-reveal-platform',
+        kind: 'static',
+        x: 1400,
+        y: 540,
+        width: 72,
+        height: 24,
+        reveal: { id: 'checkpoint-reveal' },
+      },
+    ];
+    stage.checkpoints = [{ id: 'cp-reveal-only', rect: { x: 1420, y: 460, width: 24, height: 80 } }];
+
+    expect(() => validateStageDefinition(stage)).toThrow('Checkpoints must stand on visible stable route support');
+  });
+
+  it('rejects checkpoints that only stand on temporary bridge support', () => {
+    const stage = cloneStage();
+    stage.stageObjective = undefined;
+    stage.scannerVolumes = [
+      {
+        id: 'scanner-a',
+        x: 1200,
+        y: 420,
+        width: 64,
+        height: 64,
+        temporaryBridgeIds: ['checkpoint-temp-platform'],
+      },
+    ];
+    stage.platforms = [
+      ...stage.platforms.filter(
+        (platform) => !(platform.x <= 1420 && platform.x + platform.width >= 1444 && Math.abs(platform.y - 540) <= 4),
+      ),
+      {
+        id: 'checkpoint-temp-platform',
+        kind: 'static',
+        x: 1400,
+        y: 540,
+        width: 72,
+        height: 24,
+        temporaryBridge: { scannerId: 'scanner-a', durationMs: 2200 },
+      },
+    ];
+    stage.checkpoints = [{ id: 'cp-temp-only', rect: { x: 1420, y: 460, width: 24, height: 80 } }];
+
+    expect(() => validateStageDefinition(stage)).toThrow('Checkpoints must stand on visible stable route support');
+  });
+
+  it('rejects airborne checkpoints without grounded support', () => {
+    const stage = cloneStage();
+    stage.checkpoints[0] = {
+      ...stage.checkpoints[0],
+      rect: { x: 1420, y: 410, width: 24, height: 80 },
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow('Checkpoints must stand on visible stable route support');
+  });
+
+  it('rejects checkpoints that only pass by tolerant normalization instead of authored flush support', () => {
+    const stage = cloneStage();
+    stage.checkpoints[0] = {
+      ...stage.checkpoints[0],
+      rect: { ...stage.checkpoints[0].rect, y: stage.checkpoints[0].rect.y + 4 },
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow('Checkpoints must stand on visible stable route support');
+  });
+
+  it('rejects checkpoints that overlap spring footing instead of stable grounded support', () => {
+    const stage = cloneStage();
+    stage.collectibles = [];
+    stage.rewardBlocks = [];
+    stage.platforms = stage.platforms.map((platform) =>
+      platform.id === 'platform-510-575'
+        ? { ...platform, kind: 'spring', spring: { boost: 860, cooldownMs: 350 }, surfaceMechanic: undefined }
+        : platform,
+    );
+    stage.checkpoints[0] = {
+      ...stage.checkpoints[0],
+      rect: { x: 558, y: 495, width: 24, height: 80 },
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow('Checkpoints must stand on visible stable route support');
+  });
+
+  it('rejects reward blocks that only clear nearby support after hidden snap fallback', () => {
+    const stage = cloneStage();
+    stage.rewardBlocks[0] = {
+      ...stage.rewardBlocks[0],
+      y: stage.rewardBlocks[0].y + 8,
+    };
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Reward blocks must keep authored visible-ground clearance without support snap',
+    );
+  });
+
   it('rejects checkpoints authored beyond the terminal exit', () => {
     const stage = cloneSkyStage();
+    stage.platforms.push({
+      id: 'post-exit-support',
+      kind: 'static',
+      x: stage.exit.x + stage.exit.width + 8,
+      y: stage.exit.y + 60,
+      width: 72,
+      height: 24,
+    });
 
     stage.checkpoints[stage.checkpoints.length - 1] = {
       ...stage.checkpoints[stage.checkpoints.length - 1],
@@ -670,6 +1197,102 @@ describe('gravity field stage validation', () => {
     };
 
     expect(() => validateStageDefinition(stage)).toThrow('Checkpoints must stay before the terminal exit');
+  });
+});
+
+describe('empty-platform variety validation', () => {
+  it('accepts shipped empty-platform traversal challenge metadata with mixed mechanic families', () => {
+    const stages = [validateStageDefinition(cloneStage()), validateStageDefinition(cloneAmberStage()), validateStageDefinition(cloneSkyStage())];
+
+    for (const stage of stages) {
+      const qualifyingRuns = qualifyingEmptyPlatformRuns(stage);
+      expect(qualifyingRuns.length).toBeGreaterThanOrEqual(3);
+      expect(new Set(qualifyingRuns.map((run) => run.progressionSegment))).toEqual(new Set(['early', 'middle', 'late']));
+      expect(qualifyingRuns.every((run) => new Set(run.mechanicFamilies.filter((family) => family !== 'jumpTiming')).size >= 2)).toBe(true);
+      expect(qualifyingRuns.every((run) => run.platformIds.every((platformId) => stage.platforms.some((platform) => platform.id === platformId)))).toBe(true);
+    }
+  });
+
+  it('rejects jump-only empty-platform traversal challenge runs', () => {
+    const stage = cloneStage();
+    stage.emptyPlatformRuns = [
+      {
+        id: 'forest-jump-only-fixture',
+        traversalChallenge: true,
+        progressionSegment: 'early',
+        platformIds: ['platform-510-575'],
+        mechanicFamilies: ['jumpTiming'],
+      },
+      {
+        id: 'forest-middle-fixture',
+        traversalChallenge: true,
+        progressionSegment: 'middle',
+        platformIds: ['platform-5300-470'],
+        mechanicFamilies: ['moving', 'springTraversal'],
+      },
+      {
+        id: 'forest-late-fixture',
+        traversalChallenge: true,
+        progressionSegment: 'late',
+        platformIds: ['platform-7200-400-spring'],
+        mechanicFamilies: ['moving', 'springTraversal'],
+      },
+    ];
+
+    expect(() => validateStageDefinition(stage)).toThrow('Empty-platform traversal challenge cannot be jump-only');
+  });
+
+  it('rejects traversal challenge runs that provide only one supported mechanic family', () => {
+    const stage = cloneAmberStage();
+    stage.emptyPlatformRuns = [
+      {
+        id: 'amber-early-fixture',
+        traversalChallenge: true,
+        progressionSegment: 'early',
+        platformIds: ['platform-1590-470-moving'],
+        mechanicFamilies: ['moving', 'springTraversal'],
+      },
+      {
+        id: 'amber-middle-fixture',
+        traversalChallenge: true,
+        progressionSegment: 'middle',
+        platformIds: ['platform-4350-390-falling'],
+        mechanicFamilies: ['unstableOrCollapsing'],
+      },
+      {
+        id: 'amber-late-fixture',
+        traversalChallenge: true,
+        progressionSegment: 'late',
+        platformIds: ['platform-7170-530-spring'],
+        mechanicFamilies: ['springTraversal', 'brittle'],
+      },
+    ];
+
+    expect(() => validateStageDefinition(stage)).toThrow('Empty-platform traversal challenge must include at least two supported mechanic families');
+  });
+
+  it('rejects stage progression metadata that misses a required early/middle/late segment', () => {
+    const stage = cloneSkyStage();
+    stage.emptyPlatformRuns = [
+      {
+        id: 'sky-early-fixture',
+        traversalChallenge: true,
+        progressionSegment: 'early',
+        platformIds: ['platform-1750-350-moving'],
+        mechanicFamilies: ['moving', 'boundedGravityFieldTraversal'],
+      },
+      {
+        id: 'sky-late-fixture',
+        traversalChallenge: true,
+        progressionSegment: 'late',
+        platformIds: ['platform-6590-470'],
+        mechanicFamilies: ['springTraversal', 'scannerSwitchTemporaryBridge'],
+      },
+    ];
+
+    expect(() => validateStageDefinition(stage)).toThrow(
+      'Empty-platform traversal challenge distribution must cover early, middle, and late segments',
+    );
   });
 });
 
@@ -784,6 +1407,7 @@ describe('turret variant stage validation', () => {
     }
 
     walkerVariant.kind = 'walker';
+    walkerVariant.position.y += 8;
     walkerVariant.patrol = { left: 2570, right: 2750, speed: 100 };
     delete walkerVariant.turret;
 

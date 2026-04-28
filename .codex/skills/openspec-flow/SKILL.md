@@ -24,6 +24,7 @@ Each stage must be handled by its own spawned agent.
 
 1. Strip the leading `openspec` word from the user's prompt.
 2. Treat the remaining text as the change request or change description.
+3. If the remaining request starts with `fix`, treat the run as diagnosis-first and require `explore` to inspect the current implementation for the issue before proposal work begins.
 3. Spawn a dedicated agent for `explore`.
 4. After explore completes, spawn a dedicated agent for `propose`.
 5. After propose completes, spawn a dedicated agent for `apply`.
@@ -36,6 +37,7 @@ Each stage must be handled by its own spawned agent.
 
 - `explore` agent:
   - Use the local `openspec-explore` skill behavior.
+  - If the request starts with `fix`, diagnose the current implementation first: inspect the relevant code paths, identify the likely root cause, and return a concrete solution direction.
   - Refine the request, inspect relevant code or artifacts, and produce enough context for proposal creation.
 
 - `propose` agent:

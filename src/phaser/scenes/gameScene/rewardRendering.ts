@@ -12,6 +12,7 @@ export type GameSceneRewardRenderingContext = Phaser.Scene & {
     shadow: string;
   };
   checkpointSprites: Map<string, Phaser.GameObjects.Sprite>;
+  checkpointContactStrips: Map<string, Phaser.GameObjects.Rectangle>;
   collectibleSprites: Map<string, Phaser.GameObjects.Sprite>;
   rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle>;
   rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
@@ -22,11 +23,61 @@ export type GameSceneRewardRenderingContext = Phaser.Scene & {
   rewardRevealColor(rewardReveal: RewardRevealState): string;
 };
 
-export function syncCheckpoint(scene: GameSceneRewardRenderingContext, checkpoint: CheckpointState): void {
-  scene.checkpointSprites
-    .get(checkpoint.id)
-    ?.setTint(checkpoint.activated ? scene.retroPalette.safe : scene.retroPalette.cool)
-    .setScale(checkpoint.activated ? 1.12 : 1);
+const CHECKPOINT_VISUAL_DEPTH = 4.2;
+const CHECKPOINT_CONTACT_STRIP_DEPTH = 4.1;
+const CHECKPOINT_CONTACT_STRIP_HEIGHT = 2;
+
+function syncCheckpointContactStrip(
+  scene: GameSceneRewardRenderingContext,
+  checkpoint: CheckpointState,
+  tintColor: number,
+  checkpointBottomY: number,
+): void {
+  let strip = scene.checkpointContactStrips.get(checkpoint.id);
+  if (!strip) {
+    strip = scene.add
+      .rectangle(
+        checkpoint.rect.x + checkpoint.rect.width / 2,
+        checkpointBottomY + CHECKPOINT_CONTACT_STRIP_HEIGHT / 2,
+        checkpoint.rect.width,
+        CHECKPOINT_CONTACT_STRIP_HEIGHT,
+        tintColor,
+      )
+      .setOrigin(0.5, 0.5)
+      .setDepth(CHECKPOINT_CONTACT_STRIP_DEPTH);
+    scene.checkpointContactStrips.set(checkpoint.id, strip);
+  } else {
+    strip
+      .setPosition(checkpoint.rect.x + checkpoint.rect.width / 2, checkpointBottomY + CHECKPOINT_CONTACT_STRIP_HEIGHT / 2)
+      .setDisplaySize(checkpoint.rect.width, CHECKPOINT_CONTACT_STRIP_HEIGHT)
+      .setFillStyle(tintColor);
+  }
+}
+
+export function syncCheckpoint(
+  scene: GameSceneRewardRenderingContext,
+  checkpoint: CheckpointState,
+  supportTopY?: number,
+): void {
+  const sprite = scene.checkpointSprites.get(checkpoint.id);
+  if (!sprite) {
+    return;
+  }
+
+  const tintColor = checkpoint.activated ? scene.retroPalette.safe : scene.retroPalette.cool;
+  const checkpointBottomY = supportTopY ?? checkpoint.rect.y + checkpoint.rect.height;
+
+  sprite
+    .setOrigin(0.5, 1)
+    .setPosition(
+      checkpoint.rect.x + checkpoint.rect.width / 2,
+      checkpointBottomY,
+    )
+    .setDisplaySize(checkpoint.rect.width, checkpoint.rect.height)
+    .setDepth(CHECKPOINT_VISUAL_DEPTH)
+    .setTint(tintColor);
+
+  syncCheckpointContactStrip(scene, checkpoint, tintColor, checkpointBottomY);
 }
 
 export function syncCollectible(scene: GameSceneRewardRenderingContext, collectible: CollectibleState): void {

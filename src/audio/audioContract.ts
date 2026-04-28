@@ -26,8 +26,6 @@ export const AUDIO_CUES = {
   block: 'block',
   collapse: 'collapse',
   spring: 'spring',
-  bouncePod: 'bounce-pod',
-  gasVent: 'gas-vent',
   movingPlatform: 'moving-platform',
   menuNavigate: 'menu-navigate',
   menuConfirm: 'menu-confirm',

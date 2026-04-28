@@ -26,6 +26,7 @@ Default to the local `caveman` skill for OpenSpec orchestration as far as practi
 
 1. Strip the leading `openspec` word from the user's prompt.
 2. Treat the remaining text as the change request or change description.
+3. If the remaining request starts with `fix`, mark the run as diagnosis-first and require `explore` to inspect the current implementation for the reported issue before proposal work begins.
 3. Read the local `caveman` skill before orchestration and capture the requested level if the user specified one; otherwise use the caveman default mode for workflow communication.
 4. Spawn the `OpenSpec Explore` agent for `explore`, and require it to inspect any relevant local skills or best-practice guidance before it settles on exploration findings.
 5. After explore completes, spawn the `OpenSpec Propose` agent for `propose`.
@@ -44,6 +45,8 @@ Each stage must pass a compact structured handoff to the next stage.
   - relevant skills consulted
   - relevant specs and changes
   - interpreted user intent
+  - issue diagnosis and likely root cause when the request is a fix request
+  - concrete solution direction when the request is a fix request
   - meaning of examples, annotations, sketches, or screenshots when present
   - gameplay or design constraints that must be kept, removed, moved, or forbidden
   - false-positive solutions that would satisfy code/spec wording but miss intended player-facing outcome
@@ -88,6 +91,7 @@ Each stage must pass a compact structured handoff to the next stage.
   - Use the local `openspec-explore` skill behavior as the exploration stance.
   - Before exploring the codebase in depth, identify and read any relevant local skills that match the requested domain so exploration reflects repo best practices.
   - If no domain skill applies, say so explicitly in the explore handoff instead of implying a skill review happened.
+  - If the request starts with `fix`, inspect the current code for the reported issue before proposal work, name the likely root cause, and recommend a concrete repair direction grounded in the existing codebase.
   - Normalize user intent before proposal: translate examples, images, annotations, sketches, and player-experience language into explicit constraints and anti-goals.
   - Distinguish gameplay/design semantics from implementation wording so later stages do not optimize for validator/code success while missing intended player-facing behavior.
   - When user-provided examples imply keep/remove/move/forbid semantics, capture those explicitly in the explore handoff.
@@ -122,6 +126,7 @@ Each stage must pass a compact structured handoff to the next stage.
 - Do not archive until verify is clean.
 - `OpenSpec Verify` must not edit files during this loop.
 - `OpenSpec Apply` owns all fix work during this loop.
+- Do not require scripted playtests, active-play, or manual gameplay evidence as part of the default OpenSpec flow unless the user explicitly requests that validation.
 
 If verify produces only suggestions and no incomplete tasks, no CRITICAL issues, and no warnings, archive may proceed.
 

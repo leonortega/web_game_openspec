@@ -5,10 +5,8 @@ import {
   gravityCapsule,
   gravityField,
   ground,
-  launcher,
   magneticPlatform,
   moving,
-  normalizeRewardBlocks,
   revealPlatform,
   revealVolume,
   rewardBlock,
@@ -16,12 +14,13 @@ import {
   spring,
   startCabin,
   temporaryBridgePlatform,
-  withTerrainVariant,
+  withSurfaceMechanic,
 } from './builders';
 import type { StageDefinition, StageExtension } from './types';
 import {
   validateStageCatalogMagneticRollout,
   validateStageCatalogSecretRoutes,
+  validateStageCatalogTerrainRollout,
   validateStageDefinition,
 } from './validation';
 
@@ -31,13 +30,12 @@ const applyStageExtension = (stage: StageDefinition, extension: StageExtension):
     ...stage,
     targetDurationMinutes: extension.targetDurationMinutes,
     segments: [...stage.segments, ...extension.segments],
+    emptyPlatformRuns: [...stage.emptyPlatformRuns, ...(extension.emptyPlatformRuns ?? [])],
     world: {
       ...stage.world,
       width: extension.worldWidth,
     },
     platforms,
-    terrainSurfaces: [...stage.terrainSurfaces, ...(extension.terrainSurfaces ?? [])],
-    launchers: [...stage.launchers, ...(extension.launchers ?? [])],
     lowGravityZones: [...stage.lowGravityZones, ...(extension.lowGravityZones ?? [])],
     gravityFields: [...stage.gravityFields, ...(extension.gravityFields ?? [])],
     gravityCapsules: [...stage.gravityCapsules, ...(extension.gravityCapsules ?? [])],
@@ -46,7 +44,7 @@ const applyStageExtension = (stage: StageDefinition, extension: StageExtension):
     activationNodes: [...stage.activationNodes, ...(extension.activationNodes ?? [])],
     checkpoints: [...stage.checkpoints, ...extension.checkpoints],
     collectibles: [...stage.collectibles, ...extension.collectibles],
-    rewardBlocks: normalizeRewardBlocks(platforms, [...stage.rewardBlocks, ...extension.rewardBlocks]),
+    rewardBlocks: [...stage.rewardBlocks, ...extension.rewardBlocks],
     secretRoutes: [...stage.secretRoutes, ...(extension.secretRoutes ?? [])],
     hazards: [...stage.hazards, ...extension.hazards],
     enemies: [...stage.enemies, ...extension.enemies],
@@ -77,6 +75,7 @@ const baseStageDefinitions: StageDefinition[] = [
       { id: 'gauntlet', title: 'Canopy Spine', startX: 4700, endX: 6500, focus: 'readable pressure bands' },
       { id: 'spire', title: 'Beacon Gate', startX: 6500, endX: 8100, focus: 'final ascent' },
     ],
+    emptyPlatformRuns: [],
     palette: {
       skyTop: 0x1f544c,
       skyBottom: 0x091816,
@@ -85,7 +84,7 @@ const baseStageDefinitions: StageDefinition[] = [
     },
     world: { width: 8100, height: 720, gravity: 1800 },
     playerSpawn: { x: 110, y: 520 },
-    startCabin: startCabin(105, 566, 1),
+    startCabin: startCabin(105, 614, 1),
     platforms: [
       ground(0, 620, 420),
       ground(510, 575, 170),
@@ -100,24 +99,22 @@ const baseStageDefinitions: StageDefinition[] = [
       ground(3040, 590, 250),
       falling(3370, 535, 190),
       ground(3630, 470, 180),
-      ground(3890, 420, 190),
+      { ...spring(3890, 420, 190), id: 'platform-3890-420' },
       ground(4170, 485, 200),
       ground(4450, 560, 220),
       ground(4770, 610, 220),
       ground(5060, 540, 170),
       ground(5300, 470, 180),
       ground(5560, 530, 180),
-      ground(5820, 450, 200),
+      { ...falling(5820, 450, 200), id: 'platform-5820-450' },
       ground(6100, 520, 200),
       ground(6380, 590, 220),
       spring(6680, 520, 180),
-      ground(6940, 460, 180),
-      ground(7200, 400, 180),
+      spring(6940, 460, 180),
+      spring(7200, 400, 180, 32, 900),
       ground(7460, 470, 200),
       ground(7750, 540, 220),
     ],
-    terrainSurfaces: [],
-    launchers: [launcher('forest-bounce-pod-route', 'bouncePod', 6990, 460, 110, 14, { x: 0.32, y: -1 })],
     lowGravityZones: [],
     gravityFields: [],
     gravityCapsules: [],
@@ -140,10 +137,10 @@ const baseStageDefinitions: StageDefinition[] = [
       { id: 'crystal-7', position: { x: 7830, y: 490 } },
     ],
     rewardBlocks: [
-      rewardBlock('forest-coin-1', 560, 470, { kind: 'coins', amount: 2 }),
-      rewardBlock('forest-double-jump', 2190, 390, { kind: 'power', power: 'doubleJump' }),
+      rewardBlock('forest-coin-1', 560, 463, { kind: 'coins', amount: 2 }),
+      rewardBlock('forest-double-jump', 2190, 383, { kind: 'power', power: 'doubleJump' }),
       rewardBlock('forest-coin-2', 3435, 410, { kind: 'coins', amount: 2 }),
-      rewardBlock('forest-dash', 6700, 465, { kind: 'power', power: 'dash' }),
+      rewardBlock('forest-dash', 6700, 408, { kind: 'power', power: 'dash' }),
     ],
     secretRoutes: [],
     hazards: [
@@ -157,13 +154,13 @@ const baseStageDefinitions: StageDefinition[] = [
       {
         id: 'walker-1',
         kind: 'walker',
-        position: { x: 1030, y: 438 },
+        position: { x: 1030, y: 440 },
         patrol: { left: 1020, right: 1210, speed: 90 },
       },
       {
         id: 'hopper-1',
         kind: 'hopper',
-        position: { x: 1930, y: 512 },
+        position: { x: 1930, y: 510 },
         hop: { intervalMs: 1400, impulse: 820, speed: 110 },
       },
       {
@@ -175,13 +172,13 @@ const baseStageDefinitions: StageDefinition[] = [
       {
         id: 'walker-2',
         kind: 'walker',
-        position: { x: 2500, y: 418 },
+        position: { x: 2500, y: 420 },
         patrol: { left: 2440, right: 2650, speed: 100 },
       },
       {
         id: 'hopper-2',
         kind: 'hopper',
-        position: { x: 4210, y: 453 },
+        position: { x: 4210, y: 455 },
         hop: { intervalMs: 1250, impulse: 860, speed: 120 },
       },
       {
@@ -193,7 +190,7 @@ const baseStageDefinitions: StageDefinition[] = [
       {
         id: 'walker-3',
         kind: 'walker',
-        position: { x: 6110, y: 488 },
+        position: { x: 6110, y: 490 },
         patrol: { left: 6100, right: 6300, speed: 110 },
       },
       {
@@ -205,7 +202,7 @@ const baseStageDefinitions: StageDefinition[] = [
       {
         id: 'hopper-3',
         kind: 'hopper',
-        position: { x: 7470, y: 438 },
+        position: { x: 7470, y: 440 },
         hop: { intervalMs: 1200, impulse: 900, speed: 130 },
       },
     ],
@@ -232,6 +229,7 @@ const baseStageDefinitions: StageDefinition[] = [
       { id: 'barracks', title: 'Basalt Barracks', startX: 4700, endX: 6400, focus: 'mixed encounters' },
       { id: 'heart', title: 'Core Prism', startX: 6400, endX: 8200, focus: 'turret lanes' },
     ],
+    emptyPlatformRuns: [],
     palette: {
       skyTop: 0x5a311e,
       skyBottom: 0x180c08,
@@ -240,7 +238,7 @@ const baseStageDefinitions: StageDefinition[] = [
     },
     world: { width: 8200, height: 720, gravity: 1850 },
     playerSpawn: { x: 90, y: 560 },
-    startCabin: startCabin(85, 606, 1),
+    startCabin: startCabin(85, 614, 1),
     platforms: [
       ground(0, 620, 420),
       ground(500, 560, 180),
@@ -249,7 +247,7 @@ const baseStageDefinitions: StageDefinition[] = [
       ground(1280, 410, 220),
       moving(1590, 470, 180, 32, 'y', 90, 70),
       ground(1850, 540, 180),
-      ground(2110, 480, 200),
+      { ...spring(2110, 480, 200), id: 'platform-2110-480' },
       ground(2390, 420, 180),
       ground(2650, 350, 180),
       ground(2910, 430, 190),
@@ -258,7 +256,7 @@ const baseStageDefinitions: StageDefinition[] = [
       ground(3800, 520, 190),
       ground(4070, 450, 190),
       falling(4350, 390, 200, 32, 700),
-      ground(4630, 460, 180),
+      { ...spring(4630, 460, 180), id: 'platform-4630-460' },
       ground(4890, 530, 220),
       ground(5200, 590, 230),
       ground(5510, 520, 180),
@@ -266,14 +264,12 @@ const baseStageDefinitions: StageDefinition[] = [
       ground(6030, 400, 200),
       ground(6310, 470, 180),
       spring(6570, 540, 220, 32, 900),
-      ground(6880, 600, 220),
-      ground(7170, 530, 190),
+      falling(6880, 600, 220, 32, 620),
+      spring(7170, 530, 190, 32, 860),
       ground(7440, 470, 180),
       ground(7700, 420, 180),
       ground(7960, 500, 180),
     ],
-    terrainSurfaces: [],
-    launchers: [],
     lowGravityZones: [],
     gravityFields: [],
     gravityCapsules: [],
@@ -284,7 +280,7 @@ const baseStageDefinitions: StageDefinition[] = [
       { id: 'cp-1', rect: { x: 1310, y: 330, width: 24, height: 80 } },
       { id: 'cp-2', rect: { x: 3510, y: 500, width: 24, height: 80 } },
       { id: 'cp-3', rect: { x: 5200, y: 510, width: 24, height: 80 } },
-      { id: 'cp-4', rect: { x: 6910, y: 520, width: 24, height: 80 } },
+      { id: 'cp-4', rect: { x: 7490, y: 390, width: 24, height: 80 } },
     ],
     collectibles: [
       { id: 'amber-1', position: { x: 530, y: 500 } },
@@ -297,9 +293,9 @@ const baseStageDefinitions: StageDefinition[] = [
       { id: 'amber-8', position: { x: 7730, y: 360 } },
     ],
     rewardBlocks: [
-      rewardBlock('amber-coin-1', 1090, 410, { kind: 'coins', amount: 2 }),
-      rewardBlock('amber-shooter', 2425, 360, { kind: 'power', power: 'shooter' }),
-      rewardBlock('amber-coin-2', 4670, 395, { kind: 'coins', amount: 3 }),
+      rewardBlock('amber-coin-1', 1090, 348, { kind: 'coins', amount: 2 }),
+      rewardBlock('amber-shooter', 2425, 308, { kind: 'power', power: 'shooter' }),
+      rewardBlock('amber-coin-2', 4670, 348, { kind: 'coins', amount: 3 }),
     ],
     secretRoutes: [],
     hazards: [
@@ -397,6 +393,7 @@ const baseStageDefinitions: StageDefinition[] = [
       { id: 'orbits', title: 'Halo Lanes', startX: 5000, endX: 6800, focus: 'turret lanes' },
       { id: 'summit', title: 'Crown Dock', startX: 6800, endX: 8800, focus: 'endurance finale' },
     ],
+    emptyPlatformRuns: [],
     palette: {
       skyTop: 0x2b5f86,
       skyBottom: 0x09111f,
@@ -405,7 +402,7 @@ const baseStageDefinitions: StageDefinition[] = [
     },
     world: { width: 8800, height: 720, gravity: 1780 },
     playerSpawn: { x: 90, y: 570 },
-    startCabin: startCabin(85, 616, 1),
+    startCabin: startCabin(85, 624, 1),
     platforms: [
       ground(0, 630, 340),
       ground(420, 560, 170),
@@ -415,7 +412,7 @@ const baseStageDefinitions: StageDefinition[] = [
       ground(1480, 420, 180),
       moving(1750, 350, 180, 32, 'x', 140, 90),
       ground(2020, 430, 170),
-      ground(2280, 520, 190),
+      { ...spring(2280, 520, 190), id: 'platform-2280-520' },
       ground(2570, 450, 180),
       ground(2830, 390, 180),
       ground(3090, 470, 180),
@@ -423,7 +420,7 @@ const baseStageDefinitions: StageDefinition[] = [
       ground(3660, 490, 180),
       ground(3920, 420, 180),
       ground(4180, 350, 190),
-      ground(4460, 430, 180),
+      { ...falling(4460, 430, 180), id: 'platform-4460-430' },
       ground(4720, 520, 180),
       ground(4990, 600, 210),
       ground(5290, 530, 180),
@@ -431,7 +428,7 @@ const baseStageDefinitions: StageDefinition[] = [
       moving(5810, 390, 180, 32, 'y', 100, 80),
       ground(6070, 330, 180),
       ground(6330, 400, 180),
-      ground(6590, 470, 180),
+      { ...spring(6590, 470, 180), id: 'platform-6590-470' },
       ground(6850, 540, 200),
       ground(7140, 470, 180),
       ground(7400, 400, 180),
@@ -440,8 +437,6 @@ const baseStageDefinitions: StageDefinition[] = [
       ground(8180, 500, 190),
       ground(8460, 590, 220),
     ],
-    terrainSurfaces: [],
-    launchers: [],
     lowGravityZones: [],
     gravityFields: [],
     gravityCapsules: [],
@@ -466,9 +461,9 @@ const baseStageDefinitions: StageDefinition[] = [
       { id: 'sky-9', position: { x: 8510, y: 540 } },
     ],
     rewardBlocks: [
-      rewardBlock('sky-invincible', 1740, 300, { kind: 'power', power: 'invincible' }),
-      rewardBlock('sky-coin-1', 3450, 500, { kind: 'coins', amount: 2 }),
-      rewardBlock('sky-coin-2', 6950, 490, { kind: 'coins', amount: 3 }),
+      rewardBlock('sky-invincible', 1740, 238, { kind: 'power', power: 'invincible' }),
+      rewardBlock('sky-coin-1', 3450, 438, { kind: 'coins', amount: 2 }),
+      rewardBlock('sky-coin-2', 6950, 428, { kind: 'coins', amount: 3 }),
     ],
     secretRoutes: [],
     hazards: [
@@ -482,13 +477,13 @@ const baseStageDefinitions: StageDefinition[] = [
       {
         id: 'walker-1',
         kind: 'walker',
-        position: { x: 735, y: 468 },
+        position: { x: 735, y: 470 },
         patrol: { left: 680, right: 820, speed: 100 },
       },
       {
         id: 'hopper-1',
         kind: 'hopper',
-        position: { x: 1510, y: 388 },
+        position: { x: 1510, y: 390 },
         hop: { intervalMs: 1200, impulse: 900, speed: 130 },
       },
       {
@@ -507,13 +502,13 @@ const baseStageDefinitions: StageDefinition[] = [
       {
         id: 'walker-2',
         kind: 'walker',
-        position: { x: 3940, y: 388 },
+        position: { x: 3940, y: 390 },
         patrol: { left: 3920, right: 4100, speed: 110 },
       },
       {
         id: 'hopper-2',
         kind: 'hopper',
-        position: { x: 5320, y: 498 },
+        position: { x: 5320, y: 500 },
         hop: { intervalMs: 1200, impulse: 940, speed: 135 },
       },
       {
@@ -537,7 +532,7 @@ const baseStageDefinitions: StageDefinition[] = [
       {
         id: 'walker-3',
         kind: 'walker',
-        position: { x: 7420, y: 368 },
+        position: { x: 7420, y: 370 },
         patrol: { left: 7400, right: 7580, speed: 110 },
       },
       {
@@ -561,10 +556,33 @@ const forestRuinsExtension: StageExtension = {
     { id: 'canopy', title: 'Relay Canopy', startX: 9280, endX: 10640, focus: 'branch pressure and rewards' },
     { id: 'citadel', title: 'Observatory Rise', startX: 10640, endX: 12050, focus: 'extended final ascent' },
   ],
+  emptyPlatformRuns: [
+    {
+      id: 'forest-empty-vault-shift',
+      traversalChallenge: true,
+      progressionSegment: 'early',
+      platformIds: ['platform-8610-450-moving', 'platform-8860-530', 'platform-8990-250-moving'],
+      mechanicFamilies: ['moving', 'boundedGravityFieldTraversal'],
+    },
+    {
+      id: 'forest-empty-canopy-mix',
+      traversalChallenge: true,
+      progressionSegment: 'middle',
+      platformIds: ['platform-9920-540', 'forest-magnetic-platform-1', 'platform-10210-610-spring'],
+      mechanicFamilies: ['sticky', 'activationNodeMagneticPlatform', 'springTraversal'],
+    },
+    {
+      id: 'forest-empty-citadel-gauntlet',
+      traversalChallenge: true,
+      progressionSegment: 'late',
+      platformIds: ['platform-10510-520', 'platform-11030-380', 'platform-11590-530'],
+      mechanicFamilies: ['brittle', 'boundedGravityFieldTraversal'],
+    },
+  ],
   platforms: [
     ground(8060, 590, 220),
-    withTerrainVariant(ground(8350, 520, 180), 'stickySludge'),
-    withTerrainVariant(ground(8480, 340, 150), 'brittleCrystal'),
+    ground(8350, 520, 180),
+    ground(8480, 340, 150),
     moving(8610, 450, 170, 32, 'x', 60, 86),
     ground(8730, 280, 110),
     ground(8860, 530, 200),
@@ -573,27 +591,26 @@ const forestRuinsExtension: StageExtension = {
     ground(9190, 530, 194),
     ground(9240, 320, 144),
     ground(9390, 400, 180),
-    withTerrainVariant(ground(9650, 470, 190), 'brittleCrystal'),
+    ground(9650, 470, 190),
     magneticPlatform('forest-magnetic-platform-1', 'forest-magnetic-node-1', 9928, 356, 132),
-    withTerrainVariant(ground(9920, 540, 210), 'brittleCrystal'),
+    withSurfaceMechanic(ground(9920, 540, 210), 'stickySludge'),
     ground(10010, 320, 160),
     spring(10210, 610, 200, 32, 920),
     ground(10310, 260, 150),
     ground(10510, 520, 180),
     ground(10770, 450, 180),
     ground(11030, 380, 180),
-    withTerrainVariant(ground(11300, 450, 200), 'stickySludge'),
+    ground(11300, 450, 200),
     ground(11590, 530, 220),
   ],
-  terrainSurfaces: [],
   gravityFields: [
     gravityField(
       'forest-anti-grav-canopy-lift',
       'anti-grav-stream',
-      8870,
-      140,
-      240,
-      320,
+      8840,
+      108,
+      544,
+      454,
       'forest-anti-grav-canopy-room',
     ),
   ],
@@ -609,7 +626,8 @@ const forestRuinsExtension: StageExtension = {
       { x: 9010, y: 226, width: 98, height: 24 },
       { x: 9252, y: 296, width: 88, height: 24 },
       {
-        platformIds: ['platform-8860-530', 'platform-8990-250-moving', 'platform-9140-470', 'platform-9190-530', 'platform-9240-320'],
+          platformIds: ['platform-8860-530', 'platform-8990-250-moving', 'platform-9140-470', 'platform-9190-530', 'platform-9240-320'],
+          enemyIds: ['forest-room-walker-1'],
       },
       {
         entryApproachPlatformId: 'platform-8610-450-moving',
@@ -649,11 +667,11 @@ const forestRuinsExtension: StageExtension = {
     { id: 'crystal-16', position: { x: 11720, y: 470 } },
   ],
   rewardBlocks: [
-    rewardBlock('forest-coin-branch', 8740, 200, { kind: 'coins', amount: 3 }),
-    rewardBlock('forest-shooter', 9685, 420, { kind: 'power', power: 'shooter' }),
+    rewardBlock('forest-coin-branch', 8740, 168, { kind: 'coins', amount: 3 }),
+    rewardBlock('forest-shooter', 9685, 358, { kind: 'power', power: 'shooter' }),
     rewardBlock('forest-coin-4', 10190, 470, { kind: 'coins', amount: 2 }),
-    rewardBlock('forest-coin-5', 10030, 250, { kind: 'coins', amount: 2 }),
-    rewardBlock('forest-invincible', 11320, 380, { kind: 'power', power: 'invincible' }),
+    rewardBlock('forest-coin-5', 10030, 208, { kind: 'coins', amount: 2 }),
+    rewardBlock('forest-invincible', 11320, 338, { kind: 'power', power: 'invincible' }),
   ],
   hazards: [
     { id: 'forest-spikes-6', kind: 'spikes', rect: { x: 8140, y: 574, width: 60, height: 16 } },
@@ -666,6 +684,12 @@ const forestRuinsExtension: StageExtension = {
       kind: 'walker',
       position: { x: 8360, y: 490 },
       patrol: { left: 8350, right: 8510, speed: 105 },
+    },
+    {
+      id: 'forest-room-walker-1',
+      kind: 'walker',
+      position: { x: 8872, y: 500 },
+      patrol: { left: 8860, right: 8928, speed: 92 },
     },
     {
       id: 'turret-2',
@@ -714,8 +738,31 @@ const amberCavernExtension: StageExtension = {
     { id: 'ramparts', title: 'Ember Ramparts', startX: 9440, endX: 10880, focus: 'split-route hazard pressure' },
     { id: 'vault', title: 'Reactor Vault', startX: 10880, endX: 12250, focus: 'final forge gauntlet' },
   ],
+  emptyPlatformRuns: [
+    {
+      id: 'amber-empty-fissure-lifts',
+      traversalChallenge: true,
+      progressionSegment: 'early',
+      platformIds: ['platform-8940-430-moving', 'platform-8970-190-moving', 'amber-secret-cave-bridge'],
+      mechanicFamilies: ['moving', 'revealPlatform'],
+    },
+    {
+      id: 'amber-empty-ramparts-break',
+      traversalChallenge: true,
+      progressionSegment: 'middle',
+      platformIds: ['platform-9460-420', 'platform-9730-500-falling', 'platform-9990-570'],
+      mechanicFamilies: ['brittle', 'unstableOrCollapsing'],
+    },
+    {
+      id: 'amber-empty-vault-column',
+      traversalChallenge: true,
+      progressionSegment: 'late',
+      platformIds: ['platform-10550-430', 'platform-10620-210', 'platform-10830-350'],
+      mechanicFamilies: ['brittle', 'boundedGravityFieldTraversal'],
+    },
+  ],
   platforms: [
-    withTerrainVariant(ground(8160, 520, 200), 'stickySludge'),
+    ground(8160, 520, 200),
     ground(8420, 450, 180),
     ground(8450, 290, 150),
     ground(8680, 380, 180),
@@ -725,7 +772,8 @@ const amberCavernExtension: StageExtension = {
     moving(8970, 190, 140, 32, 'x', 90, 70),
     ground(9200, 340, 180),
     ground(9220, 260, 160),
-    withTerrainVariant(ground(9460, 420, 200), 'brittleCrystal'),
+    withSurfaceMechanic(ground(9460, 420, 200), 'brittleCrystal'),
+    ground(9680, 420, 140),
     falling(9730, 500, 180),
     ground(9990, 570, 220),
     ground(10290, 500, 180),
@@ -734,20 +782,19 @@ const amberCavernExtension: StageExtension = {
     ground(10550, 430, 190),
     ground(10620, 210, 140),
     ground(10830, 350, 180),
-    withTerrainVariant(ground(11090, 420, 190), 'stickySludge'),
-    withTerrainVariant(ground(11370, 500, 220), 'brittleCrystal'),
+    ground(11090, 420, 190),
+    ground(11370, 500, 220),
     ground(11670, 560, 220),
     ground(11960, 470, 180),
   ],
-  terrainSurfaces: [],
   gravityFields: [
     gravityField(
       'amber-inversion-smelter-column',
       'gravity-inversion-column',
-      10240,
-      140,
-      220,
-      340,
+      9910,
+      108,
+      920,
+      494,
       'amber-inversion-smelter-room',
     ),
   ],
@@ -771,6 +818,7 @@ const amberCavernExtension: StageExtension = {
           'platform-10550-430',
           'platform-10620-210',
         ],
+        enemyIds: ['amber-room-walker-1'],
       },
       {
         entryApproachPlatformId: 'platform-9730-500-falling',
@@ -813,10 +861,10 @@ const amberCavernExtension: StageExtension = {
     { id: 'amber-18', position: { x: 12000, y: 420 } },
   ],
   rewardBlocks: [
-    rewardBlock('amber-coin-3', 8450, 390, { kind: 'coins', amount: 3 }),
-    rewardBlock('amber-coin-branch', 9230, 210, { kind: 'coins', amount: 3 }),
-    rewardBlock('amber-coin-5', 10920, 310, { kind: 'coins', amount: 2 }),
-    rewardBlock('amber-coin-4', 10860, 310, { kind: 'coins', amount: 2 }),
+    rewardBlock('amber-coin-3', 8450, 338, { kind: 'coins', amount: 3 }),
+    rewardBlock('amber-coin-branch', 9230, 148, { kind: 'coins', amount: 3 }),
+    rewardBlock('amber-coin-5', 10920, 238, { kind: 'coins', amount: 2 }),
+    rewardBlock('amber-coin-4', 10860, 238, { kind: 'coins', amount: 2 }),
     rewardBlock('amber-dash', 11780, 420, { kind: 'power', power: 'dash' }),
   ],
   secretRoutes: [
@@ -872,6 +920,12 @@ const amberCavernExtension: StageExtension = {
       charger: { left: 11090, right: 11280, patrolSpeed: 72, chargeSpeed: 310, windupMs: 520, cooldownMs: 920 },
     },
     {
+      id: 'amber-room-walker-1',
+      kind: 'walker',
+      position: { x: 10002, y: 540 },
+      patrol: { left: 9990, right: 10060, speed: 96 },
+    },
+    {
       id: 'walker-5',
       kind: 'walker',
       position: { x: 12070, y: 440 },
@@ -890,12 +944,35 @@ const skySanctumExtension: StageExtension = {
     { id: 'halo', title: 'Halo Causeway', startX: 10120, endX: 11640, focus: 'turret lanes and resets' },
     { id: 'crown', title: 'Crown Approach', startX: 11640, endX: 13240, focus: 'endurance finale' },
   ],
+  emptyPlatformRuns: [
+    {
+      id: 'sky-empty-belfry-inversion',
+      traversalChallenge: true,
+      progressionSegment: 'early',
+      platformIds: ['platform-9270-420-moving', 'platform-9490-540', 'platform-9580-200-moving'],
+      mechanicFamilies: ['moving', 'boundedGravityFieldTraversal'],
+    },
+    {
+      id: 'sky-empty-halo-bridges',
+      traversalChallenge: true,
+      progressionSegment: 'middle',
+      platformIds: ['sky-reveal-bridge-1', 'platform-11160-320', 'sky-temporary-bridge-1'],
+      mechanicFamilies: ['revealPlatform', 'sticky', 'scannerSwitchTemporaryBridge'],
+    },
+    {
+      id: 'sky-empty-crown-rail',
+      traversalChallenge: true,
+      progressionSegment: 'late',
+      platformIds: ['platform-11680-460-spring', 'platform-12490-400', 'platform-12750-500'],
+      mechanicFamilies: ['springTraversal', 'scannerSwitchTemporaryBridge'],
+    },
+  ],
   platforms: [
     ground(8740, 560, 188),
     ground(9010, 480, 220, 24),
     ground(9040, 300, 150),
     moving(9270, 420, 180, 32, 'x', 20, 88),
-    withTerrainVariant(ground(9310, 240, 140), 'stickySludge'),
+    ground(9310, 240, 140),
     ground(9310, 540, 160),
     ground(9540, 340, 180),
     moving(9580, 200, 140, 32, 'x', 100, 78),
@@ -905,37 +982,35 @@ const skySanctumExtension: StageExtension = {
     ground(9770, 540, 240),
     ground(10010, 540, 160),
     falling(10080, 480, 180),
-    withTerrainVariant(ground(10340, 550, 210), 'brittleCrystal'),
-    ground(10640, 480, 180),
+    ground(10340, 550, 210),
+    spring(10640, 480, 180),
     moving(10900, 400, 180, 32, 'y', 110, 84),
     ground(10970, 250, 150),
     revealPlatform('sky-reveal-bridge-1', 'sky-hidden-bridge-1', 11150, 250, 120),
-    ground(11160, 320, 180),
+    withSurfaceMechanic(ground(11160, 320, 180), 'stickySludge'),
     ground(11240, 190, 140),
     revealPlatform('sky-reveal-bridge-2', 'sky-hidden-bridge-2', 11390, 220, 110),
     ground(11420, 390, 180),
     spring(11680, 460, 200, 32, 950),
     ground(11970, 380, 180),
-    withTerrainVariant(ground(12230, 320, 180), 'brittleCrystal'),
+    ground(12230, 320, 180),
     ground(12280, 230, 150),
     temporaryBridgePlatform('sky-temporary-bridge-1', 'sky-halo-scanner', 12450, 230, 120, 24, 2600, 'sky-timed-secret-bridge'),
     ground(12620, 230, 140),
-    withTerrainVariant(ground(12490, 400, 180), 'stickySludge'),
+    ground(12490, 400, 180),
     ground(12750, 500, 220),
     ground(13040, 430, 180),
   ],
-  terrainSurfaces: [],
-  launchers: [launcher('sky-gas-vent-route', 'gasVent', 10682, 480, 96, 14, { x: 0.18, y: -1 })],
   lowGravityZones: [],
   gravityFields: [
-    gravityField('sky-anti-grav-stream', 'anti-grav-stream', 8960, 120, 260, 380, 'sky-anti-grav-capsule'),
+    gravityField('sky-anti-grav-stream', 'anti-grav-stream', 8928, 108, 542, 432, 'sky-anti-grav-capsule'),
     gravityField(
       'sky-gravity-inversion-column',
       'gravity-inversion-column',
-      9510,
-      130,
-      220,
-      340,
+      9470,
+      108,
+      540,
+      464,
       'sky-gravity-inversion-capsule',
     ),
   ],
@@ -952,6 +1027,7 @@ const skySanctumExtension: StageExtension = {
       { x: 9328, y: 396, width: 74, height: 24 },
       {
         platformIds: ['platform-9010-480', 'platform-9040-300', 'platform-9270-420-moving', 'platform-9310-240'],
+        enemyIds: ['sky-room-walker-1'],
       },
       {
         entryApproachPlatformId: 'platform-8740-560',
@@ -981,6 +1057,7 @@ const skySanctumExtension: StageExtension = {
           'platform-9840-270',
           'platform-9770-540',
         ],
+        enemyIds: ['sky-room-walker-2'],
       },
       {
         entryApproachPlatformId: 'platform-9310-540',
@@ -1007,7 +1084,7 @@ const skySanctumExtension: StageExtension = {
   ],
   scannerVolumes: [scannerVolume('sky-halo-scanner', 12400, 120, 170, 180, ['sky-temporary-bridge-1'])],
   checkpoints: [
-    { id: 'cp-5', rect: { x: 10670, y: 400, width: 24, height: 80 } },
+    { id: 'cp-5', rect: { x: 10990, y: 170, width: 24, height: 80 } },
   ],
   collectibles: [
     { id: 'sky-10', position: { x: 8780, y: 510 } },
@@ -1026,12 +1103,12 @@ const skySanctumExtension: StageExtension = {
     { id: 'sky-20', position: { x: 12900, y: 450 } },
   ],
   rewardBlocks: [
-    rewardBlock('sky-dash-2', 11980, 330, { kind: 'power', power: 'dash' }),
-    rewardBlock('sky-coin-branch', 10110, 430, { kind: 'coins', amount: 3 }),
-    rewardBlock('sky-coin-3', 10750, 430, { kind: 'coins', amount: 3 }),
-    rewardBlock('sky-coin-5', 11260, 140, { kind: 'coins', amount: 2 }),
-    rewardBlock('sky-temp-bridge-cache', 12650, 130, { kind: 'coins', amount: 2 }),
-    rewardBlock('sky-shooter', 13060, 350, { kind: 'power', power: 'shooter' }),
+    rewardBlock('sky-dash-2', 11980, 268, { kind: 'power', power: 'dash' }),
+    rewardBlock('sky-coin-branch', 10110, 368, { kind: 'coins', amount: 3 }),
+    rewardBlock('sky-coin-3', 10750, 368, { kind: 'coins', amount: 3 }),
+    rewardBlock('sky-coin-5', 11260, 78, { kind: 'coins', amount: 2 }),
+    rewardBlock('sky-temp-bridge-cache', 12650, 118, { kind: 'coins', amount: 2 }),
+    rewardBlock('sky-shooter', 13060, 318, { kind: 'power', power: 'shooter' }),
   ],
   secretRoutes: [
     {
@@ -1072,6 +1149,18 @@ const skySanctumExtension: StageExtension = {
       flyer: { left: 8740, right: 8890, speed: 112, bobAmp: 24, bobSpeed: 5.1 },
     },
     {
+      id: 'sky-room-walker-1',
+      kind: 'walker',
+      position: { x: 9020, y: 450 },
+      patrol: { left: 9010, right: 9068, speed: 96 },
+    },
+    {
+      id: 'sky-room-walker-2',
+      kind: 'walker',
+      position: { x: 9830, y: 510 },
+      patrol: { left: 9820, right: 9930, speed: 98 },
+    },
+    {
       id: 'hopper-3',
       kind: 'hopper',
       position: { x: 10350, y: 520 },
@@ -1099,8 +1188,9 @@ const skySanctumExtension: StageExtension = {
 };
 
 export const stageDefinitions: StageDefinition[] = validateStageCatalogSecretRoutes(
-  validateStageCatalogMagneticRollout(
-    baseStageDefinitions.map((stage) => {
+  validateStageCatalogTerrainRollout(
+    validateStageCatalogMagneticRollout(
+      baseStageDefinitions.map((stage) => {
     switch (stage.id) {
       case 'forest-ruins':
         return validateStageDefinition(applyStageExtension(stage, forestRuinsExtension));
@@ -1109,11 +1199,9 @@ export const stageDefinitions: StageDefinition[] = validateStageCatalogSecretRou
       case 'sky-sanctum':
         return validateStageDefinition(applyStageExtension(stage, skySanctumExtension));
       default:
-        return validateStageDefinition({
-          ...stage,
-          rewardBlocks: normalizeRewardBlocks(stage.platforms, stage.rewardBlocks),
-        });
+        return validateStageDefinition(stage);
     }
-    }),
+      }),
+    ),
   ),
 );

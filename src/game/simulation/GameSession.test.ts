@@ -1,21 +1,28 @@
 import { describe, expect, it } from 'vitest';
 
 import { AUDIO_CUES } from '../../audio/audioContract';
+import { stageDefinitions } from '../content/stages';
 import { GameSession } from './GameSession';
 import { defaultInputState } from '../input/actions';
-import { TURRET_VARIANT_CONFIG, createTerrainSurfaceState } from './state';
+import { BRITTLE_READY_BREAK_DELAY_MS, TURRET_VARIANT_CONFIG } from './state';
 
 const getMutableState = (session: GameSession) => session.getState() as any;
 
-const createTerrainVariantFixture = (platform: any, kind: 'brittleCrystal' | 'stickySludge') =>
-  createTerrainSurfaceState({
-    id: platform.id,
-    x: platform.x,
-    y: platform.y,
-    width: platform.width,
-    height: platform.height,
-    terrainVariant: kind,
-  });
+const applyTerrainVariantFixture = (platform: any, kind: 'brittleCrystal' | 'stickySludge') => {
+  platform.surfaceMechanic = { kind };
+  platform.brittle =
+    kind === 'brittleCrystal'
+      ? {
+          phase: 'intact',
+          warningMs: 420,
+          unsupportedGapMs: 0,
+          readyBreakDelayMs: BRITTLE_READY_BREAK_DELAY_MS,
+          readyElapsedMs: 0,
+          readyRemainingMs: BRITTLE_READY_BREAK_DELAY_MS,
+        }
+      : undefined;
+  return platform;
+};
 
 const advanceSession = (session: GameSession, totalMs: number, stepMs = 16) => {
   let remainingMs = totalMs;
@@ -34,36 +41,76 @@ const getCoinRewardBlock = (state: any) => {
   return rewardBlock;
 };
 
-const getLauncher = (state: any, kind: 'bouncePod' | 'gasVent') => {
-  const launcherEntry = state.stageRuntime.launchers.find((candidate: any) => candidate.kind === kind);
-  if (!launcherEntry) {
-    throw new Error(`Expected stage to include a ${kind} launcher.`);
+const getSpringPlatform = (state: any, platformId?: string) => {
+  const springPlatform = state.stageRuntime.platforms.find(
+    (platform: any) => platform.kind === 'spring' && (platformId ? platform.id === platformId : true),
+  );
+  if (!springPlatform) {
+    throw new Error(platformId ? `Expected stage to include spring platform ${platformId}.` : 'Expected stage to include a spring platform.');
   }
-
-  const supportPlatform = state.stageRuntime.platforms.find((platform: any) => platform.id === launcherEntry.supportPlatformId);
-  if (!supportPlatform) {
-    throw new Error(`Expected launcher ${launcherEntry.id} to have support.`);
-  }
-
-  return { launcherEntry, supportPlatform };
+  return springPlatform;
 };
 
-const placePlayerAboveLauncher = (state: any, launcherEntry: any, supportPlatform: any, vy = 160) => {
-  state.player.x = launcherEntry.x + Math.min(launcherEntry.width - 12, 12) - state.player.width / 2;
-  state.player.y = supportPlatform.y - state.player.height - 1;
+const placePlayerAbovePlatform = (state: any, platform: any, vy = 160) => {
+  state.player.x = platform.x + Math.min(platform.width - 12, 12) - state.player.width / 2;
+  state.player.y = platform.y - state.player.height - 1;
   state.player.vx = 0;
   state.player.vy = vy;
   state.player.onGround = false;
   state.player.supportPlatformId = null;
 };
 
-const placePlayerOnSupportOutsideLauncher = (state: any, supportPlatform: any) => {
-  state.player.x = supportPlatform.x + supportPlatform.width - state.player.width - 4;
-  state.player.y = supportPlatform.y - state.player.height;
+const placePlayerPastPlatformEdge = (state: any, platform: any) => {
+  state.player.x = platform.x + platform.width + 4;
+  state.player.y = platform.y - state.player.height - 1;
   state.player.vx = 0;
   state.player.vy = 0;
-  state.player.onGround = true;
-  state.player.supportPlatformId = supportPlatform.id;
+  state.player.onGround = false;
+  state.player.supportPlatformId = null;
+};
+
+const createStaticPlatformFixture = (id: string, x: number, y: number, width: number) => ({
+  id,
+  kind: 'static',
+  x,
+  y,
+  width,
+  height: 32,
+  startX: x,
+  startY: y,
+  vx: 0,
+  vy: 0,
+});
+
+const createSpringPlatformFixture = (id: string, x: number, y: number, width: number, boost = 900, cooldownMs = 350) => ({
+  id,
+  kind: 'spring',
+  x,
+  y,
+  width,
+  height: 32,
+  startX: x,
+  startY: y,
+  vx: 0,
+  vy: 0,
+  spring: {
+    boost,
+    cooldownMs,
+    timerMs: 0,
+  },
+});
+
+const withStageFixture = <T>(stageIndex: number, mutate: (stage: any) => void, run: () => T): T => {
+  const originalStage = stageDefinitions[stageIndex];
+  const fixtureStage = JSON.parse(JSON.stringify(originalStage));
+  mutate(fixtureStage);
+  (stageDefinitions as any)[stageIndex] = fixtureStage;
+
+  try {
+    return run();
+  } finally {
+    (stageDefinitions as any)[stageIndex] = originalStage;
+  }
 };
 
 const getGravityCapsuleFixture = (state: any) => {
@@ -97,7 +144,16 @@ const placePlayerInsideField = (state: any, field: any, vy = 0) => {
   state.player.supportPlatformId = null;
 };
 
-const touchGravityCapsuleButton = (state: any, capsule: any) => {
+const placePlayerInsideCapsuleNearLeftWall = (state: any, capsule: any, vy = 0) => {
+  state.player.x = capsule.shell.x + 6;
+  state.player.y = capsule.shell.y + 40;
+  state.player.vx = 0;
+  state.player.vy = vy;
+  state.player.onGround = false;
+  state.player.supportPlatformId = null;
+};
+
+const getGravityCapsuleButtonSupportPlatform = (state: any, capsule: any) => {
   const supportPlatform = state.stageRuntime.platforms.find((platform: any) => {
     const overlap = Math.max(
       0,
@@ -109,6 +165,12 @@ const touchGravityCapsuleButton = (state: any, capsule: any) => {
   if (!supportPlatform) {
     throw new Error('Expected grounded support beneath the sky gravity-room button.');
   }
+
+  return supportPlatform;
+};
+
+const touchGravityCapsuleButton = (state: any, capsule: any) => {
+  const supportPlatform = getGravityCapsuleButtonSupportPlatform(state, capsule);
 
   state.player.x = capsule.button.x + capsule.button.width / 2 - state.player.width / 2;
   state.player.y = supportPlatform.y - state.player.height;
@@ -162,6 +224,104 @@ const createRuntimeMovingPlatform = (
   vy: 0,
   move: { axis: 'y', range, speed, direction: -1 },
 });
+
+const createRuntimeHorizontalMovingPlatform = (
+  id: string,
+  x: number,
+  y: number,
+  width: number,
+  range: number,
+  speed: number,
+  direction = 1,
+): any => ({
+  id,
+  kind: 'moving',
+  x,
+  y,
+  width,
+  height: 20,
+  startX: x,
+  startY: y,
+  vx: 0,
+  vy: 0,
+  move: { axis: 'x', range, speed, direction },
+});
+
+const createRuntimeFallingPlatformFixture = (
+  id: string,
+  x: number,
+  y: number,
+  width: number,
+  triggerDelayMs = 320,
+  stayArmThresholdMs = 120,
+  hopGapThresholdMs = 50,
+): any => ({
+  id,
+  kind: 'falling',
+  x,
+  y,
+  width,
+  height: 32,
+  startX: x,
+  startY: y,
+  vx: 0,
+  vy: 0,
+  fall: {
+    triggerDelayMs,
+    stayArmThresholdMs,
+    hopGapThresholdMs,
+    timerMs: triggerDelayMs,
+    triggered: false,
+    falling: false,
+    accumulatedSupportMs: 0,
+    unsupportedGapMs: 0,
+  },
+});
+
+const createRuntimeHorizontalMovingFallingPlatform = (
+  id: string,
+  x: number,
+  y: number,
+  width: number,
+  range: number,
+  speed: number,
+  direction = 1,
+): any => ({
+  ...createRuntimeFallingPlatformFixture(id, x, y, width),
+  height: 20,
+  move: { axis: 'x', range, speed, direction },
+});
+
+const isolatePlayerPlatformFixture = (state: any, platforms: any[]) => {
+  state.stageRuntime.platforms = platforms;
+  state.stageRuntime.hazards = [];
+  state.stageRuntime.enemies = [];
+  state.stageRuntime.rewardBlocks = [];
+  state.stageRuntime.gravityCapsules = [];
+  state.stageRuntime.gravityFields = [];
+  state.stageRuntime.activationNodes = [];
+  state.stageRuntime.scannerVolumes = [];
+  state.stageRuntime.revealVolumes = [];
+  state.stageRuntime.temporaryBridges = [];
+};
+
+const placePlayerOnSupportedPlatform = (state: any, platform: any) => {
+  state.player.x = platform.x + 8;
+  state.player.y = platform.y - state.player.height;
+  state.player.vx = 0;
+  state.player.vy = 0;
+  state.player.onGround = true;
+  state.player.supportPlatformId = platform.id;
+};
+
+const placePlayerOffPlatformSupport = (state: any, platform: any) => {
+  state.player.x = platform.x + platform.width + 8;
+  state.player.y = platform.y - state.player.height - 1;
+  state.player.vx = 0;
+  state.player.vy = 0;
+  state.player.onGround = false;
+  state.player.supportPlatformId = null;
+};
 
 describe('GameSession regression coverage', () => {
   it('rebuilds fresh starts and auto-advance from stage spawn while checkpoint respawn stays on the checkpoint path', () => {
@@ -220,8 +380,8 @@ describe('GameSession regression coverage', () => {
     expect(afterRespawn.stageIndex).toBe(checkpointRun.stageIndex);
     expect(afterRespawn.activeCheckpointId).toBe(respawnCheckpoint.id);
     expect(afterRespawn.player.dead).toBe(false);
-    expect(afterRespawn.player.x).toBe(respawnCheckpoint.rect.x + 12);
-    expect(afterRespawn.player.y).toBe(respawnCheckpoint.rect.y - afterRespawn.player.height);
+    expect(afterRespawn.player.x).toBe(respawnCheckpoint.respawn.x);
+    expect(afterRespawn.player.y).toBe(respawnCheckpoint.respawn.y);
   });
 
   it('powers the authored magnetic platform on activation-node contact and resets it on restart', () => {
@@ -508,8 +668,159 @@ describe('GameSession regression coverage', () => {
     expect(respawned.activeCheckpointId).toBe(checkpoint.id);
     expect(respawned.player.dead).toBe(false);
     expect(respawned.player.health).toBe(3);
-    expect(respawned.player.x).toBe(checkpoint.rect.x + 12);
-    expect(respawned.player.y).toBe(checkpoint.rect.y - respawned.player.height);
+    expect(respawned.player.x).toBe(checkpoint.respawn.x);
+    expect(respawned.player.y).toBe(checkpoint.respawn.y);
+  });
+
+  it('respawns from the checkpoint grounded support instead of applying a respawn-only Y bandaid', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+    const checkpoint = state.stageRuntime.checkpoints[0];
+
+    state.player.x = checkpoint.rect.x;
+    state.player.y = checkpoint.rect.y;
+    session.update(16, defaultInputState());
+
+    expect(state.activeCheckpointId).toBe(checkpoint.id);
+
+    state.player.health = 1;
+    (session as any).damagePlayer();
+    (session as any).respawnPlayer();
+
+    const respawned = getMutableState(session);
+    const support = respawned.stageRuntime.platforms.find((platform: any) => platform.id === checkpoint.supportPlatformId);
+    expect(support).toBeDefined();
+    expect(respawned.player.x).toBe(checkpoint.respawn.x);
+    expect(respawned.player.y).toBe(support.y - respawned.player.height);
+  });
+
+  it('keeps late-stage checkpoint respawn grounded on its authored support', () => {
+    const session = new GameSession();
+    session.forceStartStage(1);
+
+    const state = getMutableState(session);
+    const checkpoint = state.stageRuntime.checkpoints[state.stageRuntime.checkpoints.length - 1];
+
+    state.player.x = checkpoint.rect.x;
+    state.player.y = checkpoint.rect.y;
+    session.update(16, defaultInputState());
+
+    state.player.health = 1;
+    (session as any).damagePlayer();
+    (session as any).respawnPlayer();
+
+    const respawned = getMutableState(session);
+    const support = respawned.stageRuntime.platforms.find((platform: any) => platform.id === checkpoint.supportPlatformId);
+    expect(respawned.activeCheckpointId).toBe(checkpoint.id);
+    expect(support).toBeDefined();
+    expect(respawned.player.y).toBe(support.y - respawned.player.height);
+    expect(respawned.player.x).toBeGreaterThanOrEqual(support.x);
+    expect(respawned.player.x + respawned.player.width).toBeLessThanOrEqual(support.x + support.width);
+  });
+
+  it('rejects checkpoint and hazard fixtures that depend on runtime normalization', () => {
+    withStageFixture(
+      0,
+      (stage) => {
+        const checkpoint = stage.checkpoints.find((entry: any) => entry.id === 'cp-1');
+        const hazard = stage.hazards.find((entry: any) => entry.id === 'spikes-1');
+        if (!checkpoint || !hazard) {
+          throw new Error('Expected forest checkpoint and hazard fixtures.');
+        }
+
+        checkpoint.rect.y += 4;
+        hazard.rect.y -= 4;
+      },
+      () => {
+        expect(() => new GameSession()).toThrow('Checkpoint is missing grounded visible support at runtime: cp-1');
+      },
+    );
+  });
+
+  it('rejects hazard fixtures that depend on runtime normalization even when checkpoints stay valid', () => {
+    withStageFixture(
+      0,
+      (stage) => {
+        const hazard = stage.hazards.find((entry: any) => entry.id === 'spikes-1');
+        if (!hazard) {
+          throw new Error('Expected forest hazard fixture.');
+        }
+
+        hazard.rect.y -= 4;
+      },
+      () => {
+        expect(() => new GameSession()).toThrow('Hazard is missing grounded visible support at runtime: spikes-1');
+      },
+    );
+  });
+
+  it('rejects grounded enemies that depend on runtime snap-to-support while keeping flyers exempt', () => {
+    withStageFixture(
+      0,
+      (stage) => {
+        const walker = stage.enemies.find((entry: any) => entry.id === 'walker-1');
+        const flyer = stage.enemies.find((entry: any) => entry.id === 'flyer-1');
+        if (!walker || !flyer) {
+          throw new Error('Expected forest walker and flyer fixtures.');
+        }
+
+        walker.position.y += 6;
+        flyer.position.y += 24;
+      },
+      () => {
+        expect(() => new GameSession()).toThrow('Grounded enemy is missing authored flush support at runtime: walker-1');
+      },
+    );
+  });
+
+  it('canonicalizes minor grounded enemy authored drift to resolved support before spawn', () => {
+    withStageFixture(
+      0,
+      (stage) => {
+        const walker = stage.enemies.find((entry: any) => entry.id === 'walker-1');
+        if (!walker) {
+          throw new Error('Expected forest walker fixture.');
+        }
+
+        walker.position.y += 2;
+      },
+      () => {
+        const session = new GameSession();
+        const state = getMutableState(session);
+        const walker = state.stageRuntime.enemies.find((entry: any) => entry.id === 'walker-1');
+        if (!walker) {
+          throw new Error('Expected runtime walker fixture.');
+        }
+
+        expect(walker.supportPlatformId).toBeTruthy();
+        expect(walker.supportY).not.toBeNull();
+        expect(walker.y).toBe(walker.supportY);
+      },
+    );
+  });
+
+  it('rejects turrets that only fit after moving to alternate support', () => {
+    withStageFixture(
+      0,
+      (stage) => {
+        stage.platforms.push({
+          id: 'turret-fallback-support',
+          kind: 'static',
+          x: 5580,
+          y: 470,
+          width: 180,
+          height: 32,
+        });
+        stage.hazards.push({
+          id: 'turret-authored-support-spikes',
+          kind: 'spikes',
+          rect: { x: 5300, y: 454, width: 180, height: 16 },
+        });
+      },
+      () => {
+        expect(() => new GameSession()).toThrow('Turret cannot resolve on authored support without fallback: turret-1');
+      },
+    );
   });
 
   it('resolves stomp defeats immediately without delaying enemy removal', () => {
@@ -1532,6 +1843,117 @@ describe('GameSession regression coverage', () => {
     expect(state.player.supportPlatformId).toBeNull();
   });
 
+  it('keeps skim contact under 120ms from arming falling-platform collapse', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const fallingPlatform = createRuntimeFallingPlatformFixture('timing-skim', 2000, 520, 160, 300, 120, 50);
+    isolatePlayerPlatformFixture(state, [fallingPlatform]);
+    placePlayerOnSupportedPlatform(state, fallingPlatform);
+
+    session.update(112, defaultInputState());
+    placePlayerOffPlatformSupport(state, fallingPlatform);
+    session.update(16, defaultInputState());
+
+    expect(fallingPlatform.fall.triggered).toBe(false);
+    expect(fallingPlatform.fall.falling).toBe(false);
+  });
+
+  it('arms falling-platform collapse after accumulating 120ms of top support contact', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const fallingPlatform = createRuntimeFallingPlatformFixture('timing-arm', 2000, 520, 160, 300, 120, 50);
+    isolatePlayerPlatformFixture(state, [fallingPlatform]);
+    placePlayerOnSupportedPlatform(state, fallingPlatform);
+
+    session.update(120, defaultInputState());
+
+    expect(fallingPlatform.fall.triggered).toBe(true);
+    expect(fallingPlatform.fall.timerMs).toBe(300);
+    expect(fallingPlatform.fall.falling).toBe(false);
+  });
+
+  it('preserves pre-arm support accumulation across unsupported gaps of 50ms or less', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const fallingPlatform = createRuntimeFallingPlatformFixture('timing-hop-small-gap', 2000, 520, 160, 300, 120, 50);
+    isolatePlayerPlatformFixture(state, [fallingPlatform]);
+    placePlayerOnSupportedPlatform(state, fallingPlatform);
+
+    session.update(80, defaultInputState());
+    placePlayerOffPlatformSupport(state, fallingPlatform);
+    session.update(40, defaultInputState());
+    placePlayerOnSupportedPlatform(state, fallingPlatform);
+    session.update(40, defaultInputState());
+
+    expect(fallingPlatform.fall.triggered).toBe(true);
+    expect(fallingPlatform.fall.timerMs).toBe(300);
+  });
+
+  it('resets pre-arm support accumulation after unsupported gaps longer than 50ms', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const fallingPlatform = createRuntimeFallingPlatformFixture('timing-hop-long-gap', 2000, 520, 160, 300, 120, 50);
+    isolatePlayerPlatformFixture(state, [fallingPlatform]);
+    placePlayerOnSupportedPlatform(state, fallingPlatform);
+
+    session.update(80, defaultInputState());
+    placePlayerOffPlatformSupport(state, fallingPlatform);
+    session.update(64, defaultInputState());
+    placePlayerOnSupportedPlatform(state, fallingPlatform);
+    session.update(40, defaultInputState());
+
+    expect(fallingPlatform.fall.triggered).toBe(false);
+    expect(fallingPlatform.fall.accumulatedSupportMs).toBe(40);
+  });
+
+  it('decrements armed collapse timer only while top-surface support contact stays active', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const fallingPlatform = createRuntimeFallingPlatformFixture('timing-armed-pause', 2000, 520, 160, 300, 120, 50);
+    isolatePlayerPlatformFixture(state, [fallingPlatform]);
+    placePlayerOnSupportedPlatform(state, fallingPlatform);
+
+    advanceSession(session, 120, 16);
+    advanceSession(session, 40, 16);
+    expect(fallingPlatform.fall.timerMs).toBe(260);
+
+    placePlayerOffPlatformSupport(state, fallingPlatform);
+    advanceSession(session, 100, 16);
+    expect(fallingPlatform.fall.timerMs).toBe(260);
+
+    placePlayerOnSupportedPlatform(state, fallingPlatform);
+    advanceSession(session, 260, 16);
+    expect(fallingPlatform.fall.falling).toBe(true);
+  });
+
+  it('keeps jump initiation valid while top support remains active on an armed falling platform', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const fallingPlatform = createRuntimeFallingPlatformFixture('timing-jump-valid', 2000, 520, 160, 320, 120, 50);
+    isolatePlayerPlatformFixture(state, [fallingPlatform]);
+    placePlayerOnSupportedPlatform(state, fallingPlatform);
+
+    session.update(120, defaultInputState());
+    session.update(32, defaultInputState());
+    session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
+
+    expect(state.player.vy).toBeLessThan(0);
+    expect(state.player.supportPlatformId).toBeNull();
+    expect(fallingPlatform.fall.triggered).toBe(true);
+  });
+
   it('keeps gravity-room fields active until button contact disables them without changing dash priority', () => {
     const session = new GameSession();
     session.forceStartStage(2);
@@ -1658,6 +2080,531 @@ describe('GameSession regression coverage', () => {
     expect(allowedPlatform.x).toBeLessThan(shellRight);
   });
 
+  it('applies active gravity across the full room interior while keeping enemy gravity unchanged', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    let state = getMutableState(session);
+    const { capsule, antiGravField } = getGravityCapsuleFixture(state);
+
+    state.stageRuntime.enemies.push({
+      id: 'gravity-room-hopper-test',
+      kind: 'hopper',
+      x: capsule.shell.x + 120,
+      y: capsule.shell.y + 84,
+      vx: 0,
+      vy: 0,
+      width: 34,
+      height: 30,
+      alive: true,
+      defeatCause: null,
+      direction: 1,
+      supportY: null,
+      supportPlatformId: null,
+      laneLeft: null,
+      laneRight: null,
+      hop: { intervalMs: 1200, timerMs: 800, impulse: 900, speed: 120, targetPlatformId: null, targetX: null, targetY: null },
+    });
+
+    placePlayerInsideCapsuleNearLeftWall(state, capsule, 220);
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    const enemy = state.stageRuntime.enemies.find((entry: any) => entry.id === 'gravity-room-hopper-test');
+    expect(state.player.gravityFieldId).toBe(antiGravField.id);
+    expect(state.player.gravityFieldKind).toBe('anti-grav-stream');
+    expect(state.player.x).toBeLessThan(antiGravField.x + 40);
+    expect(enemy.vy).toBeGreaterThan(0);
+  });
+
+  it('chooses reachable supported first-hop landing from authored lane instead of defaulting left', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const support = createStaticPlatformFixture('hopper-support', 1920, 540, 180);
+    const leftLanding = createStaticPlatformFixture('hopper-left-landing', 1510, 495, 180);
+    const rightLanding = createStaticPlatformFixture('hopper-right-landing', 2180, 495, 180);
+
+    state.stageRuntime.platforms = [leftLanding, support, rightLanding];
+    state.stageRuntime.hazards = [];
+    state.stageRuntime.enemies = [
+      {
+        id: 'first-hop-hopper',
+        kind: 'hopper',
+        x: 1930,
+        y: support.y - 30,
+        vx: 0,
+        vy: 0,
+        width: 34,
+        height: 30,
+        alive: true,
+        defeatCause: null,
+        direction: -1,
+        supportY: support.y - 30,
+        supportPlatformId: support.id,
+        laneLeft: support.x,
+        laneRight: support.x + support.width - 34,
+        hop: {
+          intervalMs: 1200,
+          timerMs: 1,
+          impulse: 860,
+          speed: 120,
+          committedHops: 0,
+          targetPlatformId: null,
+          targetX: null,
+          targetY: null,
+        },
+      },
+    ];
+
+    session.update(16, defaultInputState());
+
+    const hopper = state.stageRuntime.enemies[0];
+    expect(hopper.hop?.targetPlatformId).toBe(rightLanding.id);
+    expect(hopper.direction).toBe(1);
+    expect(hopper.supportPlatformId).toBeNull();
+  });
+
+  it('keeps grounded hoppers waiting on support when no valid initial landing exists while flyers keep hover behavior', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const support = createStaticPlatformFixture('isolated-support', 1920, 540, 180);
+    state.stageRuntime.platforms = [support];
+    state.stageRuntime.hazards = [];
+    state.stageRuntime.enemies = [
+      {
+        id: 'isolated-hopper',
+        kind: 'hopper',
+        x: 1930,
+        y: support.y - 30,
+        vx: 0,
+        vy: 0,
+        width: 34,
+        height: 30,
+        alive: true,
+        defeatCause: null,
+        direction: -1,
+        supportY: support.y - 30,
+        supportPlatformId: support.id,
+        laneLeft: support.x,
+        laneRight: support.x + support.width - 34,
+        hop: {
+          intervalMs: 1200,
+          timerMs: 1,
+          impulse: 860,
+          speed: 120,
+          committedHops: 0,
+          targetPlatformId: null,
+          targetX: null,
+          targetY: null,
+        },
+      },
+      {
+        id: 'control-flyer',
+        kind: 'flyer',
+        x: 2200,
+        y: 320,
+        vx: 0,
+        vy: 0,
+        width: 34,
+        height: 24,
+        alive: true,
+        defeatCause: null,
+        direction: 1,
+        supportY: null,
+        supportPlatformId: null,
+        laneLeft: null,
+        laneRight: null,
+        flyer: {
+          left: 2200,
+          right: 2360,
+          speed: 90,
+          bobAmp: 12,
+          bobSpeed: 4,
+          bobPhase: 0,
+          originY: 320,
+        },
+      },
+    ];
+
+    advanceSession(session, 160);
+
+    const hopper = state.stageRuntime.enemies.find((enemy: any) => enemy.id === 'isolated-hopper');
+    const flyer = state.stageRuntime.enemies.find((enemy: any) => enemy.id === 'control-flyer');
+
+    expect(hopper.supportPlatformId).toBe(support.id);
+    expect(hopper.y).toBe(hopper.supportY);
+    expect(hopper.vx).toBe(0);
+    expect(hopper.vy).toBe(0);
+    expect(hopper.hop?.targetPlatformId).toBeNull();
+    expect(flyer.supportPlatformId).toBeNull();
+    expect(flyer.y).not.toBe(flyer.flyer.originY);
+  });
+
+  it('lets grounded hoppers keep falling when a missed landing would otherwise need rescue snap', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const targetPlatform = createStaticPlatformFixture('hopper-target', 2180, 495, 180);
+    state.stageRuntime.platforms = [targetPlatform];
+    state.stageRuntime.hazards = [];
+    state.stageRuntime.enemies = [
+      {
+        id: 'falling-hopper',
+        kind: 'hopper',
+        x: 2190,
+        y: 760,
+        vx: 40,
+        vy: 320,
+        width: 34,
+        height: 30,
+        alive: true,
+        defeatCause: null,
+        direction: 1,
+        supportY: null,
+        supportPlatformId: null,
+        laneLeft: null,
+        laneRight: null,
+        hop: {
+          intervalMs: 1200,
+          timerMs: 600,
+          impulse: 860,
+          speed: 120,
+          committedHops: 1,
+          targetPlatformId: targetPlatform.id,
+          targetX: targetPlatform.x + 24,
+          targetY: targetPlatform.y - 30,
+        },
+      },
+    ];
+
+    session.update(16, defaultInputState());
+
+    const hopper = state.stageRuntime.enemies[0];
+    expect(hopper.supportPlatformId).toBeNull();
+    expect(hopper.supportY).toBeNull();
+    expect(hopper.hop?.targetPlatformId).toBeNull();
+    expect(hopper.hop?.targetX).toBeNull();
+    expect(hopper.hop?.targetY).toBeNull();
+    expect(hopper.y).toBeGreaterThan(760);
+    expect(hopper.vy).toBeGreaterThan(320);
+  });
+
+  it('falls from occupied position when authored support motion ends top-surface contact', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const support = createRuntimeHorizontalMovingPlatform('detach-support', 2000, 520, 128, 96, 2250);
+    isolatePlayerPlatformFixture(state, [support]);
+
+    const occupiedX = support.x + 8;
+    state.player.x = occupiedX;
+    state.player.y = support.y - state.player.height + 8;
+    state.player.vx = 1;
+    state.player.vy = 0;
+    state.player.onGround = true;
+    state.player.supportPlatformId = support.id;
+
+    session.update(16, defaultInputState());
+
+    expect(state.player.onGround).toBe(false);
+    expect(state.player.supportPlatformId).toBeNull();
+    expect(state.player.x).toBeCloseTo(occupiedX + 0.016, 2);
+  });
+
+  it('preserves occupied fall position when support-driven detach happens with held horizontal input', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const support = createRuntimeHorizontalMovingPlatform('detach-support', 2000, 520, 128, 96, 2250);
+    isolatePlayerPlatformFixture(state, [support]);
+
+    const occupiedX = support.x + 8;
+    state.player.x = occupiedX;
+    state.player.y = support.y - state.player.height + 8;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    state.player.onGround = true;
+    state.player.supportPlatformId = support.id;
+
+    session.update(16, { ...defaultInputState(), right: true });
+
+    expect(state.player.onGround).toBe(false);
+    expect(state.player.supportPlatformId).toBeNull();
+    expect(state.player.x).toBeGreaterThan(occupiedX);
+  });
+
+  it('still blocks against nearby non-support walls on detach frame', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const support = createRuntimeHorizontalMovingPlatform('detach-support', 2000, 520, 128, 96, 2250);
+    const wall = {
+      ...createStaticPlatformFixture('detach-wall', 2040, support.y - state.player.height + 6, 24),
+      height: state.player.height + 72,
+    };
+    isolatePlayerPlatformFixture(state, [support, wall]);
+
+    state.player.x = support.x + 8;
+    state.player.y = support.y - state.player.height - 4;
+    state.player.vx = 400;
+    state.player.vy = 0;
+    state.player.onGround = true;
+    state.player.supportPlatformId = support.id;
+
+    session.update(16, defaultInputState());
+
+    expect(state.player.onGround).toBe(false);
+    expect(state.player.x).toBe(wall.x - state.player.width);
+  });
+
+  it('keeps detach-frame former-support exemption narrow when detaching from a moving falling platform', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const support = createRuntimeHorizontalMovingFallingPlatform('detach-falling-support', 2000, 520, 128, 96, 2250);
+    const wall = {
+      ...createStaticPlatformFixture('detach-falling-wall', 2040, support.y - state.player.height + 6, 24),
+      height: state.player.height + 72,
+    };
+    isolatePlayerPlatformFixture(state, [support, wall]);
+
+    state.player.x = support.x + 8;
+    state.player.y = support.y - state.player.height - 4;
+    state.player.vx = 400;
+    state.player.vy = 0;
+    state.player.onGround = true;
+    state.player.supportPlatformId = support.id;
+
+    session.update(16, defaultInputState());
+
+    expect(state.player.onGround).toBe(false);
+    expect(state.player.x).toBe(wall.x - state.player.width);
+  });
+
+  it('restores former-support side collisions after detach frame expires', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const support = createRuntimeHorizontalMovingPlatform('detach-support', 2000, 520, 128, 96, 2250);
+    isolatePlayerPlatformFixture(state, [support]);
+
+    state.player.x = support.x + 8;
+    state.player.y = support.y - state.player.height + 8;
+    state.player.vx = 1;
+    state.player.vy = 0;
+    state.player.onGround = true;
+    state.player.supportPlatformId = support.id;
+
+    session.update(16, defaultInputState());
+
+    support.move.speed = 0;
+    support.vx = 0;
+    state.player.x = support.x - state.player.width - 3;
+    state.player.y = support.y - state.player.height + 8;
+    state.player.vx = 260;
+    state.player.vy = 0;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+
+    session.update(16, defaultInputState());
+
+    expect(state.player.x).toBe(support.x - state.player.width);
+  });
+
+  it('keeps former-support side collisions active for non-motion edge detach', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const support = createRuntimeHorizontalMovingPlatform('detach-support', 2000, 520, 128, 0, 2000);
+    isolatePlayerPlatformFixture(state, [support]);
+
+    state.player.x = support.x + support.width - 6;
+    state.player.y = support.y - state.player.height + 8;
+    state.player.vx = -180;
+    state.player.vy = 0;
+    state.player.onGround = true;
+    state.player.supportPlatformId = support.id;
+
+    session.update(16, defaultInputState());
+
+    expect(state.player.onGround).toBe(false);
+    expect(state.player.x).toBe(support.x + support.width);
+  });
+
+  it('keeps coyote timing unchanged after support-driven detach', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    let state = getMutableState(session);
+    const support = createRuntimeHorizontalMovingPlatform('detach-support', 2000, 520, 128, 96, 2250);
+    isolatePlayerPlatformFixture(state, [support]);
+
+    state.player.x = support.x + 8;
+    state.player.y = support.y - state.player.height + 8;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    state.player.onGround = true;
+    state.player.supportPlatformId = support.id;
+    state.player.coyoteMs = 120;
+
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.player.onGround).toBe(false);
+    expect(state.player.coyoteMs).toBe(104);
+
+    session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
+
+    state = getMutableState(session);
+    expect(state.player.vy).toBeLessThan(0);
+  });
+
+  it('keeps enemies trapped at gravity-room side-wall doors in active and disabled states', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    let state = getMutableState(session);
+    const { capsule } = getGravityCapsuleFixture(state);
+    const shellRight = capsule.shell.x + capsule.shell.width;
+
+    state.stageRuntime.enemies.push(
+      {
+        id: 'gravity-room-inside-flyer',
+        kind: 'flyer',
+        x: shellRight - 44,
+        y: capsule.exitDoor.y + 20,
+        vx: 0,
+        vy: 0,
+        width: 34,
+        height: 24,
+        alive: true,
+        defeatCause: null,
+        direction: 1,
+        supportY: null,
+        supportPlatformId: null,
+        laneLeft: null,
+        laneRight: null,
+        flyer: {
+          left: shellRight - 80,
+          right: shellRight + 90,
+          speed: 120,
+          bobAmp: 0,
+          bobSpeed: 0,
+          bobPhase: 0,
+          originY: capsule.exitDoor.y + 20,
+        },
+      },
+      {
+        id: 'gravity-room-outside-flyer',
+        kind: 'flyer',
+        x: capsule.shell.x - 34,
+        y: capsule.entryDoor.y + 20,
+        vx: 0,
+        vy: 0,
+        width: 34,
+        height: 24,
+        alive: true,
+        defeatCause: null,
+        direction: 1,
+        supportY: null,
+        supportPlatformId: null,
+        laneLeft: null,
+        laneRight: null,
+        flyer: {
+          left: capsule.shell.x - 70,
+          right: capsule.shell.x + 70,
+          speed: 120,
+          bobAmp: 0,
+          bobSpeed: 0,
+          bobPhase: 0,
+          originY: capsule.entryDoor.y + 20,
+        },
+      },
+    );
+
+    advanceSession(session, 16);
+
+    state = getMutableState(session);
+    let insideFlyer = state.stageRuntime.enemies.find((entry: any) => entry.id === 'gravity-room-inside-flyer');
+    let outsideFlyer = state.stageRuntime.enemies.find((entry: any) => entry.id === 'gravity-room-outside-flyer');
+    expect(insideFlyer.x + insideFlyer.width).toBeLessThanOrEqual(shellRight);
+    expect(outsideFlyer.x + outsideFlyer.width).toBeLessThanOrEqual(capsule.shell.x);
+
+    state.stageRuntime.gravityCapsules[0].enabled = false;
+    state.stageRuntime.gravityCapsules[0].button.activated = true;
+    insideFlyer.x = shellRight - 40;
+    insideFlyer.direction = 1;
+    outsideFlyer.x = capsule.shell.x - 34;
+    outsideFlyer.direction = 1;
+
+    advanceSession(session, 16);
+
+    state = getMutableState(session);
+    insideFlyer = state.stageRuntime.enemies.find((entry: any) => entry.id === 'gravity-room-inside-flyer');
+    outsideFlyer = state.stageRuntime.enemies.find((entry: any) => entry.id === 'gravity-room-outside-flyer');
+    expect(insideFlyer.x + insideFlyer.width).toBeLessThanOrEqual(shellRight);
+    expect(outsideFlyer.x + outsideFlyer.width).toBeLessThanOrEqual(capsule.shell.x);
+  });
+
+  it('uses inverse jump takeoff while the player hits an active gravity-room button with contained enemies present', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    let state = getMutableState(session);
+    const { capsule, antiGravField } = getGravityCapsuleFixture(state);
+    const buttonSupport = getGravityCapsuleButtonSupportPlatform(state, capsule);
+    const buttonLaneLeft = Math.min(capsule.button.x, capsule.buttonRoute.x) - 36;
+    const containedEnemyId = 'sky-room-walker-1';
+
+    if (!state.stageRuntime.enemies.find((enemy: any) => enemy.id === containedEnemyId)) {
+      throw new Error('Expected authored interior gravity-room enemy fixture.');
+    }
+
+    state.player.x = capsule.button.x - state.player.width - 8;
+    state.player.y = buttonSupport.y - state.player.height;
+    state.player.vx = 180;
+    state.player.vy = 0;
+    state.player.onGround = true;
+    state.player.supportPlatformId = buttonSupport.id;
+
+    session.update(16, { ...defaultInputState(), right: true, jumpHeld: true, jumpPressed: true });
+
+    state = getMutableState(session);
+    expect(state.player.gravityFieldId).toBe(antiGravField.id);
+    expect(state.player.gravityFieldKind).toBe('anti-grav-stream');
+    expect(state.player.vy).toBeCloseTo(640 + state.stage.world.gravity * state.player.gravityScale * 0.016, 4);
+    expect(state.stageRuntime.enemies.find((enemy: any) => enemy.id === containedEnemyId).x + 34).toBeLessThan(buttonLaneLeft);
+
+    state.player.x = capsule.button.x + capsule.button.width / 2 - state.player.width / 2;
+    state.player.y = capsule.button.y + capsule.button.height / 2 - state.player.height / 2;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    (session as any).handleGravityCapsules();
+
+    state = getMutableState(session);
+    expect(state.stageRuntime.gravityCapsules.find((entry: any) => entry.id === capsule.id).enabled).toBe(false);
+    expect(state.stageRuntime.gravityCapsules.find((entry: any) => entry.id === capsule.id).button.activated).toBe(true);
+
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.player.gravityFieldId).toBeNull();
+    expect(state.stageRuntime.enemies.find((enemy: any) => enemy.id === containedEnemyId).x + 34).toBeLessThanOrEqual(
+      capsule.shell.x + capsule.shell.width,
+    );
+  });
+
   it('keeps flyers on their authored side of sealed gravity room shell bands', () => {
     const session = new GameSession();
     session.forceStartStage(2);
@@ -1701,7 +2648,7 @@ describe('GameSession regression coverage', () => {
     expect(flyer.direction).toBe(-1);
   });
 
-  it('keeps spring boosts, launcher impulses, full sticky jumps, and falling-platform escape timing intact inside gravity fields', () => {
+  it('keeps spring boosts, full sticky jumps, and falling-platform escape timing intact inside gravity fields', () => {
     const session = new GameSession();
     let state = getMutableState(session);
     const springPlatform = state.stageRuntime.platforms.find((platform: any) => platform.kind === 'spring');
@@ -1726,19 +2673,11 @@ describe('GameSession regression coverage', () => {
 
     session.forceStartStage(2);
     state = getMutableState(session);
-    const { launcherEntry: gasVent, supportPlatform } = getLauncher(state, 'gasVent');
-    const stickySurface = createTerrainVariantFixture(supportPlatform, 'stickySludge');
-    state.stageRuntime.terrainSurfaces.push(stickySurface);
+    const stickyPlatform = applyTerrainVariantFixture(createStaticPlatformFixture('gravity-sticky-support', 10520, 480, 180), 'stickySludge');
+    state.stageRuntime.platforms.push(stickyPlatform);
     const { capsule, antiGravField } = getGravityCapsuleFixture(state);
 
-    expect(stickySurface.supportPlatformId).toBe(gasVent.supportPlatformId);
-    expect(antiGravField.x).toBeLessThan(gasVent.x + gasVent.width);
-    placePlayerAboveLauncher(state, gasVent, supportPlatform);
-    session.update(16, defaultInputState());
-
-    state = getMutableState(session);
-    expect(state.player.vx).toBeCloseTo(gasVent.direction.x * gasVent.impulse, 5);
-    expect(state.player.vy).toBeCloseTo(gasVent.direction.y * gasVent.impulse, 5);
+    expect(antiGravField.x).toBeLessThan(stickyPlatform.x + stickyPlatform.width);
 
     placePlayerInsideField(state, antiGravField);
     session.update(16, defaultInputState());
@@ -1757,12 +2696,12 @@ describe('GameSession regression coverage', () => {
     state = getMutableState(session);
     expect(state.player.gravityFieldId).toBeNull();
 
-    state.player.x = stickySurface.x + 20;
-    state.player.y = supportPlatform.y - state.player.height;
+  state.player.x = stickyPlatform.x + 20;
+  state.player.y = stickyPlatform.y - state.player.height;
     state.player.vx = 0;
     state.player.vy = 0;
     state.player.onGround = true;
-    state.player.supportPlatformId = supportPlatform.id;
+  state.player.supportPlatformId = stickyPlatform.id;
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
 
     state = getMutableState(session);
@@ -1896,73 +2835,444 @@ describe('GameSession regression coverage', () => {
     ]);
   });
 
-  it('arms brittle floors on first support, allows an expiry jump, and breaks after contact ends', () => {
+  it('uses inverse takeoff for grounded, buffered, and coyote jumps sourced from active gravity-room support', () => {
     const session = new GameSession();
     session.forceStartStage(2);
 
     let state = getMutableState(session);
-    const supportPlatform = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-10340-550');
-    const brittleSurface = createTerrainVariantFixture(supportPlatform, 'brittleCrystal');
-    state.stageRuntime.terrainSurfaces = state.stageRuntime.terrainSurfaces.filter((surface: any) => surface.kind !== 'brittleCrystal');
-    state.stageRuntime.terrainSurfaces.push(brittleSurface);
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+    const support = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-9010-480');
+    const activeJumpVy = 640 + state.stage.world.gravity * -0.38 * 0.016;
 
-    state.player.x = brittleSurface.x + 28 - state.player.width / 2;
-    state.player.y = supportPlatform.y - state.player.height;
+    state.player.x = support.x + 20;
+    state.player.y = support.y - state.player.height;
     state.player.vx = 0;
     state.player.vy = 0;
     state.player.onGround = true;
-    state.player.supportPlatformId = supportPlatform.id;
-
-    (session as any).armBrittleSurface(brittleSurface);
-
-    state = getMutableState(session);
-    const warnedSurface = state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id);
-    expect(warnedSurface.brittle.phase).toBe('warning');
-
-    warnedSurface.brittle.warningMs = 1;
+    state.player.supportPlatformId = support.id;
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
 
     state = getMutableState(session);
-    const brokenSurface = state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id);
-    expect(state.player.vy).toBeLessThan(0);
-    expect(state.player.supportPlatformId).toBeNull();
-    expect(brokenSurface.brittle.phase).toBe('broken');
+    expect(state.player.vy).toBeGreaterThan(0);
+    expect(state.player.vy).toBeCloseTo(activeJumpVy, 4);
+    expect(state.player.onGround).toBe(false);
+
+    session.forceStartStage(2);
+    state = getMutableState(session);
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+    const bufferedSupport = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-9010-480');
+    state.player.x = bufferedSupport.x + 20;
+    state.player.y = bufferedSupport.y - state.player.height - 8;
+    state.player.vx = 0;
+    state.player.vy = 160;
+    session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
+    for (let index = 0; index < 20; index += 1) {
+      session.update(16, { ...defaultInputState(), jumpHeld: true });
+      if (getMutableState(session).player.phaseThroughSupportPlatformId === bufferedSupport.id) {
+        break;
+      }
+    }
+
+    state = getMutableState(session);
+    expect(state.player.vy).toBeGreaterThan(0);
+    expect(state.player.vy).toBeCloseTo(activeJumpVy, 4);
+
+    session.forceStartStage(2);
+    state = getMutableState(session);
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+    const coyoteSupport = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-9010-480');
+    state.player.x = coyoteSupport.x + 20;
+    state.player.y = coyoteSupport.y - state.player.height;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    state.player.onGround = true;
+    state.player.supportPlatformId = coyoteSupport.id;
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+    state.player.y -= 6;
+    state.player.vy = 0;
+    state.player.coyoteMs = 100;
+    session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
+
+    state = getMutableState(session);
+    expect(state.player.vy).toBeGreaterThan(0);
+    expect(state.player.vy).toBeCloseTo(activeJumpVy, 4);
   });
 
-  it('resets brittle floors from warning or broken back to the intact baseline on death respawn, checkpoint respawn, and manual restart', () => {
+  it('lets the player jump downward after active anti-grav carries them onto ceiling support in forest room', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    let state = getMutableState(session);
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+    const { field } = getNamedGravityCapsuleFixture(state, 'forest-anti-grav-canopy-room', 'forest-anti-grav-canopy-lift');
+    const ceilingSupport = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-8990-250-moving');
+
+    if (!ceilingSupport) {
+      throw new Error('Expected forest gravity-room ceiling support fixture.');
+    }
+
+    state.player.x = ceilingSupport.x + 24;
+    state.player.y = ceilingSupport.y + ceilingSupport.height + 2;
+    state.player.vx = 0;
+    state.player.vy = -120;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.player.gravityFieldId).toBe(field.id);
+    expect(state.player.y).toBe(ceilingSupport.y + ceilingSupport.height);
+    expect(state.player.vy).toBe(0);
+
+    session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
+
+    state = getMutableState(session);
+    expect(state.player.vy).toBeGreaterThan(0);
+    expect(state.player.gravityFieldId).toBe(field.id);
+    expect(state.player.y).toBeGreaterThan(ceilingSupport.y + ceilingSupport.height);
+  });
+
+  it('still inverse-jumps in forest room when the player is slightly below ceiling support', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    let state = getMutableState(session);
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+    const { field } = getNamedGravityCapsuleFixture(state, 'forest-anti-grav-canopy-room', 'forest-anti-grav-canopy-lift');
+    const ceilingSupport = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-8990-250-moving');
+
+    if (!ceilingSupport) {
+      throw new Error('Expected forest gravity-room ceiling support fixture.');
+    }
+
+    state.player.x = ceilingSupport.x + 24;
+    state.player.y = ceilingSupport.y + ceilingSupport.height + 12;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+
+    session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
+
+    state = getMutableState(session);
+    expect(state.player.vy).toBeGreaterThan(0);
+    expect(state.player.gravityFieldId).toBe(field.id);
+  });
+
+  it('does not require a second fresh jump press after anti-grav carries the held-jump player into forest ceiling support', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    let state = getMutableState(session);
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+    const ceilingSupport = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-8990-250-moving');
+
+    if (!ceilingSupport) {
+      throw new Error('Expected forest gravity-room ceiling support fixture.');
+    }
+
+    state.player.x = ceilingSupport.x + 24;
+    state.player.y = ceilingSupport.y + ceilingSupport.height + 2;
+    state.player.vx = 0;
+    state.player.vy = -120;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+
+    session.update(16, { ...defaultInputState(), jumpHeld: true });
+    session.update(16, { ...defaultInputState(), jumpHeld: true });
+
+    state = getMutableState(session);
+    expect(state.player.vy).toBeGreaterThan(0);
+  });
+
+  it('inverse-jumps from forest room top shell when the player is pinned to the room roof', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    let state = getMutableState(session);
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+    const { capsule, field } = getNamedGravityCapsuleFixture(state, 'forest-anti-grav-canopy-room', 'forest-anti-grav-canopy-lift');
+
+    state.player.x = capsule.shell.x + 40;
+    state.player.y = capsule.shell.y + 4;
+    state.player.vx = 0;
+    state.player.vy = -120;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+
+    session.update(16, { ...defaultInputState(), jumpHeld: true });
+    session.update(16, { ...defaultInputState(), jumpHeld: true });
+
+    state = getMutableState(session);
+    expect(state.player.vy).toBeGreaterThan(0);
+    expect(state.player.gravityFieldId).toBe(field.id);
+    expect(state.player.y).toBeGreaterThan(capsule.shell.y + 20);
+  });
+
+  it('restores normal jumps inside disabled gravity rooms and leaves contained room walkers on normal patrol', () => {
     const session = new GameSession();
     session.forceStartStage(2);
 
     let state = getMutableState(session);
-    const brittleSurface = state.stageRuntime.terrainSurfaces.find((surface: any) => surface.kind === 'brittleCrystal');
-    const checkpoint = state.stageRuntime.checkpoints[0];
+    const support = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-9010-480');
+    const capsule = state.stageRuntime.gravityCapsules.find((entry: any) => entry.id === 'sky-anti-grav-capsule');
+    const roomWalker = state.stageRuntime.enemies.find((enemy: any) => enemy.id === 'sky-room-walker-1');
+    const startWalkerX = roomWalker.x;
+    const startWalkerY = roomWalker.y;
 
-    brittleSurface.brittle.phase = 'warning';
-    brittleSurface.brittle.warningMs = 1;
-    state.player.health = 1;
-    (session as any).damagePlayer();
-    (session as any).respawnPlayer();
-
-    state = getMutableState(session);
-    expect(state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.phase).toBe('intact');
-    expect(state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.warningMs).toBeGreaterThan(1);
-
-    state.player.x = checkpoint.rect.x;
-    state.player.y = checkpoint.rect.y;
     session.update(16, defaultInputState());
-    state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.phase = 'warning';
-    state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.warningMs = 1;
-    (session as any).respawnPlayer();
+    state = getMutableState(session);
+    const updatedWalker = state.stageRuntime.enemies.find((enemy: any) => enemy.id === 'sky-room-walker-1');
+    expect(updatedWalker.x).not.toBe(startWalkerX);
+    expect(updatedWalker.y).toBe(startWalkerY);
+
+    capsule.enabled = false;
+    capsule.button.activated = true;
+    state.stageRuntime.enemies = [];
+    state.player.x = support.x + 20;
+    state.player.y = support.y - state.player.height;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    state.player.onGround = true;
+    state.player.supportPlatformId = support.id;
+    session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
 
     state = getMutableState(session);
-    expect(state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.phase).toBe('intact');
-    expect(state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.warningMs).toBeGreaterThan(1);
+    const normalJumpVy = -(640 - state.stage.world.gravity * 0.016);
+    expect(state.player.vy).toBeLessThan(0);
+    expect(state.player.vy).toBeCloseTo(normalJumpVy, 4);
+    expect(state.player.gravityFieldId).toBeNull();
+  });
 
-    state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.phase = 'broken';
-    session.restartStage();
-    state = getMutableState(session);
-    expect(state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.phase).toBe('intact');
-    expect(state.stageRuntime.terrainSurfaces.find((surface: any) => surface.id === brittleSurface.id).brittle.warningMs).toBeGreaterThan(1);
+  it('progresses brittle warning only during occupied top support and keeps short hop gaps in one occupancy window', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const brittlePlatform = applyTerrainVariantFixture(createStaticPlatformFixture('brittle-occupancy', 2000, 520, 180), 'brittleCrystal');
+    isolatePlayerPlatformFixture(state, [brittlePlatform]);
+
+    placePlayerOnSupportedPlatform(state, brittlePlatform);
+    session.update(80, defaultInputState());
+
+    expect(brittlePlatform.brittle.phase).toBe('warning');
+    const warningAfterStay = brittlePlatform.brittle.warningMs;
+
+    session.update(80, { ...defaultInputState(), right: true });
+    expect(brittlePlatform.brittle.phase).toBe('warning');
+    expect(brittlePlatform.brittle.warningMs).toBeLessThan(warningAfterStay);
+
+    const warningBeforeGap = brittlePlatform.brittle.warningMs;
+    placePlayerOffPlatformSupport(state, brittlePlatform);
+    session.update(40, defaultInputState());
+    expect(brittlePlatform.brittle.phase).toBe('warning');
+    expect(brittlePlatform.brittle.warningMs).toBe(warningBeforeGap);
+
+    placePlayerOnSupportedPlatform(state, brittlePlatform);
+    session.update(40, defaultInputState());
+
+    expect(brittlePlatform.brittle.phase).toBe('warning');
+    expect(brittlePlatform.brittle.warningMs).toBeLessThan(warningBeforeGap);
+  });
+
+  it('resets brittle warning to intact after unsupported gaps longer than hop-gap threshold before readiness', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const brittlePlatform = applyTerrainVariantFixture(createStaticPlatformFixture('brittle-reset', 2000, 520, 180), 'brittleCrystal');
+    isolatePlayerPlatformFixture(state, [brittlePlatform]);
+
+    placePlayerOnSupportedPlatform(state, brittlePlatform);
+    session.update(80, defaultInputState());
+    expect(brittlePlatform.brittle.phase).toBe('warning');
+
+    placePlayerOffPlatformSupport(state, brittlePlatform);
+    session.update(64, defaultInputState());
+
+    expect(brittlePlatform.brittle.phase).toBe('intact');
+    expect(brittlePlatform.brittle.warningMs).toBe(420);
+
+    placePlayerOnSupportedPlatform(state, brittlePlatform);
+    session.update(16, defaultInputState());
+
+    expect(brittlePlatform.brittle.phase).toBe('warning');
+    expect(brittlePlatform.brittle.warningMs).toBeLessThan(420);
+  });
+
+  it('starts brittle ready timer exactly when warning reaches completion', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const brittlePlatform = applyTerrainVariantFixture(createStaticPlatformFixture('brittle-ready', 2000, 520, 180), 'brittleCrystal');
+    isolatePlayerPlatformFixture(state, [brittlePlatform]);
+
+    placePlayerOnSupportedPlatform(state, brittlePlatform);
+    session.update(16, defaultInputState());
+    brittlePlatform.brittle.warningMs = 8;
+
+    session.update(8, defaultInputState());
+    expect(brittlePlatform.brittle.phase).toBe('ready');
+    expect(brittlePlatform.brittle.readyBreakDelayMs).toBe(BRITTLE_READY_BREAK_DELAY_MS);
+    expect(brittlePlatform.brittle.readyElapsedMs).toBe(0);
+    expect(brittlePlatform.brittle.readyRemainingMs).toBe(BRITTLE_READY_BREAK_DELAY_MS);
+  });
+
+  it('continues brittle ready countdown while player remains supported on the same platform', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const brittlePlatform = applyTerrainVariantFixture(createStaticPlatformFixture('brittle-ready-supported', 2000, 520, 180), 'brittleCrystal');
+    isolatePlayerPlatformFixture(state, [brittlePlatform]);
+
+    placePlayerOnSupportedPlatform(state, brittlePlatform);
+    session.update(16, defaultInputState());
+    brittlePlatform.brittle.warningMs = 1;
+
+    session.update(1, defaultInputState());
+    expect(brittlePlatform.brittle.phase).toBe('ready');
+    expect(state.player.supportPlatformId).toBe(brittlePlatform.id);
+
+    session.update(64, defaultInputState());
+    expect(brittlePlatform.brittle.phase).toBe('ready');
+    expect(brittlePlatform.brittle.readyElapsedMs).toBe(64);
+    expect(brittlePlatform.brittle.readyRemainingMs).toBe(BRITTLE_READY_BREAK_DELAY_MS - 64);
+    expect(state.player.supportPlatformId).toBe(brittlePlatform.id);
+  });
+
+  it('breaks brittle platform on ready timer expiry without requiring leave input', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const brittlePlatform = applyTerrainVariantFixture(createStaticPlatformFixture('brittle-ready-expiry', 2000, 520, 180), 'brittleCrystal');
+    isolatePlayerPlatformFixture(state, [brittlePlatform]);
+
+    placePlayerOnSupportedPlatform(state, brittlePlatform);
+    session.update(16, defaultInputState());
+    brittlePlatform.brittle.warningMs = 1;
+
+    session.update(1, defaultInputState());
+    expect(brittlePlatform.brittle.phase).toBe('ready');
+    expect(state.player.supportPlatformId).toBe(brittlePlatform.id);
+
+    session.update(BRITTLE_READY_BREAK_DELAY_MS, defaultInputState());
+    expect(brittlePlatform.brittle.phase).toBe('broken');
+  });
+
+  it('keeps ready brittle solid and jumpable before expiry, including landing from adjacent platform', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const sourcePlatform = createStaticPlatformFixture('brittle-ready-source', 1840, 520, 140);
+    const brittlePlatform = applyTerrainVariantFixture(createStaticPlatformFixture('brittle-ready-landable', 2020, 520, 160), 'brittleCrystal');
+    isolatePlayerPlatformFixture(state, [sourcePlatform, brittlePlatform]);
+
+    placePlayerOnSupportedPlatform(state, brittlePlatform);
+    session.update(16, defaultInputState());
+    brittlePlatform.brittle.warningMs = 1;
+    session.update(1, defaultInputState());
+    expect(brittlePlatform.brittle.phase).toBe('ready');
+
+    placePlayerOnSupportedPlatform(state, sourcePlatform);
+    session.update(80, defaultInputState());
+    expect(brittlePlatform.brittle.phase).toBe('ready');
+    expect(brittlePlatform.brittle.readyRemainingMs).toBe(BRITTLE_READY_BREAK_DELAY_MS - 80);
+
+    placePlayerAbovePlatform(state, brittlePlatform, 260);
+    advanceSession(session, 32, 8);
+    expect(state.player.onGround).toBe(true);
+    expect(state.player.supportPlatformId).toBe(brittlePlatform.id);
+    expect(brittlePlatform.brittle.phase).toBe('ready');
+
+    session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
+    expect(state.player.vy).toBeLessThan(0);
+    expect(brittlePlatform.brittle.phase).toBe('ready');
+    expect(brittlePlatform.brittle.readyRemainingMs).toBeGreaterThan(0);
+  });
+
+  it('keeps falling-platform contact-aware timing unchanged when brittle platforms are present', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const fallingPlatform = createRuntimeFallingPlatformFixture('falling-with-brittle', 2000, 520, 160, 300, 120, 50);
+    const brittlePlatform = applyTerrainVariantFixture(createStaticPlatformFixture('brittle-sidecar', 2300, 520, 180), 'brittleCrystal');
+    isolatePlayerPlatformFixture(state, [fallingPlatform, brittlePlatform]);
+
+    placePlayerOnSupportedPlatform(state, fallingPlatform);
+    session.update(120, defaultInputState());
+    expect(fallingPlatform.fall.triggered).toBe(true);
+    expect(fallingPlatform.fall.timerMs).toBe(300);
+
+    placePlayerOnSupportedPlatform(state, brittlePlatform);
+    session.update(64, defaultInputState());
+    expect(fallingPlatform.fall.timerMs).toBe(300);
+
+    placePlayerOnSupportedPlatform(state, fallingPlatform);
+    session.update(40, defaultInputState());
+    expect(fallingPlatform.fall.timerMs).toBe(260);
+  });
+
+  it('resets brittle floors from warning or broken back to the intact baseline on death respawn, checkpoint respawn, and manual restart', () => {
+    const originalStage = stageDefinitions[2];
+    const stageFixture = JSON.parse(JSON.stringify(originalStage));
+    const fixturePlatform = stageFixture.platforms.find((platform: any) => platform.id === 'platform-10340-550');
+    fixturePlatform.surfaceMechanic = { kind: 'brittleCrystal' };
+    (stageDefinitions as any)[2] = stageFixture;
+
+    try {
+      const session = new GameSession();
+      session.forceStartStage(2);
+
+      let state = getMutableState(session);
+      const brittlePlatform = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-10340-550');
+      const checkpoint = state.stageRuntime.checkpoints[0];
+
+      brittlePlatform.brittle.phase = 'warning';
+      brittlePlatform.brittle.warningMs = 1;
+      state.player.health = 1;
+      (session as any).damagePlayer();
+      (session as any).respawnPlayer();
+
+      state = getMutableState(session);
+      expect(state.stageRuntime.platforms.find((platform: any) => platform.id === brittlePlatform.id).brittle.phase).toBe('intact');
+      expect(state.stageRuntime.platforms.find((platform: any) => platform.id === brittlePlatform.id).brittle.warningMs).toBeGreaterThan(1);
+
+      state.player.x = checkpoint.rect.x;
+      state.player.y = checkpoint.rect.y;
+      session.update(16, defaultInputState());
+      state.stageRuntime.platforms.find((platform: any) => platform.id === brittlePlatform.id).brittle.phase = 'warning';
+      state.stageRuntime.platforms.find((platform: any) => platform.id === brittlePlatform.id).brittle.warningMs = 1;
+      (session as any).respawnPlayer();
+
+      state = getMutableState(session);
+      expect(state.stageRuntime.platforms.find((platform: any) => platform.id === brittlePlatform.id).brittle.phase).toBe('intact');
+      expect(state.stageRuntime.platforms.find((platform: any) => platform.id === brittlePlatform.id).brittle.warningMs).toBeGreaterThan(1);
+
+      state.stageRuntime.platforms.find((platform: any) => platform.id === brittlePlatform.id).brittle.phase = 'broken';
+      session.restartStage();
+      state = getMutableState(session);
+      expect(state.stageRuntime.platforms.find((platform: any) => platform.id === brittlePlatform.id).brittle.phase).toBe('intact');
+      expect(state.stageRuntime.platforms.find((platform: any) => platform.id === brittlePlatform.id).brittle.warningMs).toBeGreaterThan(1);
+    } finally {
+      (stageDefinitions as any)[2] = originalStage;
+    }
   });
 
   it('reduces sticky grounded acceleration while leaving buffered and coyote jumps unchanged', () => {
@@ -1973,6 +3283,7 @@ describe('GameSession regression coverage', () => {
     state.stageRuntime.enemies = [];
     state.stageRuntime.hazards = [];
     const support = state.stageRuntime.platforms.find((platform: any) => platform.kind === 'static' && platform.width >= 180);
+    const supportId = support.id;
 
     state.player.x = support.x + 32;
     state.player.y = support.y - state.player.height;
@@ -1989,15 +3300,14 @@ describe('GameSession regression coverage', () => {
     state = getMutableState(session);
     state.stageRuntime.enemies = [];
     state.stageRuntime.hazards = [];
-    state.stageRuntime.terrainSurfaces = [
-      createTerrainVariantFixture(support, 'stickySludge'),
-    ];
-    state.player.x = support.x + 32;
-    state.player.y = support.y - state.player.height;
+    const stickySupport = state.stageRuntime.platforms.find((platform: any) => platform.id === supportId);
+    applyTerrainVariantFixture(stickySupport, 'stickySludge');
+    state.player.x = stickySupport.x + 32;
+    state.player.y = stickySupport.y - state.player.height;
     state.player.vx = 0;
     state.player.vy = 0;
     state.player.onGround = true;
-    state.player.supportPlatformId = support.id;
+    state.player.supportPlatformId = stickySupport.id;
     for (let index = 0; index < 5; index += 1) {
       session.update(16, { ...defaultInputState(), right: true });
     }
@@ -2008,11 +3318,10 @@ describe('GameSession regression coverage', () => {
     state = getMutableState(session);
     state.stageRuntime.enemies = [];
     state.stageRuntime.hazards = [];
-    state.stageRuntime.terrainSurfaces = [
-      createTerrainVariantFixture(support, 'stickySludge'),
-    ];
-    state.player.x = support.x + 32;
-    state.player.y = support.y - state.player.height - 8;
+    const bufferedStickySupport = state.stageRuntime.platforms.find((platform: any) => platform.id === supportId);
+    applyTerrainVariantFixture(bufferedStickySupport, 'stickySludge');
+    state.player.x = bufferedStickySupport.x + 32;
+    state.player.y = bufferedStickySupport.y - state.player.height - 8;
     state.player.vx = 0;
     state.player.vy = 160;
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
@@ -2045,11 +3354,10 @@ describe('GameSession regression coverage', () => {
     state.stageRuntime.enemies = [];
     state.stageRuntime.hazards = [];
     const stickySupport = state.stageRuntime.platforms.find((platform: any) => platform.kind === 'static' && platform.width >= 180);
+    const stickySupportId = stickySupport.id;
 
     state.progress.activePowers.dash = true;
-    state.stageRuntime.terrainSurfaces = [
-      createTerrainVariantFixture(stickySupport, 'stickySludge'),
-    ];
+    applyTerrainVariantFixture(stickySupport, 'stickySludge');
     state.player.x = stickySupport.x + 32;
     state.player.y = stickySupport.y - state.player.height;
     state.player.vx = 0;
@@ -2066,26 +3374,25 @@ describe('GameSession regression coverage', () => {
     state = getMutableState(session);
     state.stageRuntime.enemies = [];
     state.stageRuntime.hazards = [];
-    state.stageRuntime.terrainSurfaces = [
-      createTerrainVariantFixture(stickySupport, 'stickySludge'),
-    ];
+    const lowGravityStickySupport = state.stageRuntime.platforms.find((platform: any) => platform.id === stickySupportId);
+    applyTerrainVariantFixture(lowGravityStickySupport, 'stickySludge');
     state.stageRuntime.lowGravityZones = [
       {
         id: 'sticky-zone',
-        x: stickySupport.x - 20,
-        y: stickySupport.y - 220,
+        x: lowGravityStickySupport.x - 20,
+        y: lowGravityStickySupport.y - 220,
         width: 260,
         height: 260,
         gravityScale: 0.4,
       },
     ];
     const lowGravityZone = state.stageRuntime.lowGravityZones[0];
-    state.player.x = stickySupport.x + 32;
-    state.player.y = stickySupport.y - state.player.height;
+    state.player.x = lowGravityStickySupport.x + 32;
+    state.player.y = lowGravityStickySupport.y - state.player.height;
     state.player.vx = 0;
     state.player.vy = 0;
     state.player.onGround = true;
-    state.player.supportPlatformId = stickySupport.id;
+    state.player.supportPlatformId = lowGravityStickySupport.id;
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
     state = getMutableState(session);
     expect(state.player.gravityScale).toBe(lowGravityZone.gravityScale);
@@ -2093,100 +3400,78 @@ describe('GameSession regression coverage', () => {
     expect(state.player.vy).toBeCloseTo(-(640 - state.stage.world.gravity * lowGravityZone.gravityScale * 0.016), 4);
   });
 
-  it('launches from bounce pods and gas vents with distinct impulse and cooldown values', () => {
-    const bounceSession = new GameSession();
-    bounceSession.forceStartStage(0);
-    let state = getMutableState(bounceSession);
-    const { launcherEntry: bouncePod, supportPlatform: bounceSupport } = getLauncher(state, 'bouncePod');
+  it('launches from spring platforms with authored boost, cooldown, and cue values', () => {
+    const session = new GameSession();
+    let state = getMutableState(session);
+    const springPlatform = createSpringPlatformFixture('fixture-spring', 7240, 400, 96, 980, 260);
+    isolatePlayerPlatformFixture(state, [springPlatform]);
 
-    placePlayerAboveLauncher(state, bouncePod, bounceSupport);
-    bounceSession.update(16, defaultInputState());
+    placePlayerAbovePlatform(state, springPlatform);
+    session.update(16, defaultInputState());
 
-    state = getMutableState(bounceSession);
-    expect(state.player.vx).toBeCloseTo(bouncePod.direction.x * bouncePod.impulse, 5);
-    expect(state.player.vy).toBeCloseTo(bouncePod.direction.y * bouncePod.impulse, 5);
-    expect(state.stageRuntime.launchers.find((candidate: any) => candidate.id === bouncePod.id).timerMs).toBe(
-      bouncePod.cooldownMs,
-    );
-    expect(bounceSession.consumeCues()).toContain('bounce-pod');
-
-    const gasSession = new GameSession();
-    gasSession.forceStartStage(2);
-    state = getMutableState(gasSession);
-    const { launcherEntry: gasVent, supportPlatform: gasSupport } = getLauncher(state, 'gasVent');
-
-    placePlayerAboveLauncher(state, gasVent, gasSupport);
-    gasSession.update(16, defaultInputState());
-
-    state = getMutableState(gasSession);
-    expect(state.player.vx).toBeCloseTo(gasVent.direction.x * gasVent.impulse, 5);
-    expect(state.player.vy).toBeCloseTo(gasVent.direction.y * gasVent.impulse, 5);
-    expect(state.stageRuntime.launchers.find((candidate: any) => candidate.id === gasVent.id).timerMs).toBe(
-      gasVent.cooldownMs,
-    );
-    expect(gasSession.consumeCues()).toContain('gas-vent');
-    expect(Math.abs(bouncePod.direction.y * bouncePod.impulse)).toBeGreaterThan(Math.abs(gasVent.direction.y * gasVent.impulse));
-    expect(bouncePod.cooldownMs).toBeLessThan(gasVent.cooldownMs);
+    state = getMutableState(session);
+    const liveSpring = getSpringPlatform(state, springPlatform.id);
+    expect(state.player.vx).toBe(0);
+    expect(state.player.vy).toBe(-springPlatform.spring.boost);
+    expect(liveSpring.spring.timerMs).toBe(springPlatform.spring.cooldownMs);
+    expect(session.consumeCues()).toContain('spring');
   });
 
-  it('suppresses launcher auto-fire on held jump, avoids delayed launch on the same contact, and allows cooldown reuse on a fresh contact', () => {
+  it('suppresses spring auto-fire on held jump and buffered jump until a fresh contact happens', () => {
     const session = new GameSession();
-    session.forceStartStage(0);
-
     let state = getMutableState(session);
-    const { launcherEntry: bouncePod, supportPlatform } = getLauncher(state, 'bouncePod');
+    const springPlatform = createSpringPlatformFixture('fixture-spring', 7200, 400, 180, 900, 260);
+    isolatePlayerPlatformFixture(state, [springPlatform]);
 
-    placePlayerAboveLauncher(state, bouncePod, supportPlatform);
+    placePlayerAbovePlatform(state, springPlatform);
     session.update(16, { ...defaultInputState(), jumpHeld: true });
 
     state = getMutableState(session);
     expect(state.player.onGround).toBe(true);
     expect(state.player.vy).toBe(0);
-    expect(state.player.launcherContactId).toBe(bouncePod.id);
-    expect(state.stageRuntime.launchers.find((candidate: any) => candidate.id === bouncePod.id).timerMs).toBe(0);
+    expect(state.player.springContactPlatformId).toBe(springPlatform.id);
+    expect(getSpringPlatform(state, springPlatform.id).spring.timerMs).toBe(0);
 
     session.update(16, defaultInputState());
     state = getMutableState(session);
     expect(state.player.vy).toBe(0);
-    expect(state.stageRuntime.launchers.find((candidate: any) => candidate.id === bouncePod.id).timerMs).toBe(0);
+    expect(getSpringPlatform(state, springPlatform.id).spring.timerMs).toBe(0);
 
-    placePlayerOnSupportOutsideLauncher(state, supportPlatform);
+    placePlayerPastPlatformEdge(state, springPlatform);
     session.update(16, defaultInputState());
     state = getMutableState(session);
-    expect(state.player.launcherContactId).toBeNull();
+    expect(state.player.springContactPlatformId).toBeNull();
 
-    placePlayerAboveLauncher(state, bouncePod, supportPlatform);
+    placePlayerAbovePlatform(state, springPlatform);
+    state.player.jumpBufferMs = 120;
     session.update(16, defaultInputState());
     state = getMutableState(session);
-    expect(state.player.vy).toBeCloseTo(bouncePod.direction.y * bouncePod.impulse, 5);
+    expect(state.player.vy).toBeLessThan(0);
+    expect(state.player.springContactPlatformId).toBeNull();
+    expect(getSpringPlatform(state, springPlatform.id).spring.timerMs).toBe(0);
 
-    const liveLauncher = state.stageRuntime.launchers.find((candidate: any) => candidate.id === bouncePod.id);
-    liveLauncher.timerMs = 1;
-    placePlayerOnSupportOutsideLauncher(state, supportPlatform);
-    session.update(16, defaultInputState());
-
-    state = getMutableState(session);
-    expect(state.stageRuntime.launchers.find((candidate: any) => candidate.id === bouncePod.id).timerMs).toBe(0);
-
-    placePlayerAboveLauncher(state, bouncePod, supportPlatform);
+    placePlayerPastPlatformEdge(state, springPlatform);
     session.update(16, defaultInputState());
     state = getMutableState(session);
-    expect(state.player.vy).toBeCloseTo(bouncePod.direction.y * bouncePod.impulse, 5);
+    expect(state.player.springContactPlatformId).toBeNull();
+
+    placePlayerAbovePlatform(state, springPlatform);
+    session.update(16, defaultInputState());
+    state = getMutableState(session);
+    expect(state.player.vy).toBe(-springPlatform.spring.boost);
+    expect(getSpringPlatform(state, springPlatform.id).spring.timerMs).toBe(springPlatform.spring.cooldownMs);
   });
 
-  it('composes launcher impulses with low gravity and sticky sludge without damping the initial launch', () => {
+  it('composes spring boosts with low gravity without damping the initial launch', () => {
     const session = new GameSession();
-    session.forceStartStage(2);
-
     let state = getMutableState(session);
-    const { launcherEntry: gasVent, supportPlatform } = getLauncher(state, 'gasVent');
-    const stickySurface = createTerrainVariantFixture(supportPlatform, 'stickySludge');
-    state.stageRuntime.terrainSurfaces.push(stickySurface);
+    const springPlatform = createSpringPlatformFixture('fixture-spring', 9040, 480, 220, 820, 520);
+    isolatePlayerPlatformFixture(state, [springPlatform]);
     state.stageRuntime.lowGravityZones = [
       {
-        id: 'launcher-low-gravity',
-        x: gasVent.x - 80,
-        y: gasVent.y - 220,
+        id: 'spring-low-gravity',
+        x: springPlatform.x - 80,
+        y: springPlatform.y - 220,
         width: 260,
         height: 260,
         gravityScale: 0.45,
@@ -2194,22 +3479,20 @@ describe('GameSession regression coverage', () => {
     ];
     const lowGravityZone = state.stageRuntime.lowGravityZones[0];
 
-    expect(stickySurface.supportPlatformId).toBe(gasVent.supportPlatformId);
-    placePlayerAboveLauncher(state, gasVent, supportPlatform);
+    placePlayerAbovePlatform(state, springPlatform);
     session.update(16, defaultInputState());
 
     state = getMutableState(session);
     expect(state.player.gravityScale).toBe(lowGravityZone.gravityScale);
-    expect(state.player.vx).toBeCloseTo(gasVent.direction.x * gasVent.impulse, 5);
-    expect(state.player.vy).toBeCloseTo(gasVent.direction.y * gasVent.impulse, 5);
+    expect(state.player.vx).toBe(0);
+    expect(state.player.vy).toBe(-springPlatform.spring.boost);
   });
 
-  it('does not interrupt dash on launcher contact and does not retroactively launch until a fresh contact happens', () => {
+  it('does not interrupt dash on spring contact and does not retroactively launch until a fresh contact happens', () => {
     const session = new GameSession();
-    session.forceStartStage(0);
-
     let state = getMutableState(session);
-    const { launcherEntry: bouncePod, supportPlatform } = getLauncher(state, 'bouncePod');
+    const springPlatform = createSpringPlatformFixture('fixture-spring', 7200, 400, 180, 900, 260);
+    isolatePlayerPlatformFixture(state, [springPlatform]);
 
     state.progress.activePowers.dash = true;
     state.player.facing = 1;
@@ -2217,8 +3500,8 @@ describe('GameSession regression coverage', () => {
     state.player.dashCooldownMs = 100;
     state.player.vx = 520;
     state.player.vy = 0;
-    state.player.x = bouncePod.x + Math.min(bouncePod.width - 12, 12) - state.player.width / 2;
-    state.player.y = supportPlatform.y - state.player.height - 8;
+    state.player.x = springPlatform.x + Math.min(springPlatform.width - 12, 12) - state.player.width / 2;
+    state.player.y = springPlatform.y - state.player.height - 8;
     state.player.onGround = false;
     state.player.supportPlatformId = null;
 
@@ -2228,48 +3511,87 @@ describe('GameSession regression coverage', () => {
     expect(state.player.dashTimerMs).toBeGreaterThan(0);
     expect(state.player.vx).toBe(520);
     expect(state.player.vy).toBe(0);
-    expect(state.player.launcherContactId).toBe(bouncePod.id);
-    expect(state.stageRuntime.launchers.find((candidate: any) => candidate.id === bouncePod.id).timerMs).toBe(0);
+    expect(state.player.springContactPlatformId).toBe(springPlatform.id);
+    expect(getSpringPlatform(state, springPlatform.id).spring.timerMs).toBe(0);
 
     state.player.dashTimerMs = 0;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.y = supportPlatform.y - state.player.height;
+    state.player.y = springPlatform.y - state.player.height;
     state.player.onGround = true;
-    state.player.supportPlatformId = supportPlatform.id;
+    state.player.supportPlatformId = springPlatform.id;
     session.update(16, defaultInputState());
 
     state = getMutableState(session);
     expect(state.player.vy).toBe(0);
-    expect(state.stageRuntime.launchers.find((candidate: any) => candidate.id === bouncePod.id).timerMs).toBe(0);
+    expect(getSpringPlatform(state, springPlatform.id).spring.timerMs).toBe(0);
+
+    placePlayerPastPlatformEdge(state, springPlatform);
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.player.springContactPlatformId).toBeNull();
+
+    placePlayerAbovePlatform(state, springPlatform);
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.player.vy).toBe(-springPlatform.spring.boost);
   });
 
-  it('resets launcher readiness on respawn and manual restart', () => {
-    const session = new GameSession();
-    session.forceStartStage(0);
+  it('resets spring readiness on respawn and manual restart', () => {
+    withStageFixture(
+      0,
+      (stage) => {
+        stage.platforms = [
+          {
+            id: 'fixture-spring',
+            kind: 'spring',
+            x: 7200,
+            y: 400,
+            width: 180,
+            height: 32,
+            spring: {
+              boost: 900,
+              cooldownMs: 260,
+            },
+          },
+        ];
+        stage.enemies = [];
+        stage.checkpoints = [];
+        stage.hazards = [];
+      },
+      () => {
+        const session = new GameSession();
+        session.forceStartStage(0);
 
-    let state = getMutableState(session);
-    const { launcherEntry: bouncePod, supportPlatform } = getLauncher(state, 'bouncePod');
+        let state = getMutableState(session);
+        let springPlatform = getSpringPlatform(state, 'fixture-spring');
 
-    placePlayerAboveLauncher(state, bouncePod, supportPlatform);
-    session.update(16, defaultInputState());
+        placePlayerAbovePlatform(state, springPlatform);
+        session.update(16, defaultInputState());
 
-    state = getMutableState(session);
-    expect(state.stageRuntime.launchers.find((candidate: any) => candidate.id === bouncePod.id).timerMs).toBeGreaterThan(0);
+        state = getMutableState(session);
+        expect(getSpringPlatform(state, 'fixture-spring').spring.timerMs).toBeGreaterThan(0);
 
-    state.player.health = 1;
-    (session as any).damagePlayer();
-    (session as any).respawnPlayer();
+        state.player.health = 1;
+        (session as any).damagePlayer();
+        (session as any).respawnPlayer();
 
-    state = getMutableState(session);
-    expect(state.stageRuntime.launchers.find((candidate: any) => candidate.id === bouncePod.id).timerMs).toBe(0);
+        state = getMutableState(session);
+        springPlatform = getSpringPlatform(state, 'fixture-spring');
+        expect(springPlatform.spring.timerMs).toBe(0);
+        expect(state.player.springContactPlatformId).toBeNull();
 
-    placePlayerAboveLauncher(state, state.stageRuntime.launchers.find((candidate: any) => candidate.id === bouncePod.id), supportPlatform);
-    session.update(16, defaultInputState());
-    expect(getMutableState(session).stageRuntime.launchers.find((candidate: any) => candidate.id === bouncePod.id).timerMs).toBeGreaterThan(0);
+        placePlayerAbovePlatform(state, springPlatform);
+        session.update(16, defaultInputState());
+        expect(getSpringPlatform(getMutableState(session), 'fixture-spring').spring.timerMs).toBeGreaterThan(0);
 
-    session.restartStage();
-    state = getMutableState(session);
-    expect(state.stageRuntime.launchers.find((candidate: any) => candidate.id === bouncePod.id).timerMs).toBe(0);
+        session.restartStage();
+        state = getMutableState(session);
+        expect(getSpringPlatform(state, 'fixture-spring').spring.timerMs).toBe(0);
+        expect(state.player.springContactPlatformId).toBeNull();
+      },
+    );
   });
 });

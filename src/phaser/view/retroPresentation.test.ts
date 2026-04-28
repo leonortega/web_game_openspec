@@ -222,9 +222,23 @@ describe('createRetroPresentationPalette', () => {
       },
       140,
     );
+    const repeatedFlyerPose = getRetroEnemyPose(
+      {
+        kind: 'flyer',
+        vx: 0,
+        vy: 0,
+        x: 420,
+        flyer: { left: 0, right: 0, speed: 0, bobAmp: 0, bobSpeed: 0, bobPhase: 0, originY: 0 },
+      },
+      1040,
+    );
     expect(flyerPose.state).toBe('hover');
-    expect(flyerPose.accentOffsetY).toBeGreaterThan(0);
-    expect(flyerPose.accentAlpha).toBeGreaterThan(0.7);
+    expect(flyerPose.accentOffsetY).toBeGreaterThanOrEqual(0);
+    expect(flyerPose.accentOffsetY).toBeLessThanOrEqual(1);
+    expect(flyerPose.accentAlpha).toBeGreaterThanOrEqual(0.24);
+    expect(flyerPose.accentAlpha).toBeLessThanOrEqual(0.38);
+    expect(flyerPose.accentOffsetX).toBe(0);
+    expect(repeatedFlyerPose.accentAlpha).toBe(flyerPose.accentAlpha);
     expect(
       getRetroEnemyPose(
         {

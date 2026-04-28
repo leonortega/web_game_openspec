@@ -3,21 +3,23 @@ import {
   getCollectibleRewardRevealLabel,
   getPowerRevealLabel,
   getPowerShortLabel,
-  isBrittleSurfaceBroken,
-  isBrittleSurfaceWarning,
+  isBrittlePlatformBroken,
+  isBrittlePlatformReady,
+  isBrittlePlatformWarning,
   type GravityCapsuleState,
   type GravityFieldState,
-  type LauncherState,
   type PlatformState,
   type RewardBlockState,
   type RewardRevealState,
-  type TerrainSurfaceState,
 } from '../../game/simulation/state';
 import type { RetroPresentationPalette } from './retroPresentation';
 
 const GRAVITY_ROOM_SHELL_COLOR = 0x2f6f91;
 const GRAVITY_ROOM_SHELL_OUTLINE_COLOR = 0x8fdff2;
 const GRAVITY_ROOM_BUTTON_COLOR = 0xf2c94c;
+
+const surfaceKind = (platform: PlatformState): NonNullable<PlatformState['surfaceMechanic']>['kind'] | undefined =>
+  platform.surfaceMechanic?.kind;
 
 export function platformColor(retroPalette: RetroPresentationPalette, platform: PlatformState): number {
   if (platform.magnetic) {
@@ -73,112 +75,132 @@ export function activationNodeColor(retroPalette: RetroPresentationPalette, node
   return node.activated ? retroPalette.safe : retroPalette.muted;
 }
 
-export function terrainSurfaceColor(retroPalette: RetroPresentationPalette, surface: TerrainSurfaceState): number {
-  if (surface.kind === 'stickySludge') {
+export function terrainVariantColor(retroPalette: RetroPresentationPalette, platform: PlatformState): number {
+  if (surfaceKind(platform) === 'stickySludge') {
     return retroPalette.panelAlt;
   }
 
-  if (isBrittleSurfaceBroken(surface)) {
+  if (isBrittlePlatformBroken(platform)) {
     return retroPalette.muted;
   }
 
-  if (isBrittleSurfaceWarning(surface)) {
+  if (isBrittlePlatformReady(platform)) {
+    return retroPalette.alert;
+  }
+
+  if (isBrittlePlatformWarning(platform)) {
     return retroPalette.warm;
   }
 
   return retroPalette.cool;
 }
 
-export function terrainSurfaceAccentColor(retroPalette: RetroPresentationPalette, surface: TerrainSurfaceState): number {
-  if (surface.kind === 'stickySludge') {
+export function terrainVariantAccentColor(retroPalette: RetroPresentationPalette, platform: PlatformState): number {
+  if (surfaceKind(platform) === 'stickySludge') {
     return retroPalette.warm;
   }
 
-  if (isBrittleSurfaceBroken(surface)) {
+  if (isBrittlePlatformBroken(platform)) {
     return retroPalette.ink;
   }
 
-  if (isBrittleSurfaceWarning(surface)) {
+  if (isBrittlePlatformReady(platform)) {
+    return retroPalette.warm;
+  }
+
+  if (isBrittlePlatformWarning(platform)) {
     return retroPalette.bright;
   }
 
   return retroPalette.border;
 }
 
-export function launcherColor(retroPalette: RetroPresentationPalette, launcherEntry: LauncherState): number {
-  return launcherEntry.kind === 'bouncePod' ? retroPalette.safe : retroPalette.warm;
-}
-
-export function terrainSurfaceAlpha(surface: TerrainSurfaceState): number {
-  if (surface.kind === 'stickySludge') {
+export function terrainVariantAlpha(platform: PlatformState): number {
+  if (surfaceKind(platform) === 'stickySludge') {
     return 0.88;
   }
 
-  return isBrittleSurfaceBroken(surface) ? 0.34 : isBrittleSurfaceWarning(surface) ? 0.96 : 0.82;
+  return isBrittlePlatformBroken(platform) ? 0.34 : isBrittlePlatformReady(platform) ? 0.99 : isBrittlePlatformWarning(platform) ? 0.96 : 0.82;
 }
 
-export function terrainSurfaceStrokeColor(retroPalette: RetroPresentationPalette, surface: TerrainSurfaceState): number {
-  if (surface.kind === 'stickySludge') {
+export function terrainVariantStrokeColor(retroPalette: RetroPresentationPalette, platform: PlatformState): number {
+  if (surfaceKind(platform) === 'stickySludge') {
     return retroPalette.alert;
   }
 
-  return isBrittleSurfaceBroken(surface)
+  return isBrittlePlatformBroken(platform)
     ? retroPalette.border
-    : isBrittleSurfaceWarning(surface)
-      ? retroPalette.bright
-      : retroPalette.cool;
+    : isBrittlePlatformReady(platform)
+      ? retroPalette.alert
+      : isBrittlePlatformWarning(platform)
+        ? retroPalette.bright
+        : retroPalette.cool;
 }
 
-export function terrainSurfaceStrokeAlpha(surface: TerrainSurfaceState): number {
-  if (surface.kind === 'stickySludge') {
+export function terrainVariantStrokeAlpha(platform: PlatformState): number {
+  if (surfaceKind(platform) === 'stickySludge') {
     return 0.42;
   }
 
-  return isBrittleSurfaceBroken(surface) ? 0.18 : isBrittleSurfaceWarning(surface) ? 0.62 : 0.42;
+  return isBrittlePlatformBroken(platform) ? 0.18 : isBrittlePlatformReady(platform) ? 0.8 : isBrittlePlatformWarning(platform) ? 0.62 : 0.42;
 }
 
-export function terrainSurfaceShadowAlpha(surface: TerrainSurfaceState): number {
-  if (surface.kind === 'stickySludge') {
+export function terrainVariantShadowAlpha(platform: PlatformState): number {
+  if (surfaceKind(platform) === 'stickySludge') {
     return 0.2;
   }
 
-  return isBrittleSurfaceBroken(surface) ? 0.08 : 0.2;
+  return isBrittlePlatformBroken(platform) ? 0.08 : 0.2;
 }
 
-export function terrainSurfaceAccentY(surface: TerrainSurfaceState): number {
-  if (surface.kind === 'stickySludge') {
-    return surface.y + Math.max(3, Math.floor(surface.height * 0.34));
+export function terrainVariantAccentY(platform: PlatformState): number {
+  if (surfaceKind(platform) === 'stickySludge') {
+    return platform.y + Math.max(3, Math.floor(platform.height * 0.34));
   }
 
-  return isBrittleSurfaceBroken(surface)
-    ? surface.y + surface.height / 2
-    : surface.y + Math.max(2, Math.floor(surface.height / 2));
+  return isBrittlePlatformBroken(platform)
+    ? platform.y + platform.height / 2
+    : isBrittlePlatformReady(platform)
+      ? platform.y + Math.max(1, Math.floor(platform.height * 0.42))
+      : platform.y + Math.max(2, Math.floor(platform.height / 2));
 }
 
-export function terrainSurfaceAccentWidth(surface: TerrainSurfaceState): number {
-  if (surface.kind === 'stickySludge') {
-    return Math.max(18, surface.width - 10);
+export function terrainVariantAccentWidth(platform: PlatformState): number {
+  if (surfaceKind(platform) === 'stickySludge') {
+    return Math.max(18, platform.width - 10);
   }
 
-  return isBrittleSurfaceBroken(surface) ? Math.max(14, Math.floor(surface.width * 0.62)) : surface.width;
+  return isBrittlePlatformBroken(platform)
+    ? Math.max(14, Math.floor(platform.width * 0.62))
+    : isBrittlePlatformReady(platform)
+      ? Math.max(18, Math.floor(platform.width * 0.9))
+      : platform.width;
 }
 
-export function terrainSurfaceAccentHeight(surface: TerrainSurfaceState): number {
-  if (surface.kind === 'stickySludge') {
-    return Math.min(surface.height, Math.max(5, Math.floor(surface.height * 0.36)));
+export function terrainVariantAccentHeight(platform: PlatformState): number {
+  if (surfaceKind(platform) === 'stickySludge') {
+    return Math.min(platform.height, Math.max(5, Math.floor(platform.height * 0.36)));
   }
 
-  return isBrittleSurfaceBroken(surface)
-    ? Math.min(surface.height, Math.max(3, Math.floor(surface.height * 0.24)))
-    : Math.min(surface.height, 4);
+  return isBrittlePlatformBroken(platform)
+    ? Math.min(platform.height, Math.max(3, Math.floor(platform.height * 0.24)))
+    : isBrittlePlatformReady(platform)
+      ? Math.min(platform.height, Math.max(5, Math.floor(platform.height * 0.4)))
+      : Math.min(platform.height, 4);
 }
 
-export function terrainSurfaceAccentAlpha(surface: TerrainSurfaceState): number {
-  if (surface.kind === 'stickySludge') {
+export function terrainVariantAccentAlpha(platform: PlatformState): number {
+  if (surfaceKind(platform) === 'stickySludge') {
     return 0.72;
   }
 
-  return isBrittleSurfaceBroken(surface) ? 0.22 : isBrittleSurfaceWarning(surface) ? 0.96 : 0.82;
+  return isBrittlePlatformBroken(platform)
+    ? 0.22
+    : isBrittlePlatformReady(platform)
+      ? 1
+      : isBrittlePlatformWarning(platform)
+        ? 0.96
+        : 0.82;
 }
 
 export function gravityFieldColor(

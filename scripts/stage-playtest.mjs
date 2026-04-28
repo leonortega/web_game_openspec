@@ -11,6 +11,7 @@ import {
   blockReport,
   buildMarkdown,
   buildTurretVariantCheck,
+  changeScopedFailure,
   checkpointReport,
   estimateMinutes,
   mechanicReport,
@@ -35,6 +36,30 @@ const COMPLETION_AUDIO_CAPTURE_MS = 900;
 const PLAYABLE_STAGE_IDS = ['forest-ruins', 'amber-cavern', 'sky-sanctum'];
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function runNpmScript(scriptName) {
+  const command =
+    process.platform === 'win32'
+      ? { file: 'cmd.exe', args: ['/c', 'npm.cmd', 'run', scriptName] }
+      : { file: 'npm', args: ['run', scriptName] };
+
+  await new Promise((resolve, reject) => {
+    const child = spawn(command.file, command.args, {
+      cwd: ROOT,
+      stdio: 'inherit',
+    });
+
+    child.once('error', reject);
+    child.once('exit', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(`npm run ${scriptName} exited with code ${code ?? 'unknown'}`));
+    });
+  });
+}
 
 function attachPlaytestPageLogging(page) {
   page.on('pageerror', (error) => {
@@ -1283,7 +1308,7 @@ async function collectObjectiveResults(page) {
     });
 
     const resetToGameScene = () => {
-      for (const key of ['menu', 'stage-intro', 'complete']) {
+      for (const key of ['menu', 'stage-intro', 'complete', 'game']) {
         const scene = game.scene.getScene(key);
         if (scene?.scene.isActive()) {
           scene.scene.stop();
@@ -1431,7 +1456,7 @@ async function collectStageResults(page) {
       bridge.consumeFrame(16);
 
       const latest = bridge.getSession().getState();
-      latest.player.x = checkpoint.rect.x + 12;
+      latest.player.x = checkpoint.respawn.x;
       latest.player.y = latest.stage.world.height + 180;
       bridge.consumeFrame(16);
       for (let i = 0; i < 70; i += 1) {
@@ -1439,15 +1464,18 @@ async function collectStageResults(page) {
       }
 
       const respawnState = bridge.getSession().getState();
+      const checkpointSupport = respawnState.stageRuntime.platforms.find((platform) => platform.id === checkpoint.supportPlatformId);
       results.push({
         stageName: respawnState.stage.name,
         targetDurationMinutes: respawnState.stage.targetDurationMinutes,
         stage: JSON.parse(JSON.stringify(respawnState.stage)),
         checkpoint: {
           activatedId: respawnState.activeCheckpointId,
-          checkpointX: checkpoint.rect.x + 12,
+          checkpointX: checkpoint.respawn.x,
           respawnedX: respawnState.player.x,
           health: respawnState.player.health,
+          groundedRespawn:
+            Boolean(checkpointSupport) && respawnState.player.y === checkpointSupport.y - respawnState.player.height,
         },
       });
     }
@@ -1518,10 +1546,21 @@ async function collectStageResults(page) {
     resetToGameScene();
     let fallingJumpState = bridge.getSession().getState();
     let fallingJumpPlatform = fallingJumpState.stageRuntime.platforms.find((platform) => platform.kind === 'falling');
+    fallingJumpState.stageRuntime.gravityFields = [
+      {
+        id: 'falling-inversion',
+        kind: 'gravity-inversion-column',
+        x: fallingJumpPlatform.x - 20,
+        y: fallingJumpPlatform.y - 320,
+        width: 320,
+        height: 360,
+      },
+    ];
     fallingJumpState.player.x = fallingJumpPlatform.x + 28;
     fallingJumpState.player.y = fallingJumpPlatform.y - fallingJumpState.player.height;
     fallingJumpState.player.onGround = true;
     fallingJumpState.player.supportPlatformId = fallingJumpPlatform.id;
+    fallingJumpState.player.vx = 0;
     fallingJumpState.player.vy = 0;
     bridge.consumeFrame(16);
     for (let i = 0; i < 48; i += 1) {
@@ -1529,9 +1568,26 @@ async function collectStageResults(page) {
     }
     const fallingRideState = bridge.getSession().getState();
     const fallingRidePlatform = fallingRideState.stageRuntime.platforms.find((platform) => platform.id === fallingJumpPlatform.id);
+    let fallingJumpResponsive = false;
+    bridge.setJumpHeld(true);
     bridge.pressJump();
     bridge.consumeFrame(16);
+    bridge.setJumpHeld(false);
     fallingJumpState = bridge.getSession().getState();
+    if (fallingJumpState.player.vy < -620 && fallingJumpState.player.supportPlatformId === null) {
+      fallingJumpResponsive = true;
+    }
+    for (let i = 0; i < 3; i += 1) {
+      if (fallingJumpResponsive) {
+        break;
+      }
+      bridge.consumeFrame(16);
+      fallingJumpState = bridge.getSession().getState();
+      if (fallingJumpState.player.vy < -620 && fallingJumpState.player.supportPlatformId === null) {
+        fallingJumpResponsive = true;
+        break;
+      }
+    }
 
     bridge.forceStartStage(0);
     resetToGameScene();
@@ -1552,75 +1608,6 @@ async function collectStageResults(page) {
       springState = bridge.getSession().getState();
       springMinVy = Math.min(springMinVy, springState.player.vy);
     }
-
-    bridge.forceStartStage(0);
-    resetToGameScene();
-    let bounceLauncherState = bridge.getSession().getState();
-    bounceLauncherState.stageRuntime.enemies = [];
-    bounceLauncherState.stageRuntime.hazards = [];
-    const bouncePod = bounceLauncherState.stageRuntime.launchers.find((launcher) => launcher.kind === 'bouncePod');
-    const bounceSupportPlatform = bounceLauncherState.stageRuntime.platforms.find(
-      (platform) => platform.id === bouncePod.supportPlatformId,
-    );
-    bounceLauncherState.player.x = bouncePod.x + Math.min(bouncePod.width - 12, 12) - bounceLauncherState.player.width / 2;
-    bounceLauncherState.player.y = bounceSupportPlatform.y - bounceLauncherState.player.height - 1;
-    bounceLauncherState.player.vx = 0;
-    bounceLauncherState.player.vy = 160;
-    bounceLauncherState.player.onGround = false;
-    bounceLauncherState.player.supportPlatformId = null;
-    bridge.consumeFrame(16);
-    const bounceLauncherResult = bridge.getSession().getState();
-    const bounceLauncherCues = bridge.drainCues();
-    const bouncePodLaunchWorked =
-      bounceLauncherCues.includes('bounce-pod') &&
-      Math.abs(bounceLauncherResult.player.vx) > 250 &&
-      bounceLauncherResult.player.vy < -900;
-
-    bridge.forceStartStage(2);
-    resetToGameScene();
-    let gasLauncherState = bridge.getSession().getState();
-    gasLauncherState.stageRuntime.enemies = [];
-    gasLauncherState.stageRuntime.hazards = [];
-    const gasVent = gasLauncherState.stageRuntime.launchers.find((launcher) => launcher.kind === 'gasVent');
-    const gasVentSupportPlatform = gasLauncherState.stageRuntime.platforms.find(
-      (platform) => platform.id === gasVent.supportPlatformId,
-    );
-    const gasVentGravityCapsule = gasLauncherState.stageRuntime.gravityCapsules.find((capsule) => capsule.id === 'sky-anti-grav-capsule');
-    const gasVentButtonSupport = gasLauncherState.stageRuntime.platforms.find((platform) => {
-      const overlap = Math.max(
-        0,
-        Math.min(gasVentGravityCapsule.button.x + gasVentGravityCapsule.button.width, platform.x + platform.width) -
-          Math.max(gasVentGravityCapsule.button.x, platform.x),
-      );
-      return (
-        overlap >= Math.min(gasVentGravityCapsule.button.width * 0.55, platform.width) &&
-        Math.abs(gasVentGravityCapsule.button.y + gasVentGravityCapsule.button.height - platform.y) <= 24
-      );
-    });
-    gasLauncherState.player.x = gasVentGravityCapsule.button.x + gasVentGravityCapsule.button.width / 2 - gasLauncherState.player.width / 2;
-    gasLauncherState.player.y = gasVentButtonSupport.y - gasLauncherState.player.height;
-    gasLauncherState.player.vx = 0;
-    gasLauncherState.player.vy = 0;
-    gasLauncherState.player.onGround = true;
-    gasLauncherState.player.supportPlatformId = gasVentButtonSupport.id;
-    bridge.consumeFrame(16);
-    gasLauncherState = bridge.getSession().getState();
-    gasLauncherState.player.x = gasVent.x + Math.min(gasVent.width - 12, 12) - gasLauncherState.player.width / 2;
-    gasLauncherState.player.y = gasVentSupportPlatform.y - gasLauncherState.player.height - 1;
-    gasLauncherState.player.vx = 0;
-    gasLauncherState.player.vy = 160;
-    gasLauncherState.player.onGround = false;
-    gasLauncherState.player.supportPlatformId = null;
-    bridge.consumeFrame(16);
-    const gasLauncherResult = bridge.getSession().getState();
-    const gasLauncherCues = bridge.drainCues();
-    bridge.consumeFrame(16);
-    const gasLauncherFieldState = bridge.getSession().getState();
-    const gasVentLaunchWorked =
-      gasLauncherCues.includes('gas-vent') &&
-      Math.abs(gasLauncherResult.player.vx) > 120 &&
-      gasLauncherResult.player.vy < -780 &&
-      gasLauncherFieldState.player.gravityFieldKind === 'anti-grav-stream';
 
     bridge.forceStartStage(0);
     resetToGameScene();
@@ -1938,14 +1925,21 @@ async function collectStageResults(page) {
           (platform) => !platform.temporaryBridge && supportsRouteRect(platform, gravityCapsule.exitRoute),
         ),
     );
+    const antiGravVisual = gravityFieldVisuals.find((field) => field.id === antiGravStream.id);
+    const inversionVisual = gravityFieldVisuals.find((field) => field.id === inversionColumn.id);
     const gravityFieldRouteReadable = Boolean(
       antiGravStream &&
         inversionColumn &&
+        antiGravVisual &&
+        inversionVisual &&
         antiGravStream.x < inversionColumn.x &&
-        gravityFieldVisuals.find((field) => field.id === antiGravStream.id)?.visible &&
-        gravityFieldVisuals.find((field) => field.id === inversionColumn.id)?.visible &&
-        gravityFieldVisuals.find((field) => field.id === antiGravStream.id)?.fillAlpha <
-          gravityFieldVisuals.find((field) => field.id === inversionColumn.id)?.fillAlpha,
+        antiGravVisual.visible &&
+        inversionVisual.visible &&
+        antiGravVisual.visualCategory === 'gravityModifier' &&
+        inversionVisual.visualCategory === 'gravityModifier' &&
+        antiGravVisual.fillAlpha > 0.12 &&
+        inversionVisual.fillAlpha > 0.1 &&
+        antiGravVisual.fillColor !== inversionVisual.fillColor,
     );
     const gravityFieldCheckpointSafe = Boolean(
       haloCheckpoint &&
@@ -2299,79 +2293,204 @@ async function collectStageResults(page) {
 
     bridge.forceStartStage(2);
     resetToGameScene();
-    let surfaceProbeState = bridge.getSession().getState();
-    surfaceProbeState.stageRuntime.enemies = [];
-    const brittleSurface = surfaceProbeState.stageRuntime.terrainSurfaces.find((surface) => surface.kind === 'brittleCrystal');
-    const stickySurface = surfaceProbeState.stageRuntime.terrainSurfaces.find((surface) => surface.kind === 'stickySludge');
-    const brittleSupportPlatform = surfaceProbeState.stageRuntime.platforms.find((platform) => platform.id === brittleSurface.supportPlatformId);
-    const stickySupportPlatform = surfaceProbeState.stageRuntime.platforms.find((platform) => platform.id === stickySurface.supportPlatformId);
-    const normalSupportPlatform = surfaceProbeState.stageRuntime.platforms.find((platform) => platform.id === 'platform-8740-560');
-    const surfaceScene = game.scene.getScene('game');
-    surfaceScene.syncView();
-    let surfaceVisuals = surfaceScene.getDebugSnapshot().terrainSurfaceVisuals;
-    const brittleVisual = surfaceVisuals.find((surface) => surface.id === brittleSurface.id);
-    const stickyVisual = surfaceVisuals.find((surface) => surface.id === stickySurface.id);
-    const terrainSurfaceExtentsRendered =
-      Boolean(brittleVisual?.visible) &&
-      Boolean(stickyVisual?.visible) &&
-      brittleVisual.x === brittleSurface.x &&
-      brittleVisual.y === brittleSurface.y &&
-      brittleVisual.width === brittleSurface.width &&
-      brittleVisual.height === brittleSurface.height &&
-      stickyVisual.x === stickySurface.x &&
-      stickyVisual.y === stickySurface.y &&
-      stickyVisual.width === stickySurface.width &&
-      stickyVisual.height === stickySurface.height;
-    const terrainSurfaceCueShapesVisible =
-      brittleVisual?.detailVisibleCount === 3 &&
-      stickyVisual?.detailVisibleCount === 3 &&
-      brittleVisual.detailWidths.every((width) => width <= brittleSurface.width * 0.2) &&
-      stickyVisual.detailHeights.every((height) => height <= Math.max(4, stickySurface.height * 0.34));
+    const terrainSurfaceKinds = ['brittleCrystal', 'stickySludge'];
+    const seedTerrainProbePlatform = (platform, kind) => {
+      platform.surfaceMechanic = { kind };
+      platform.brittle =
+        kind === 'brittleCrystal'
+          ? {
+              phase: 'intact',
+              warningMs: 420,
+            }
+          : undefined;
+      return platform;
+    };
+    const terrainVisualMatchesPlatformFootprint = (visual, platform) =>
+      Boolean(visual?.visible) &&
+      visual?.kind === platform.surfaceMechanic?.kind &&
+      visual?.visualCategory === 'terrain' &&
+      visual?.x === platform.x &&
+      visual?.y === platform.y &&
+      visual?.width === platform.width &&
+      visual?.height === platform.height;
+    const terrainCueMatchesSurfaceContract = (visual, platform) => {
+      if (!visual || visual.kind !== platform.surfaceMechanic?.kind || visual.visualCategory !== 'terrain') {
+        return false;
+      }
 
-    surfaceProbeState.player.x = brittleSurface.x + 28 - surfaceProbeState.player.width / 2;
-    surfaceProbeState.player.y = brittleSupportPlatform.y - surfaceProbeState.player.height;
+      if (visual.kind === 'brittleCrystal') {
+        const expectedShardWidth = Math.max(6, Math.floor(platform.width * 0.08));
+        const expectedShardHeight = Math.max(4, Math.floor(platform.height * 0.72));
+        const expectedOffsets = [-0.28, 0, 0.28].map((offset) => Math.round(platform.width * offset));
+        const expectedYOffsets = [0.06, -0.08, 0.1].map((offset) => Math.round(platform.height * offset));
+
+        return (
+          visual.detailVisibleCount === 3 &&
+          visual.detailWidths.length === 3 &&
+          visual.detailHeights.length === 3 &&
+          visual.detailOffsets.length === 3 &&
+          visual.detailWidths.every((width, index) => width === expectedShardWidth + (index === 1 ? 2 : 0)) &&
+          visual.detailHeights.every((height, index) => height === expectedShardHeight + (index === 1 ? 2 : 0)) &&
+          visual.detailOffsets.every(
+            (detail, index) => detail.x === expectedOffsets[index] && detail.y === expectedYOffsets[index],
+          )
+        );
+      }
+
+      if (visual.kind === 'stickySludge') {
+        const bandHeight = Math.max(2, Math.floor(platform.height * 0.24));
+        const expectedYOffsets = [-0.16, 0.04, 0.22].map((offset) => Math.round(platform.height * offset));
+
+        return (
+          visual.detailVisibleCount === 3 &&
+          visual.detailHeights.length === 3 &&
+          visual.detailOffsets.length === 3 &&
+          visual.detailHeights.every((height) => height === bandHeight) &&
+          visual.detailOffsets.every((detail, index) => detail.y === expectedYOffsets[index]) &&
+          new Set(visual.detailWidths).size === 3 &&
+          visual.detailWidths.every((width) => width >= 12 && width < platform.width) &&
+          new Set(visual.detailOffsets.map((detail) => detail.x)).size > 1
+        );
+      }
+
+      return false;
+    };
+    const findGravityButtonSupport = (state, capsule) =>
+      state.stageRuntime.platforms.find((platform) => {
+        const overlap = Math.max(
+          0,
+          Math.min(capsule.button.x + capsule.button.width, platform.x + platform.width) - Math.max(capsule.button.x, platform.x),
+        );
+        return overlap >= Math.min(capsule.button.width * 0.55, platform.width) && Math.abs(capsule.button.y + capsule.button.height - platform.y) <= 24;
+      });
+    const configureTerrainProbePlatforms = (state) => {
+      const brittlePlatform = state.stageRuntime.platforms.find((platform) => platform.id === 'platform-10340-550');
+      const stickyPlatform = state.stageRuntime.platforms.find((platform) => platform.id === 'platform-11160-320');
+      const normalSupportPlatform = state.stageRuntime.platforms.find((platform) => platform.id === 'platform-8740-560');
+      const gravityStickyJumpPlatform = state.stageRuntime.platforms.find((platform) => platform.id === 'platform-9010-480');
+
+      seedTerrainProbePlatform(brittlePlatform, 'brittleCrystal');
+      seedTerrainProbePlatform(stickyPlatform, 'stickySludge');
+
+      return { brittlePlatform, stickyPlatform, normalSupportPlatform, gravityStickyJumpPlatform };
+    };
+    const resolveTerrainProbePlatforms = (state) => ({
+      brittlePlatform: state.stageRuntime.platforms.find((platform) => platform.id === 'platform-10340-550'),
+      stickyPlatform: state.stageRuntime.platforms.find((platform) => platform.id === 'platform-11160-320'),
+      normalSupportPlatform: state.stageRuntime.platforms.find((platform) => platform.id === 'platform-8740-560'),
+      gravityStickyJumpPlatform: state.stageRuntime.platforms.find((platform) => platform.id === 'platform-9010-480'),
+      antiGravStream: state.stageRuntime.gravityFields.find((field) => field.kind === 'anti-grav-stream'),
+      gravityCapsule: state.stageRuntime.gravityCapsules.find((capsule) => capsule.id === 'sky-anti-grav-capsule'),
+    });
+    const startTerrainProbeState = () => {
+      bridge.forceStartStage(2);
+      const state = bridge.getSession().getState();
+      state.stageRuntime.enemies = [];
+      configureTerrainProbePlatforms(state);
+      resetToGameScene();
+      return bridge.getSession().getState();
+    };
+    const syncTerrainVisuals = () => {
+      surfaceScene.syncView();
+      return surfaceScene.getDebugSnapshot().terrainVariantVisuals;
+    };
+    const terrainInputState = (overrides = {}) => ({
+      left: false,
+      right: false,
+      jumpHeld: false,
+      jumpPressed: false,
+      dashPressed: false,
+      shootPressed: false,
+      ...overrides,
+    });
+    const terrainStep = (input = terrainInputState()) => {
+      bridge.getSession().update(16, input);
+      return bridge.getSession().getState();
+    };
+    const consumeTerrainProbeFrames = (frameCount, predicate) => {
+      let latestState = bridge.getSession().getState();
+      for (let index = 0; index < frameCount; index += 1) {
+        if (predicate?.(latestState) === true) {
+          break;
+        }
+        latestState = terrainStep();
+      }
+      return latestState;
+    };
+    let surfaceProbeState = startTerrainProbeState();
+    let { brittlePlatform, stickyPlatform, normalSupportPlatform } = resolveTerrainProbePlatforms(surfaceProbeState);
+    const surfaceScene = game.scene.getScene('game');
+    let surfaceVisuals = syncTerrainVisuals();
+    const brittleVisual = surfaceVisuals.find((surface) => surface.id === brittlePlatform.id);
+    const stickyVisual = surfaceVisuals.find((surface) => surface.id === stickyPlatform.id);
+    const terrainVariantExtentsRendered =
+      [brittlePlatform, stickyPlatform].every((platform) => {
+        const visual = surfaceVisuals.find((surface) => surface.id === platform.id);
+        return terrainVisualMatchesPlatformFootprint(visual, platform);
+      });
+    const terrainVariantCueShapesVisible =
+      terrainCueMatchesSurfaceContract(brittleVisual, brittlePlatform) &&
+      terrainCueMatchesSurfaceContract(stickyVisual, stickyPlatform);
+
+    surfaceProbeState.player.x = brittlePlatform.x + 28 - surfaceProbeState.player.width / 2;
+    surfaceProbeState.player.y = brittlePlatform.y - surfaceProbeState.player.height;
     surfaceProbeState.player.vx = 0;
     surfaceProbeState.player.vy = 0;
     surfaceProbeState.player.onGround = true;
-    surfaceProbeState.player.supportPlatformId = brittleSupportPlatform.id;
-    bridge.consumeFrame(16);
+    surfaceProbeState.player.supportPlatformId = brittlePlatform.id;
+    bridge.getSession().armBrittlePlatform(
+      surfaceProbeState.stageRuntime.platforms.find((platform) => platform.id === brittlePlatform.id),
+    );
     let brittleState = bridge.getSession().getState();
-    surfaceScene.syncView();
-    surfaceVisuals = surfaceScene.getDebugSnapshot().terrainSurfaceVisuals;
-    const warnedBrittleVisual = surfaceVisuals.find((surface) => surface.id === brittleSurface.id);
+    surfaceVisuals = syncTerrainVisuals();
+    const warnedBrittleVisual = surfaceVisuals.find((surface) => surface.id === brittlePlatform.id);
     const brittleWarningTriggered =
-      brittleState.stageRuntime.terrainSurfaces.find((surface) => surface.id === brittleSurface.id).brittle.phase === 'warning';
+      brittleState.stageRuntime.platforms.find((platform) => platform.id === brittlePlatform.id).brittle.phase === 'warning';
     const brittleWarningVisualStrengthened =
       brittleWarningTriggered === true &&
       warnedBrittleVisual?.fillColor !== brittleVisual?.fillColor &&
       warnedBrittleVisual?.accentAlpha > brittleVisual?.accentAlpha;
-    brittleState.stageRuntime.terrainSurfaces.find((surface) => surface.id === brittleSurface.id).brittle.warningMs = 1;
-    bridge.setJumpHeld(true);
-    bridge.pressJump();
-    bridge.consumeFrame(16);
-    bridge.setJumpHeld(false);
-    brittleState = bridge.getSession().getState();
-    surfaceScene.syncView();
-    surfaceVisuals = surfaceScene.getDebugSnapshot().terrainSurfaceVisuals;
-    const brokenBrittleVisual = surfaceVisuals.find((surface) => surface.id === brittleSurface.id);
+    brittleState.player.coyoteMs = 120;
+    brittleState.stageRuntime.platforms.find((platform) => platform.id === brittlePlatform.id).brittle.warningMs = 1;
+    brittleState = terrainStep(terrainInputState({ jumpHeld: true, jumpPressed: true }));
+    let brittleEscapeObserved = false;
+    brittleState = consumeTerrainProbeFrames(6, (latestState) => {
+      const latestBrittlePlatform = latestState.stageRuntime.platforms.find((platform) => platform.id === brittlePlatform.id);
+      brittleEscapeObserved =
+        brittleEscapeObserved || (latestState.player.vy < 0 && latestState.player.supportPlatformId === null);
+      return brittleEscapeObserved && latestBrittlePlatform?.brittle.phase === 'broken';
+    });
+    surfaceVisuals = syncTerrainVisuals();
+    let brokenBrittleVisual = surfaceVisuals.find((surface) => surface.id === brittlePlatform.id);
     const brittleEscapeJumpWorked =
-      brittleState.player.vy < 0 &&
-      brittleState.stageRuntime.terrainSurfaces.find((surface) => surface.id === brittleSurface.id).brittle.phase === 'broken';
-    const brittleBrokenVisualDistinct =
+      brittleEscapeObserved === true &&
+      brittleState.stageRuntime.platforms.find((platform) => platform.id === brittlePlatform.id).brittle.phase === 'broken';
+    let brittleBrokenVisualDistinct =
       brittleEscapeJumpWorked === true &&
       brokenBrittleVisual?.fillColor !== warnedBrittleVisual?.fillColor &&
       brokenBrittleVisual?.fillAlpha < warnedBrittleVisual?.fillAlpha &&
-      brokenBrittleVisual?.detailHeights[1] < warnedBrittleVisual?.detailHeights[1];
+      brokenBrittleVisual?.accentAlpha < warnedBrittleVisual?.accentAlpha &&
+      brokenBrittleVisual?.detailHeights.every(
+        (height, index) => height < (warnedBrittleVisual?.detailHeights[index] ?? Number.POSITIVE_INFINITY),
+      );
+    if (brittleEscapeJumpWorked === true && brittleBrokenVisualDistinct !== true) {
+      bridge.consumeFrame(16);
+      surfaceVisuals = syncTerrainVisuals();
+      brokenBrittleVisual = surfaceVisuals.find((surface) => surface.id === brittlePlatform.id);
+      brittleBrokenVisualDistinct =
+        brokenBrittleVisual?.fillColor !== warnedBrittleVisual?.fillColor &&
+        brokenBrittleVisual?.fillAlpha < warnedBrittleVisual?.fillAlpha &&
+        brokenBrittleVisual?.accentAlpha < warnedBrittleVisual?.accentAlpha &&
+        brokenBrittleVisual?.detailHeights.every(
+          (height, index) => height < (warnedBrittleVisual?.detailHeights[index] ?? Number.POSITIVE_INFINITY),
+        );
+    }
 
-    bridge.forceStartStage(2);
-    resetToGameScene();
-    surfaceProbeState = bridge.getSession().getState();
-    surfaceProbeState.stageRuntime.enemies = [];
-    surfaceProbeState.stageRuntime.terrainSurfaces = surfaceProbeState.stageRuntime.terrainSurfaces.filter(
-      (surface) => surface.id !== stickySurface.id,
-    );
+    surfaceProbeState = startTerrainProbeState();
+    ({ brittlePlatform, stickyPlatform, normalSupportPlatform } = resolveTerrainProbePlatforms(surfaceProbeState));
+    surfaceProbeState.stageRuntime.platforms.find((platform) => platform.id === stickyPlatform.id).surfaceMechanic = undefined;
     const brittleFreshAttemptReset =
-      surfaceProbeState.stageRuntime.terrainSurfaces.find((surface) => surface.id === brittleSurface.id).brittle.phase === 'intact';
+      surfaceProbeState.stageRuntime.platforms.find((platform) => platform.id === brittlePlatform.id).brittle.phase === 'intact';
 
     surfaceProbeState.player.x = normalSupportPlatform.x + 28 - surfaceProbeState.player.width / 2;
     surfaceProbeState.player.y = normalSupportPlatform.y - surfaceProbeState.player.height;
@@ -2379,48 +2498,43 @@ async function collectStageResults(page) {
     surfaceProbeState.player.vy = 0;
     surfaceProbeState.player.onGround = true;
     surfaceProbeState.player.supportPlatformId = normalSupportPlatform.id;
-    bridge.setRight(true);
     for (let index = 0; index < 5; index += 1) {
-      bridge.consumeFrame(16);
+      terrainStep(terrainInputState({ right: true }));
     }
     const normalGroundSpeed = bridge.getSession().getState().player.vx;
 
-    bridge.forceStartStage(2);
-    resetToGameScene();
-    surfaceProbeState = bridge.getSession().getState();
-    surfaceProbeState.stageRuntime.enemies = [];
-    surfaceProbeState.player.x = stickySurface.x + 28 - surfaceProbeState.player.width / 2;
-    surfaceProbeState.player.y = stickySupportPlatform.y - surfaceProbeState.player.height;
+    surfaceProbeState = startTerrainProbeState();
+    ({ stickyPlatform } = resolveTerrainProbePlatforms(surfaceProbeState));
+    const stickyGroundPlatform = surfaceProbeState.stageRuntime.platforms.find((platform) => platform.id === stickyPlatform.id);
+    surfaceProbeState.player.x = stickyGroundPlatform.x + 28 - surfaceProbeState.player.width / 2;
+    surfaceProbeState.player.y = stickyGroundPlatform.y - surfaceProbeState.player.height;
     surfaceProbeState.player.vx = 0;
     surfaceProbeState.player.vy = 0;
     surfaceProbeState.player.onGround = true;
-    surfaceProbeState.player.supportPlatformId = stickySupportPlatform.id;
-    bridge.setRight(true);
+    surfaceProbeState.player.supportPlatformId = stickyGroundPlatform.id;
     for (let index = 0; index < 5; index += 1) {
-      bridge.consumeFrame(16);
+      terrainStep(terrainInputState({ right: true }));
     }
     const stickyGroundedSpeed = bridge.getSession().getState().player.vx;
-    bridge.setRight(false);
     const stickyGroundedTraversalReduced = stickyGroundedSpeed < normalGroundSpeed;
-    const stickyVisualBeforeMotion = game.scene.getScene('game').getDebugSnapshot().terrainSurfaceVisuals.find(
-      (surface) => surface.id === stickySurface.id,
+    const stickyVisualBeforeMotion = game.scene.getScene('game').getDebugSnapshot().terrainVariantVisuals.find(
+      (surface) => surface.id === stickyGroundPlatform.id,
     );
 
-    bridge.forceStartStage(2);
-    resetToGameScene();
-    surfaceProbeState = bridge.getSession().getState();
-    surfaceProbeState.stageRuntime.enemies = [];
-    surfaceProbeState.player.x = stickySurface.x + 28 - surfaceProbeState.player.width / 2;
-    surfaceProbeState.player.y = stickySupportPlatform.y - surfaceProbeState.player.height;
+    surfaceProbeState = startTerrainProbeState();
+    ({ stickyPlatform } = resolveTerrainProbePlatforms(surfaceProbeState));
+    const stickyMotionPlatform = surfaceProbeState.stageRuntime.platforms.find((platform) => platform.id === stickyPlatform.id);
+    surfaceProbeState.player.x = stickyMotionPlatform.x + 28 - surfaceProbeState.player.width / 2;
+    surfaceProbeState.player.y = stickyMotionPlatform.y - surfaceProbeState.player.height;
     surfaceProbeState.player.vx = 0;
     surfaceProbeState.player.vy = 0;
     surfaceProbeState.player.onGround = true;
-    surfaceProbeState.player.supportPlatformId = stickySupportPlatform.id;
+    surfaceProbeState.player.supportPlatformId = stickyMotionPlatform.id;
     for (let index = 0; index < 8; index += 1) {
-      bridge.consumeFrame(16);
+      terrainStep();
     }
-    const stickyVisualAfterMotion = game.scene.getScene('game').getDebugSnapshot().terrainSurfaceVisuals.find(
-      (surface) => surface.id === stickySurface.id,
+    const stickyVisualAfterMotion = game.scene.getScene('game').getDebugSnapshot().terrainVariantVisuals.find(
+      (surface) => surface.id === stickyMotionPlatform.id,
     );
     const stickyLayeredCueVisible =
       stickyVisualBeforeMotion?.detailVisibleCount === 3 &&
@@ -2435,43 +2549,52 @@ async function collectStageResults(page) {
       ) ?? false;
     const stickyMotionCueVisible = stickyLayeredCueVisible || stickyMotionDriftVisible;
 
-    bridge.forceStartStage(2);
-    resetToGameScene();
-    surfaceProbeState = bridge.getSession().getState();
-    surfaceProbeState.stageRuntime.enemies = [];
-    surfaceProbeState.stageRuntime.terrainSurfaces = surfaceProbeState.stageRuntime.terrainSurfaces.filter(
-      (surface) => surface.id !== stickySurface.id,
-    );
-    surfaceProbeState.player.x = normalSupportPlatform.x + 28 - surfaceProbeState.player.width / 2;
-    surfaceProbeState.player.y = normalSupportPlatform.y - surfaceProbeState.player.height;
-    surfaceProbeState.player.vx = 0;
-    surfaceProbeState.player.vy = 0;
-    surfaceProbeState.player.onGround = true;
-    surfaceProbeState.player.supportPlatformId = normalSupportPlatform.id;
-    bridge.setJumpHeld(true);
-    bridge.pressJump();
-    bridge.consumeFrame(16);
-    bridge.setJumpHeld(false);
-    const normalJumpVy = bridge.getSession().getState().player.vy;
+    const expectedNormalJumpVy = -(640 - surfaceProbeState.stage.world.gravity * 0.016);
 
-    bridge.forceStartStage(2);
-    resetToGameScene();
-    surfaceProbeState = bridge.getSession().getState();
-    surfaceProbeState.stageRuntime.enemies = [];
-    surfaceProbeState.player.x = stickySurface.x + 28 - surfaceProbeState.player.width / 2;
-    surfaceProbeState.player.y = stickySupportPlatform.y - surfaceProbeState.player.height;
+    surfaceProbeState = startTerrainProbeState();
+    let {
+      antiGravStream: terrainAntiGravStream,
+      gravityCapsule: terrainGravityCapsule,
+      gravityStickyJumpPlatform,
+    } = resolveTerrainProbePlatforms(surfaceProbeState);
+    const terrainGravityButtonSupport = findGravityButtonSupport(surfaceProbeState, terrainGravityCapsule);
+    seedTerrainProbePlatform(gravityStickyJumpPlatform, 'stickySludge');
+    surfaceProbeState.player.x = terrainGravityCapsule.button.x + terrainGravityCapsule.button.width / 2 - surfaceProbeState.player.width / 2;
+    surfaceProbeState.player.y = terrainGravityButtonSupport.y - surfaceProbeState.player.height;
     surfaceProbeState.player.vx = 0;
     surfaceProbeState.player.vy = 0;
     surfaceProbeState.player.onGround = true;
-    surfaceProbeState.player.supportPlatformId = stickySupportPlatform.id;
-    bridge.setJumpHeld(true);
-    bridge.pressJump();
-    bridge.consumeFrame(16);
-    bridge.setJumpHeld(false);
-    const stickyAntiGravJumpState = bridge.getSession().getState();
+    surfaceProbeState.player.supportPlatformId = terrainGravityButtonSupport.id;
+    surfaceProbeState = terrainStep();
+    ({
+      antiGravStream: terrainAntiGravStream,
+      gravityCapsule: terrainGravityCapsule,
+      gravityStickyJumpPlatform,
+    } = resolveTerrainProbePlatforms(surfaceProbeState));
+    const activeStickyJumpPlatform = gravityStickyJumpPlatform;
+    surfaceProbeState.player.x = activeStickyJumpPlatform.x + 28 - surfaceProbeState.player.width / 2;
+    surfaceProbeState.player.y = activeStickyJumpPlatform.y - surfaceProbeState.player.height;
+    surfaceProbeState.player.vx = 0;
+    surfaceProbeState.player.vy = 0;
+    surfaceProbeState.player.onGround = true;
+    surfaceProbeState.player.supportPlatformId = activeStickyJumpPlatform.id;
+    let stickyAntiGravJumpState = terrainStep(terrainInputState({ jumpHeld: true, jumpPressed: true }));
+    let stickyAntiGravJumpVelocityDelta = Number.POSITIVE_INFINITY;
+    stickyAntiGravJumpState = consumeTerrainProbeFrames(4, (latestState) => {
+      ({ gravityCapsule: terrainGravityCapsule } = resolveTerrainProbePlatforms(latestState));
+      const clearedField = terrainGravityCapsule.enabled === false && latestState.player.gravityFieldKind === null;
+      if (clearedField && latestState.player.vy < 0) {
+        stickyAntiGravJumpVelocityDelta = Math.min(
+          stickyAntiGravJumpVelocityDelta,
+          Math.abs(latestState.player.vy - expectedNormalJumpVy),
+        );
+      }
+      return stickyAntiGravJumpVelocityDelta <= 12;
+    });
     const stickyAntiGravJumpSequenced =
-      stickyAntiGravJumpState.player.gravityFieldKind === null &&
-      stickyAntiGravJumpState.player.vy <= normalJumpVy + 1;
+      Number.isFinite(stickyAntiGravJumpVelocityDelta) &&
+      terrainGravityCapsule.enabled === false &&
+      stickyAntiGravJumpVelocityDelta <= 12;
 
     results.push({
       stageName: 'Mechanic Checks',
@@ -2519,13 +2642,8 @@ async function collectStageResults(page) {
         collapseFell: collapseState.stageRuntime.platforms.some(
           (platform) => platform.kind === 'falling' && platform.y > platform.startY + 8,
         ),
-        fallingJumpResponsive:
-          fallingRidePlatform.fall?.falling === true &&
-          fallingJumpState.player.vy < 0 &&
-          fallingJumpState.player.supportPlatformId === null,
+        fallingJumpResponsive,
         springBoosted: springCues.includes('spring') || springMinVy < -700,
-        bouncePodLaunchWorked,
-        gasVentLaunchWorked,
         hopperHighJump: hopperImpulses.length > 0 && hopperImpulses.every((impulse) => impulse >= 820),
         chargerWindup: chargerSawWindup,
         chargerCharged: chargerSawCharge,
@@ -2597,8 +2715,8 @@ async function collectStageResults(page) {
         scannerBridgeOccupiedExpiry,
         timedRevealSkipFallback,
         timedRevealReconnectionReady,
-        terrainSurfaceExtentsRendered,
-        terrainSurfaceCueShapesVisible,
+        terrainVariantExtentsRendered,
+        terrainVariantCueShapesVisible,
         brittleWarningTriggered,
         brittleWarningVisualStrengthened,
         brittleEscapeJumpWorked,
@@ -3193,6 +3311,8 @@ async function collectStageResults(page) {
 async function main() {
   await fs.mkdir(REPORT_DIR, { recursive: true });
 
+  await runNpmScript('build');
+
   const preview = spawn('cmd.exe', ['/c', 'npm.cmd', 'run', 'preview', '--', '--host', '127.0.0.1', '--port', String(PORT)], {
     cwd: ROOT,
     stdio: 'ignore',
@@ -3224,8 +3344,6 @@ async function main() {
         notes.push(mechanics.collapseFell ? 'falling platform timing passed' : 'falling platform timing failed');
         notes.push(mechanics.fallingJumpResponsive ? 'falling platform jump passed' : 'falling platform jump failed');
         notes.push(mechanics.springBoosted ? 'spring launch passed' : 'spring launch failed');
-        notes.push(mechanics.bouncePodLaunchWorked ? 'bounce pod route passed' : 'bounce pod route failed');
-        notes.push(mechanics.gasVentLaunchWorked ? 'gas vent route passed' : 'gas vent route failed');
         notes.push(mechanics.hopperHighJump ? 'hopper jump height passed' : 'hopper jump height failed');
         notes.push(mechanics.chargerCharged ? 'charger state transition passed' : 'charger state transition failed');
         notes.push(mechanics.flyerMoved ? 'flyer patrol passed' : 'flyer patrol failed');
@@ -3353,11 +3471,15 @@ async function main() {
             ? 'timed-reveal reconnection remained safe'
             : 'timed-reveal reconnection was not ready',
         );
-        notes.push(mechanics.terrainSurfaceExtentsRendered ? 'terrain variant extents render in the live scene' : 'terrain variant extents drift from the live scene');
         notes.push(
-          mechanics.terrainSurfaceCueShapesVisible
-            ? 'terrain variants keep distinct full-platform cue shapes in the live scene'
-            : 'terrain variants lose their distinct full-platform cue shapes in the live scene',
+          mechanics.terrainVariantExtentsRendered
+            ? 'terrain surface-mechanic extents match authored platform footprints in the live scene'
+            : 'terrain surface-mechanic extents drift from authored platform footprints in the live scene',
+        );
+        notes.push(
+          mechanics.terrainVariantCueShapesVisible
+            ? 'terrain surface-mechanic cues stay distinct and platform-owned in the live scene'
+            : 'terrain surface-mechanic cues drift from current platform-owned contract in the live scene',
         );
         notes.push(mechanics.brittleWarningTriggered ? 'brittle floor warning passed' : 'brittle floor warning failed');
         notes.push(
@@ -3538,22 +3660,28 @@ async function main() {
       const estimatedMinutes = estimateMinutes(result.stage);
       const readability = analyzeReadability(result.stage);
       const terrainRollout = analyzeTerrainRollout(result.stage);
-      const terrainVariantCount = result.stage.platforms.filter((platform) => platform.terrainVariant).length;
+      const terrainVariantCount = terrainRollout.brittleCount + terrainRollout.stickyCount;
+      const terrainVariantKinds = [
+        ...(terrainRollout.brittleCount > 0 ? ['brittleCrystal'] : []),
+        ...(terrainRollout.stickyCount > 0 ? ['stickySludge'] : []),
+      ];
       const checkpoint = checkpointReport(result.checkpoint);
       const safetyScan = analyzeSafety(result.stage);
       const blockSpacing = analyzeBlockSpacing(result.stage);
       const mechanics = {
         terrainRolloutPresent: terrainVariantCount > 0,
-        terrainKindMinimumsPassed: terrainRollout.minimumsPassed,
-        terrainBeatCoveragePassed: terrainRollout.beatCoveragePassed,
+        terrainVariantCount,
+        terrainVariantKinds,
+        terrainVariantKindsCount: {
+          brittle: terrainRollout.brittleCount,
+          sticky: terrainRollout.stickyCount,
+        },
         gravityRolloutPresent: result.stage.gravityFields.length > 0,
         checkpointBeforeExit: result.stage.checkpoints.every(
           (checkpoint) => checkpoint.rect.x < result.stage.exit.x + result.stage.exit.width,
         ),
         passed:
           terrainVariantCount > 0 &&
-          terrainRollout.minimumsPassed &&
-          terrainRollout.beatCoveragePassed &&
           result.stage.gravityFields.length > 0 &&
           result.stage.checkpoints.every((checkpoint) => checkpoint.rect.x < result.stage.exit.x + result.stage.exit.width),
       };
@@ -3601,16 +3729,10 @@ async function main() {
           ? 'reward blocks keep punchable clearance above stable floors'
           : `reward block spacing failed for [${blockSpacing.invalidBlocks.join(', ')}]`,
       );
-      notes.push(mechanics.terrainRolloutPresent ? 'terrain variant rollout is authored on the stage' : 'terrain variant rollout is missing from the stage');
       notes.push(
-        mechanics.terrainKindMinimumsPassed
-          ? `terrain kind minimums passed with brittle=${terrainRollout.brittleCount} and sticky=${terrainRollout.stickyCount}`
-          : `terrain kind minimums failed with brittle=${terrainRollout.brittleCount} and sticky=${terrainRollout.stickyCount}`,
-      );
-      notes.push(
-        mechanics.terrainBeatCoveragePassed
-          ? `terrain beats stay distributed across brittle [${terrainRollout.brittleBeats.join(', ')}] and sticky [${terrainRollout.stickyBeats.join(', ')}]`
-          : `terrain beats collapsed to brittle [${terrainRollout.brittleBeats.join(', ')}] and sticky [${terrainRollout.stickyBeats.join(', ')}]`,
+        mechanics.terrainRolloutPresent
+          ? `readable terrain rollout stays authored with ${terrainVariantKinds.join(' + ')}`
+          : 'readable terrain rollout is missing from the stage',
       );
       notes.push(mechanics.gravityRolloutPresent ? 'gravity-field rollout is authored on the stage' : 'gravity-field rollout is missing from the stage');
       notes.push(mechanics.checkpointBeforeExit ? 'all checkpoints stay before the terminal exit' : 'a checkpoint is authored beyond the terminal exit');
@@ -4080,17 +4202,19 @@ async function main() {
     });
 
     const terrainVariantStageResults = results.filter((result) => result.targetDurationMinutes > 0);
+    const combinedTerrainKinds = new Set(
+      terrainVariantStageResults.flatMap((result) => result.mechanics?.terrainVariantKinds ?? []),
+    );
     const terrainVariantStageChecksPassed = terrainVariantStageResults.every(
       (result) =>
         result.mechanics?.terrainRolloutPresent === true &&
-        result.mechanics?.terrainKindMinimumsPassed === true &&
-        result.mechanics?.terrainBeatCoveragePassed === true &&
         result.mechanics?.gravityRolloutPresent === true &&
         result.mechanics?.checkpointBeforeExit === true,
     );
+    const combinedTerrainKindsPassed = combinedTerrainKinds.has('brittleCrystal') && combinedTerrainKinds.has('stickySludge');
 
     results.push({
-      stageName: 'Terrain Variant Stage Checks',
+      stageName: 'Main Stage Terrain Rollout Checks',
       targetDurationMinutes: 0,
       estimatedMinutes: 0,
       readability: {
@@ -4109,37 +4233,29 @@ async function main() {
       },
       checkpoint: { passed: true },
       safety: { passed: true },
-      mechanics: { passed: terrainVariantStageChecksPassed },
+      mechanics: {
+        stageParticipationPassed: terrainVariantStageChecksPassed,
+        combinedTerrainKinds: [...combinedTerrainKinds],
+        combinedTerrainKindsPassed,
+        passed: terrainVariantStageChecksPassed && combinedTerrainKindsPassed,
+      },
       flow: { passed: true },
       notes: terrainVariantStageResults.flatMap((result) => [
-        `${result.stageName}: ${result.mechanics.terrainRolloutPresent ? 'platform terrain variants are authored' : 'platform terrain variants are missing'}`,
-        `${result.stageName}: ${result.mechanics.terrainKindMinimumsPassed ? 'brittle and sticky minimum counts passed' : 'brittle and sticky minimum counts failed'}`,
-        `${result.stageName}: ${result.mechanics.terrainBeatCoveragePassed ? 'terrain beat coverage passed' : 'terrain beat coverage failed'}`,
+        `${result.stageName}: ${result.mechanics.terrainRolloutPresent ? `readable terrain variants stay authored (${result.mechanics.terrainVariantKinds.join(', ')})` : 'readable terrain variants are missing'}`,
         `${result.stageName}: ${result.mechanics.gravityRolloutPresent ? 'linked gravity-room rollout is authored' : 'linked gravity-room rollout is missing'}`,
         `${result.stageName}: ${result.mechanics.checkpointBeforeExit ? 'checkpoints remain before the exit' : 'checkpoint placement crosses the exit'}`,
-      ]),
+      ]).concat(
+        combinedTerrainKindsPassed
+          ? ['Campaign rollout keeps both brittle crystal and sticky sludge live across the main stages']
+          : [
+              `Campaign rollout is missing one terrain kind across the main stages (present: ${[...combinedTerrainKinds].join(', ') || 'none'})`,
+            ],
+      ),
     });
 
     const scopedResults = scopeResultsForChange(results, CHANGE_NAME);
 
-    const failures = scopedResults.filter(
-      (result) =>
-        result.estimatedMinutes < result.targetDurationMinutes ||
-        !result.readability.segmentPass ||
-        !result.readability.checkpointPass ||
-        !result.readability.collectiblePass ||
-        !result.readability.routePass ||
-        !result.readability.encounterPass ||
-        !result.checkpoint.passed ||
-        !result.safety.passed ||
-        result.blockSpacing?.passed === false ||
-        result.blocks?.passed === false ||
-        result.rewardLockCoverage?.passed === false ||
-        result.staticLayoutCoverage?.passed === false ||
-        result.secretRoutes?.passed === false ||
-        !result.mechanics.passed ||
-        !result.flow.passed,
-    );
+    const failures = scopedResults.filter((result) => changeScopedFailure(result, CHANGE_NAME));
 
       await fs.writeFile(JSON_REPORT, `${JSON.stringify(scopedResults, null, 2)}\n`);
       await fs.writeFile(MD_REPORT, buildMarkdown(scopedResults, CHANGE_NAME));

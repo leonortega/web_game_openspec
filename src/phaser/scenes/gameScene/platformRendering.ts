@@ -4,14 +4,11 @@ import {
   isPlatformActive,
   isPlatformVisible,
   type ActivationNodeState,
-  type LauncherState,
   type PlatformState,
-  type TerrainSurfaceState,
 } from '../../../game/simulation/state';
 import { getRetroMotionStep, type RetroPresentationPalette } from '../../view/retroPresentation';
 import {
   getActivationNodeTraversalVisualCategory,
-  getLauncherTraversalVisualCategory,
   getPlatformTraversalVisualCategory,
 } from '../../view/traversalVisualLanguage';
 
@@ -31,32 +28,30 @@ export type GameScenePlatformRenderingContext = Phaser.Scene & {
   platformShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
   platformDetailSprites: Map<string, Phaser.GameObjects.Rectangle>;
   platformCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  launcherSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  launcherCoreSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  launcherCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   activationNodeSprites: Map<string, Phaser.GameObjects.Rectangle>;
   activationNodeMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  terrainSurfaceSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  terrainSurfaceShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  terrainSurfaceAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  terrainSurfaceDetailSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
+  terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantDetailSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   platformColor(platform: PlatformState): number;
   platformDetailColor(platform: PlatformState): number;
-  launcherColor(launcherEntry: LauncherState): number;
   activationNodeColor(node: { activated: boolean }): number;
-  terrainSurfaceColor(surface: TerrainSurfaceState): number;
-  terrainSurfaceAlpha(surface: TerrainSurfaceState): number;
-  terrainSurfaceStrokeColor(surface: TerrainSurfaceState): number;
-  terrainSurfaceStrokeAlpha(surface: TerrainSurfaceState): number;
-  terrainSurfaceShadowAlpha(surface: TerrainSurfaceState): number;
-  terrainSurfaceAccentY(surface: TerrainSurfaceState): number;
-  terrainSurfaceAccentWidth(surface: TerrainSurfaceState): number;
-  terrainSurfaceAccentHeight(surface: TerrainSurfaceState): number;
-  terrainSurfaceAccentColor(surface: TerrainSurfaceState): number;
-  terrainSurfaceAccentAlpha(surface: TerrainSurfaceState): number;
-  syncStickySurfaceDetails(surface: TerrainSurfaceState, details: Phaser.GameObjects.Rectangle[]): void;
-  syncBrittleSurfaceDetails(surface: TerrainSurfaceState, details: Phaser.GameObjects.Rectangle[]): void;
+  terrainVariantColor(platform: PlatformState): number;
+  terrainVariantAlpha(platform: PlatformState): number;
+  terrainVariantStrokeColor(platform: PlatformState): number;
+  terrainVariantStrokeAlpha(platform: PlatformState): number;
+  terrainVariantShadowAlpha(platform: PlatformState): number;
+  terrainVariantAccentY(platform: PlatformState): number;
+  terrainVariantAccentWidth(platform: PlatformState): number;
+  terrainVariantAccentHeight(platform: PlatformState): number;
+  terrainVariantAccentColor(platform: PlatformState): number;
+  terrainVariantAccentAlpha(platform: PlatformState): number;
+  syncStickyTerrainVariantDetails(platform: PlatformState, details: Phaser.GameObjects.Rectangle[]): void;
+  syncBrittleTerrainVariantDetails(platform: PlatformState, details: Phaser.GameObjects.Rectangle[]): void;
 };
+
+const getPlatformTopSurfaceHeight = (platform: Pick<PlatformState, 'height'>): number => Math.min(platform.height, 8);
 
 export function syncPlatform(scene: GameScenePlatformRenderingContext, platform: PlatformState): void {
   const sprite = scene.platformSprites.get(platform.id);
@@ -86,9 +81,10 @@ export function syncPlatform(scene: GameScenePlatformRenderingContext, platform:
     .setPosition(platform.x + platform.width / 2, platform.y + platform.height / 2 + Math.max(2, Math.floor(platform.height * 0.18)))
     .setSize(Math.max(6, platform.width - 6), Math.max(4, Math.floor(platform.height * 0.38)))
     .setAlpha(active ? 0.28 : 0.18);
+  const topSurfaceHeight = getPlatformTopSurfaceHeight(platform);
   detail
-    .setPosition(platform.x + platform.width / 2, platform.y + Math.min(platform.height / 2, 4))
-    .setSize(platform.width, Math.min(platform.height, 6))
+    .setPosition(platform.x + platform.width / 2, platform.y + topSurfaceHeight / 2)
+    .setSize(platform.width, topSurfaceHeight)
     .setFillStyle(scene.platformDetailColor(platform));
 
   if (platform.kind === 'falling' && platform.fall) {
@@ -115,27 +111,6 @@ export function syncPlatform(scene: GameScenePlatformRenderingContext, platform:
   syncPlatformCategoryMarkers(scene, platform, markers, active);
 }
 
-export function syncLauncher(scene: GameScenePlatformRenderingContext, launcherEntry: LauncherState): void {
-  const sprite = scene.launcherSprites.get(launcherEntry.id);
-  const core = scene.launcherCoreSprites.get(launcherEntry.id);
-  const markers = scene.launcherCategoryMarkerSprites.get(launcherEntry.id);
-  if (!sprite || !core || !markers) {
-    return;
-  }
-
-  sprite
-    .setPosition(launcherEntry.x + launcherEntry.width / 2, launcherEntry.y + launcherEntry.height / 2)
-    .setSize(launcherEntry.width, launcherEntry.height)
-    .setFillStyle(scene.launcherColor(launcherEntry), launcherEntry.timerMs > 0 ? 0.5 : 0.86)
-    .setVisible(true);
-  core
-    .setPosition(launcherEntry.x + launcherEntry.width / 2, launcherEntry.y + launcherEntry.height / 2)
-    .setSize(Math.max(6, launcherEntry.width - 8), Math.max(6, launcherEntry.height - 8))
-    .setFillStyle(launcherEntry.timerMs > 0 ? scene.retroPalette.bright : scene.retroPalette.cool, launcherEntry.timerMs > 0 ? 0.2 : 0.48)
-    .setVisible(true);
-  syncLauncherCategoryMarkers(scene, launcherEntry, markers);
-}
-
 export function syncActivationNode(scene: GameScenePlatformRenderingContext, node: ActivationNodeState): void {
   const sprite = scene.activationNodeSprites.get(node.id);
   const markers = scene.activationNodeMarkerSprites.get(node.id);
@@ -152,38 +127,43 @@ export function syncActivationNode(scene: GameScenePlatformRenderingContext, nod
   syncActivationNodeMarkers(scene, node, markers);
 }
 
-export function syncTerrainSurface(scene: GameScenePlatformRenderingContext, surface: TerrainSurfaceState): void {
-  const sprite = scene.terrainSurfaceSprites.get(surface.id);
-  const shadow = scene.terrainSurfaceShadowSprites.get(surface.id);
-  const accent = scene.terrainSurfaceAccentSprites.get(surface.id);
-  const details = scene.terrainSurfaceDetailSprites.get(surface.id);
+export function syncTerrainVariantPlatform(scene: GameScenePlatformRenderingContext, platform: PlatformState): void {
+  const sprite = scene.terrainVariantSprites.get(platform.id);
+  const shadow = scene.terrainVariantShadowSprites.get(platform.id);
+  const accent = scene.terrainVariantAccentSprites.get(platform.id);
+  const details = scene.terrainVariantDetailSprites.get(platform.id);
   if (!sprite || !shadow || !accent || !details) {
     return;
   }
 
-  sprite.setPosition(surface.x + surface.width / 2, surface.y + surface.height / 2);
-  sprite.setSize(surface.width, surface.height);
+  sprite.setPosition(platform.x + platform.width / 2, platform.y + platform.height / 2);
+  sprite.setSize(platform.width, platform.height);
   sprite.setVisible(true);
-  sprite.setFillStyle(scene.terrainSurfaceColor(surface), scene.terrainSurfaceAlpha(surface));
-  sprite.setStrokeStyle(2, scene.terrainSurfaceStrokeColor(surface), scene.terrainSurfaceStrokeAlpha(surface));
+  sprite.setFillStyle(scene.terrainVariantColor(platform), scene.terrainVariantAlpha(platform));
+  sprite.setStrokeStyle(2, scene.terrainVariantStrokeColor(platform), scene.terrainVariantStrokeAlpha(platform));
   shadow
-    .setPosition(surface.x + surface.width / 2, surface.y + surface.height / 2 + Math.max(2, Math.floor(surface.height * 0.16)))
-    .setSize(Math.max(8, surface.width - 8), Math.max(4, Math.floor(surface.height * 0.32)))
+    .setPosition(platform.x + platform.width / 2, platform.y + platform.height / 2 + Math.max(2, Math.floor(platform.height * 0.16)))
+    .setSize(Math.max(8, platform.width - 8), Math.max(4, Math.floor(platform.height * 0.32)))
     .setVisible(true)
-    .setAlpha(scene.terrainSurfaceShadowAlpha(surface));
+    .setAlpha(scene.terrainVariantShadowAlpha(platform));
 
   accent
-    .setPosition(surface.x + surface.width / 2, scene.terrainSurfaceAccentY(surface))
-    .setSize(scene.terrainSurfaceAccentWidth(surface), scene.terrainSurfaceAccentHeight(surface))
-    .setFillStyle(scene.terrainSurfaceAccentColor(surface), scene.terrainSurfaceAccentAlpha(surface))
+    .setPosition(platform.x + platform.width / 2, scene.terrainVariantAccentY(platform))
+    .setSize(scene.terrainVariantAccentWidth(platform), scene.terrainVariantAccentHeight(platform))
+    .setFillStyle(scene.terrainVariantAccentColor(platform), scene.terrainVariantAccentAlpha(platform))
     .setVisible(true);
 
-  if (surface.kind === 'stickySludge') {
-    scene.syncStickySurfaceDetails(surface, details);
+  if (platform.surfaceMechanic?.kind === 'stickySludge') {
+    scene.syncStickyTerrainVariantDetails(platform, details);
     return;
   }
 
-  scene.syncBrittleSurfaceDetails(surface, details);
+  if (platform.surfaceMechanic?.kind === 'brittleCrystal') {
+    scene.syncBrittleTerrainVariantDetails(platform, details);
+    return;
+  }
+
+  details.forEach((detail) => detail.setVisible(false));
 }
 
 function hideTraversalMarkers(markers: Phaser.GameObjects.Rectangle[]): void {
@@ -263,37 +243,6 @@ function syncPlatformCategoryMarkers(
       .setPosition(centerX + (index - 1) * Math.max(14, platform.width * 0.2), centerY)
       .setSize(segmentWidth, Math.max(4, Math.floor(platform.height * 0.2)))
       .setFillStyle(index === 1 ? scene.retroPalette.bright : scene.retroPalette.cool, alpha)
-      .setVisible(true);
-  });
-}
-
-function syncLauncherCategoryMarkers(
-  scene: GameScenePlatformRenderingContext,
-  launcherEntry: LauncherState,
-  markers: Phaser.GameObjects.Rectangle[],
-): void {
-  const category = getLauncherTraversalVisualCategory(launcherEntry);
-  if (category !== 'assistedMovement') {
-    hideTraversalMarkers(markers);
-    return;
-  }
-
-  const centerX = launcherEntry.x + launcherEntry.width / 2;
-  const centerY = launcherEntry.y + launcherEntry.height / 2;
-  const dirX = launcherEntry.direction.x;
-  const dirY = launcherEntry.direction.y;
-  const length = Math.max(10, Math.floor(Math.max(launcherEntry.width, launcherEntry.height) * 0.18));
-  const alpha = launcherEntry.timerMs > 0 ? 0.28 : 0.74;
-
-  markers.forEach((marker, index) => {
-    const lane = index - 1;
-    marker
-      .setPosition(centerX + lane * Math.max(8, launcherEntry.width * 0.14) + dirX * 5, centerY + dirY * 5 - Math.abs(dirY) * index * 2)
-      .setSize(Math.max(4, Math.floor(launcherEntry.width * 0.08)), length)
-      .setFillStyle(
-        launcherEntry.kind === 'bouncePod' ? (index === 1 ? scene.retroPalette.bright : scene.retroPalette.border) : scene.retroPalette.ink,
-        alpha,
-      )
       .setVisible(true);
   });
 }

@@ -26,6 +26,7 @@ Each stage must run in its own agent. Do not merge stages into a single agent.
 - Spawn one agent dedicated to `verify`, using the local OpenSpec verify instructions as context.
 - Spawn one agent dedicated to `archive`, using the local OpenSpec archive instructions as context.
 - Pass the original user request, minus the leading `openspec` trigger word, into the flow as the change request.
+- If the remaining request starts with `fix`, instruct the `explore` agent to diagnose the current implementation first: inspect the relevant code paths, identify the likely root cause of the issue, and return a concrete solution direction that later stages can implement.
 - Reuse outputs from earlier stages as context for later stages.
 - Execute stages sequentially. Wait for the current stage to complete before starting the next one.
 

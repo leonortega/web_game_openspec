@@ -4,18 +4,17 @@ import {
   getGravityCapsuleButtonTraversalVisualCategory,
   getGravityCapsuleShellTraversalVisualCategory,
   getGravityFieldTraversalVisualCategory,
-  getLauncherTraversalVisualCategory,
   getPlatformTraversalVisualCategory,
   getTerrainTraversalVisualCategory,
 } from './traversalVisualLanguage';
 
 describe('traversalVisualLanguage', () => {
-  it('maps terrain surfaces to terrain category', () => {
-    expect(getTerrainTraversalVisualCategory({ kind: 'brittleCrystal' })).toBe('terrain');
-    expect(getTerrainTraversalVisualCategory({ kind: 'stickySludge' })).toBe('terrain');
+  it('maps terrain variants to terrain category', () => {
+    expect(getTerrainTraversalVisualCategory({ surfaceMechanic: { kind: 'brittleCrystal' } })).toBe('terrain');
+    expect(getTerrainTraversalVisualCategory({ surfaceMechanic: { kind: 'stickySludge' } })).toBe('terrain');
   });
 
-  it('maps assisted-movement supports and launchers to assisted movement category', () => {
+  it('maps assisted-movement supports to assisted movement category', () => {
     expect(getPlatformTraversalVisualCategory({ kind: 'moving', reveal: undefined, temporaryBridge: undefined, magnetic: undefined })).toBe(
       'assistedMovement',
     );
@@ -25,8 +24,6 @@ describe('traversalVisualLanguage', () => {
     expect(getPlatformTraversalVisualCategory({ kind: 'spring', reveal: undefined, temporaryBridge: undefined, magnetic: undefined })).toBe(
       'assistedMovement',
     );
-    expect(getLauncherTraversalVisualCategory({ kind: 'bouncePod' })).toBe('assistedMovement');
-    expect(getLauncherTraversalVisualCategory({ kind: 'gasVent' })).toBe('assistedMovement');
   });
 
   it('maps route-toggle supports and controls to route toggle category', () => {

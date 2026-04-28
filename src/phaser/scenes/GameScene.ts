@@ -1,10 +1,12 @@
 import * as Phaser from 'phaser';
 import { AUDIO_CUES, type AudioCue } from '../../audio/audioContract';
 import type { SessionSnapshot } from '../../game/simulation/GameSession';
+import { ensureBootTexturesRegistered } from '../assets/bootTextures';
 import {
   PLAYER_POWER_VARIANTS,
-  isBrittleSurfaceBroken,
-  isBrittleSurfaceWarning,
+  isBrittlePlatformBroken,
+  isBrittlePlatformReady,
+  isBrittlePlatformWarning,
   isPlatformVisible,
   type EnemyDefeatCause,
   type CheckpointState,
@@ -12,12 +14,10 @@ import {
   type EnemyState,
   type GravityCapsuleState,
   type GravityFieldState,
-  type LauncherState,
   type PlatformState,
   type ProjectileState,
   type RewardBlockState,
   type RewardRevealState,
-  type TerrainSurfaceState,
 } from '../../game/simulation/state';
 import { createHud } from '../../ui/hud/hud';
 import { SceneBridge } from '../adapters/sceneBridge';
@@ -62,30 +62,28 @@ import {
   gravityCapsuleShellStrokeColor,
   gravityFieldAlpha,
   gravityFieldColor,
-  launcherColor,
   platformColor,
   platformDetailColor,
   rewardBlockColor,
   rewardBlockLabel,
   rewardRevealColor,
   rewardRevealText,
-  terrainSurfaceAccentAlpha,
-  terrainSurfaceAccentColor,
-  terrainSurfaceAccentHeight,
-  terrainSurfaceAccentWidth,
-  terrainSurfaceAccentY,
-  terrainSurfaceAlpha,
-  terrainSurfaceColor,
-  terrainSurfaceShadowAlpha,
-  terrainSurfaceStrokeAlpha,
-  terrainSurfaceStrokeColor,
+  terrainVariantAccentAlpha,
+  terrainVariantAccentColor,
+  terrainVariantAccentHeight,
+  terrainVariantAccentWidth,
+  terrainVariantAccentY,
+  terrainVariantAlpha,
+  terrainVariantColor,
+  terrainVariantShadowAlpha,
+  terrainVariantStrokeAlpha,
+  terrainVariantStrokeColor,
 } from '../view/gameSceneStyling';
 import {
   getActivationNodeTraversalVisualCategory,
   getGravityCapsuleButtonTraversalVisualCategory,
   getGravityCapsuleShellTraversalVisualCategory,
   getGravityFieldTraversalVisualCategory,
-  getLauncherTraversalVisualCategory,
   getPlatformTraversalVisualCategory,
   getTerrainTraversalVisualCategory,
   type TraversalVisualCategory,
@@ -113,9 +111,8 @@ import {
 } from './gameScene/gravityRendering';
 import {
   syncActivationNode as syncActivationNodeRendering,
-  syncLauncher as syncLauncherRendering,
   syncPlatform as syncPlatformRendering,
-  syncTerrainSurface as syncTerrainSurfaceRendering,
+  syncTerrainVariantPlatform as syncTerrainVariantPlatformRendering,
   type GameScenePlatformRenderingContext,
 } from './gameScene/platformRendering';
 import {
@@ -125,6 +122,10 @@ import {
   syncRewardReveal as syncRewardRevealRendering,
   type GameSceneRewardRenderingContext,
 } from './gameScene/rewardRendering';
+import {
+  renderDiagnosticOverlay,
+  type GameSceneDiagnosticContext,
+} from './gameScene/diagnosticRendering';
 
 const COMPLETE_TRANSITION_DELAY_MS = 160;
 const STAGE_START_SEQUENCE_DURATION_MS = getStageStartSequenceTotalMs();
@@ -202,19 +203,13 @@ export class GameScene extends Phaser.Scene {
 
   private platformCategoryMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
-  private terrainSurfaceSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private terrainVariantSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
-  private terrainSurfaceShadowSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private terrainVariantShadowSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
-  private terrainSurfaceAccentSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private terrainVariantAccentSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
-  private terrainSurfaceDetailSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
-
-  private launcherSprites = new Map<string, Phaser.GameObjects.Rectangle>();
-
-  private launcherCoreSprites = new Map<string, Phaser.GameObjects.Rectangle>();
-
-  private launcherCategoryMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
+  private terrainVariantDetailSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
   private hazardSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
@@ -244,9 +239,13 @@ export class GameScene extends Phaser.Scene {
 
   private enemySprites = new Map<string, Phaser.GameObjects.Sprite>();
 
+  private enemyContactStrips = new Map<string, Phaser.GameObjects.Rectangle>();
+
   private enemyAccentSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
   private checkpointSprites = new Map<string, Phaser.GameObjects.Sprite>();
+
+  private checkpointContactStrips = new Map<string, Phaser.GameObjects.Rectangle>();
 
   private collectibleSprites = new Map<string, Phaser.GameObjects.Sprite>();
 
@@ -321,13 +320,10 @@ export class GameScene extends Phaser.Scene {
     void this.platformShadowSprites;
     void this.platformDetailSprites;
     void this.platformCategoryMarkerSprites;
-    void this.terrainSurfaceSprites;
-    void this.terrainSurfaceShadowSprites;
-    void this.terrainSurfaceAccentSprites;
-    void this.terrainSurfaceDetailSprites;
-    void this.launcherSprites;
-    void this.launcherCoreSprites;
-    void this.launcherCategoryMarkerSprites;
+    void this.terrainVariantSprites;
+    void this.terrainVariantShadowSprites;
+    void this.terrainVariantAccentSprites;
+    void this.terrainVariantDetailSprites;
     void this.gravityZoneSprites;
     void this.gravityFieldSprites;
     void this.gravityFieldCategoryMarkerSprites;
@@ -376,13 +372,10 @@ export class GameScene extends Phaser.Scene {
     void this.platformShadowSprites;
     void this.platformDetailSprites;
     void this.platformCategoryMarkerSprites;
-    void this.terrainSurfaceSprites;
-    void this.terrainSurfaceShadowSprites;
-    void this.terrainSurfaceAccentSprites;
-    void this.terrainSurfaceDetailSprites;
-    void this.launcherSprites;
-    void this.launcherCoreSprites;
-    void this.launcherCategoryMarkerSprites;
+    void this.terrainVariantSprites;
+    void this.terrainVariantShadowSprites;
+    void this.terrainVariantAccentSprites;
+    void this.terrainVariantDetailSprites;
     void this.checkpointSprites;
     void this.collectibleSprites;
     void this.rewardBlockSprites;
@@ -434,10 +427,9 @@ export class GameScene extends Phaser.Scene {
     void this.activationNodeColor;
     void this.platformColor;
     void this.platformDetailColor;
-    void this.terrainSurfaceColor;
-    void this.terrainSurfaceAlpha;
-    void this.terrainSurfaceAccentColor;
-    void this.launcherColor;
+    void this.terrainVariantColor;
+    void this.terrainVariantAlpha;
+    void this.terrainVariantAccentColor;
     void this.rewardBlockColor;
     void this.rewardBlockLabel;
     void this.createTraversalMarkerRects;
@@ -452,31 +444,27 @@ export class GameScene extends Phaser.Scene {
     void this.platformShadowSprites;
     void this.platformDetailSprites;
     void this.platformCategoryMarkerSprites;
-    void this.launcherSprites;
-    void this.launcherCoreSprites;
-    void this.launcherCategoryMarkerSprites;
     void this.activationNodeSprites;
     void this.activationNodeMarkerSprites;
-    void this.terrainSurfaceSprites;
-    void this.terrainSurfaceShadowSprites;
-    void this.terrainSurfaceAccentSprites;
-    void this.terrainSurfaceDetailSprites;
+    void this.terrainVariantSprites;
+    void this.terrainVariantShadowSprites;
+    void this.terrainVariantAccentSprites;
+    void this.terrainVariantDetailSprites;
     void this.platformColor;
     void this.platformDetailColor;
-    void this.launcherColor;
     void this.activationNodeColor;
-    void this.terrainSurfaceColor;
-    void this.terrainSurfaceAlpha;
-    void this.terrainSurfaceStrokeColor;
-    void this.terrainSurfaceStrokeAlpha;
-    void this.terrainSurfaceShadowAlpha;
-    void this.terrainSurfaceAccentY;
-    void this.terrainSurfaceAccentWidth;
-    void this.terrainSurfaceAccentHeight;
-    void this.terrainSurfaceAccentColor;
-    void this.terrainSurfaceAccentAlpha;
-    void this.syncStickySurfaceDetails;
-    void this.syncBrittleSurfaceDetails;
+    void this.terrainVariantColor;
+    void this.terrainVariantAlpha;
+    void this.terrainVariantStrokeColor;
+    void this.terrainVariantStrokeAlpha;
+    void this.terrainVariantShadowAlpha;
+    void this.terrainVariantAccentY;
+    void this.terrainVariantAccentWidth;
+    void this.terrainVariantAccentHeight;
+    void this.terrainVariantAccentColor;
+    void this.terrainVariantAccentAlpha;
+    void this.syncStickyTerrainVariantDetails;
+    void this.syncBrittleTerrainVariantDetails;
     return this as unknown as GameScenePlatformRenderingContext;
   }
 
@@ -508,6 +496,7 @@ export class GameScene extends Phaser.Scene {
   private getRewardRenderingContext(): GameSceneRewardRenderingContext {
     void this.retroPalette;
     void this.checkpointSprites;
+    void this.checkpointContactStrips;
     void this.collectibleSprites;
     void this.rewardBlockSprites;
     void this.rewardBlockLabels;
@@ -523,16 +512,22 @@ export class GameScene extends Phaser.Scene {
     void this.retroPalette;
     void this.hazardSprites;
     void this.enemySprites;
+    void this.enemyContactStrips;
     void this.enemyAccentSprites;
     void this.projectileSprites;
     void this.enemyDefeatVisibleUntilMs;
     return this as unknown as GameSceneEnemyRenderingContext;
   }
 
+  private getDiagnosticContext(): GameSceneDiagnosticContext {
+    return this as unknown as GameSceneDiagnosticContext;
+  }
+
   create(): void {
     this.bridge = this.registry.get('bridge') as SceneBridge;
     this.audio = new SynthAudio(this, () => this.bridge.getSession().getState().progress.runSettings.masterVolume);
     this.completeTransitionEvent = undefined;
+    ensureBootTexturesRegistered(this);
     setupGameSceneHud(this.getHudSetupContext());
 
     const state = this.bridge.getSession().getState();
@@ -802,12 +797,8 @@ export class GameScene extends Phaser.Scene {
       this.syncPlatform(platform);
     }
 
-    for (const terrainSurface of state.stageRuntime.terrainSurfaces) {
-      this.syncTerrainSurface(terrainSurface);
-    }
-
-    for (const launcherEntry of state.stageRuntime.launchers) {
-      this.syncLauncher(launcherEntry);
+    for (const terrainVariantPlatform of state.stageRuntime.platforms.filter((platform) => platform.surfaceMechanic)) {
+      this.syncTerrainVariantPlatform(terrainVariantPlatform);
     }
 
     for (const gravityField of state.stageRuntime.gravityFields) {
@@ -822,8 +813,10 @@ export class GameScene extends Phaser.Scene {
       this.syncActivationNode(activationNode);
     }
 
+    const platformTopById = new Map(state.stageRuntime.platforms.map((platform) => [platform.id, platform.y] as const));
+
     for (const checkpoint of state.stageRuntime.checkpoints) {
-      this.syncCheckpoint(checkpoint);
+      this.syncCheckpoint(checkpoint, platformTopById);
     }
 
     for (const collectible of state.stageRuntime.collectibles) {
@@ -881,6 +874,14 @@ export class GameScene extends Phaser.Scene {
         .setAlpha(state.stageRuntime.exitReached ? 0.76 : 0.88)
         .setVisible(true);
     }
+
+    // Diagnostic: render debug lines showing platform tops (green) vs object bottoms (red/blue)
+    renderDiagnosticOverlay(
+      this.getDiagnosticContext(),
+      state.stageRuntime.platforms,
+      state.stageRuntime.checkpoints,
+      state.stageRuntime.enemies,
+    );
   }
 
   getDebugSnapshot(): {
@@ -921,10 +922,10 @@ export class GameScene extends Phaser.Scene {
     exitBeaconVisible: boolean;
     playerPose: ReturnType<typeof getRetroPlayerPose>['state'];
     feedbackCounts: Record<string, number>;
-    terrainSurfaceVisuals: {
+    terrainVariantVisuals: {
       id: string;
       visualCategory: TraversalVisualCategory;
-      kind: TerrainSurfaceState['kind'];
+      kind: NonNullable<PlatformState['surfaceMechanic']>['kind'];
       x: number;
       y: number;
       width: number;
@@ -949,16 +950,6 @@ export class GameScene extends Phaser.Scene {
       visible: boolean;
       fillColor: number;
       alpha: number;
-      markerVisibleCount: number;
-    }[];
-    launcherVisuals: {
-      id: string;
-      visualCategory: TraversalVisualCategory;
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-      visible: boolean;
       markerVisibleCount: number;
     }[];
     gravityFieldVisuals: {
@@ -1069,30 +1060,30 @@ export class GameScene extends Phaser.Scene {
         jump: Math.max(this.feedbackCounts.jump ?? 0, jumpFeedbackVisible ? 1 : 0),
         playerDefeat: Math.max(this.feedbackCounts.playerDefeat ?? 0, state.player.dead ? 1 : 0),
       },
-      terrainSurfaceVisuals: this.bridge
+      terrainVariantVisuals: this.bridge
         .getSession()
         .getState()
-        .stageRuntime.terrainSurfaces.map((surface) => ({
-          id: surface.id,
-          visualCategory: getTerrainTraversalVisualCategory(surface),
-          kind: surface.kind,
-          x: surface.x,
-          y: surface.y,
-          width: surface.width,
-          height: surface.height,
-          visible: this.terrainSurfaceSprites.get(surface.id)?.visible ?? false,
-          fillColor: this.terrainSurfaceSprites.get(surface.id)?.fillColor ?? 0,
-          fillAlpha: this.terrainSurfaceSprites.get(surface.id)?.fillAlpha ?? 0,
-          accentColor: this.terrainSurfaceAccentSprites.get(surface.id)?.fillColor ?? 0,
-          accentAlpha: this.terrainSurfaceAccentSprites.get(surface.id)?.fillAlpha ?? 0,
+        .stageRuntime.platforms.filter((platform) => platform.surfaceMechanic).map((platform) => ({
+          id: platform.id,
+          visualCategory: getTerrainTraversalVisualCategory(platform),
+          kind: platform.surfaceMechanic!.kind,
+          x: platform.x,
+          y: platform.y,
+          width: platform.width,
+          height: platform.height,
+          visible: this.terrainVariantSprites.get(platform.id)?.visible ?? false,
+          fillColor: this.terrainVariantSprites.get(platform.id)?.fillColor ?? 0,
+          fillAlpha: this.terrainVariantSprites.get(platform.id)?.fillAlpha ?? 0,
+          accentColor: this.terrainVariantAccentSprites.get(platform.id)?.fillColor ?? 0,
+          accentAlpha: this.terrainVariantAccentSprites.get(platform.id)?.fillAlpha ?? 0,
           detailVisibleCount:
-            this.terrainSurfaceDetailSprites.get(surface.id)?.filter((detail) => detail.visible).length ?? 0,
-          detailWidths: this.terrainSurfaceDetailSprites.get(surface.id)?.map((detail) => detail.width) ?? [],
-          detailHeights: this.terrainSurfaceDetailSprites.get(surface.id)?.map((detail) => detail.height) ?? [],
+            this.terrainVariantDetailSprites.get(platform.id)?.filter((detail) => detail.visible).length ?? 0,
+          detailWidths: this.terrainVariantDetailSprites.get(platform.id)?.map((detail) => detail.width) ?? [],
+          detailHeights: this.terrainVariantDetailSprites.get(platform.id)?.map((detail) => detail.height) ?? [],
           detailOffsets:
-            this.terrainSurfaceDetailSprites.get(surface.id)?.map((detail) => ({
-              x: Math.round(detail.x - (surface.x + surface.width / 2)),
-              y: Math.round(detail.y - (surface.y + surface.height / 2)),
+            this.terrainVariantDetailSprites.get(platform.id)?.map((detail) => ({
+              x: Math.round(detail.x - (platform.x + platform.width / 2)),
+              y: Math.round(detail.y - (platform.y + platform.height / 2)),
             })) ?? [],
         })),
       platformVisuals: this.bridge
@@ -1111,19 +1102,6 @@ export class GameScene extends Phaser.Scene {
           fillColor: this.platformSprites.get(platform.id)?.fillColor ?? 0,
           alpha: this.platformSprites.get(platform.id)?.alpha ?? 0,
           markerVisibleCount: this.platformCategoryMarkerSprites.get(platform.id)?.filter((marker) => marker.visible).length ?? 0,
-        })),
-      launcherVisuals: this.bridge
-        .getSession()
-        .getState()
-        .stageRuntime.launchers.map((launcherEntry) => ({
-          id: launcherEntry.id,
-          visualCategory: getLauncherTraversalVisualCategory(launcherEntry),
-          x: launcherEntry.x,
-          y: launcherEntry.y,
-          width: launcherEntry.width,
-          height: launcherEntry.height,
-          visible: this.launcherSprites.get(launcherEntry.id)?.visible ?? false,
-          markerVisibleCount: this.launcherCategoryMarkerSprites.get(launcherEntry.id)?.filter((marker) => marker.visible).length ?? 0,
         })),
       gravityFieldVisuals: this.bridge
         .getSession()
@@ -1218,16 +1196,12 @@ export class GameScene extends Phaser.Scene {
     syncPlatformRendering(this.getPlatformRenderingContext(), platform);
   }
 
-  private syncLauncher(launcherEntry: LauncherState): void {
-    syncLauncherRendering(this.getPlatformRenderingContext(), launcherEntry);
-  }
-
   private syncActivationNode(node: { id: string; x: number; y: number; width: number; height: number; activated: boolean }): void {
     syncActivationNodeRendering(this.getPlatformRenderingContext(), node as never);
   }
 
-  private syncTerrainSurface(surface: TerrainSurfaceState): void {
-    syncTerrainSurfaceRendering(this.getPlatformRenderingContext(), surface);
+  private syncTerrainVariantPlatform(platform: PlatformState): void {
+    syncTerrainVariantPlatformRendering(this.getPlatformRenderingContext(), platform);
   }
 
   private syncGravityField(field: GravityFieldState): void {
@@ -1238,48 +1212,59 @@ export class GameScene extends Phaser.Scene {
     syncGravityCapsuleRendering(this.getGravityRenderingContext(), capsule);
   }
 
-  private syncBrittleSurfaceDetails(surface: TerrainSurfaceState, details: Phaser.GameObjects.Rectangle[]): void {
-    const broken = isBrittleSurfaceBroken(surface);
-    const warning = isBrittleSurfaceWarning(surface);
-    const centerX = surface.x + surface.width / 2;
-    const centerY = surface.y + surface.height / 2;
-    const shardWidth = Math.max(6, Math.floor(surface.width * (broken ? 0.12 : 0.08)));
-    const shardHeight = Math.max(4, Math.floor(surface.height * (broken ? 0.4 : 0.72)));
+  private syncBrittleTerrainVariantDetails(platform: PlatformState, details: Phaser.GameObjects.Rectangle[]): void {
+    const broken = isBrittlePlatformBroken(platform);
+    const warning = isBrittlePlatformWarning(platform);
+    const ready = isBrittlePlatformReady(platform);
+    const centerX = platform.x + platform.width / 2;
+    const centerY = platform.y + platform.height / 2;
+    const shardWidth = Math.max(6, Math.floor(platform.width * (broken ? 0.12 : ready ? 0.1 : 0.08)));
+    const shardHeight = Math.max(4, Math.floor(platform.height * (broken ? 0.4 : ready ? 0.6 : 0.72)));
     const shardOffsets = [-0.28, 0, 0.28];
-    const shardYOffsets = broken ? [0.12, 0.18, 0.08] : [0.06, -0.08, 0.1];
-    const shardAlphas = broken ? [0.22, 0.16, 0.22] : warning ? [0.82, 0.96, 0.82] : [0.44, 0.66, 0.44];
+    const shardYOffsets = broken ? [0.12, 0.18, 0.08] : ready ? [0.02, -0.16, 0.04] : [0.06, -0.08, 0.1];
+    const shardAlphas = broken ? [0.22, 0.16, 0.22] : ready ? [0.92, 1, 0.92] : warning ? [0.82, 0.96, 0.82] : [0.44, 0.66, 0.44];
 
     details.forEach((detail, index) => {
       detail
-        .setPosition(centerX + surface.width * shardOffsets[index], centerY + surface.height * shardYOffsets[index])
+        .setPosition(centerX + platform.width * shardOffsets[index], centerY + platform.height * shardYOffsets[index])
         .setSize(index === 1 ? shardWidth + 2 : shardWidth, index === 1 ? shardHeight + (broken ? 0 : 2) : shardHeight)
-        .setFillStyle(broken ? this.retroPalette.border : warning ? this.retroPalette.bright : this.retroPalette.border, shardAlphas[index])
+        .setFillStyle(
+          broken
+            ? this.retroPalette.border
+            : ready
+              ? this.retroPalette.alert
+              : warning
+                ? this.retroPalette.bright
+                : this.retroPalette.border,
+          shardAlphas[index],
+        )
         .setVisible(true);
     });
   }
 
-  private syncStickySurfaceDetails(surface: TerrainSurfaceState, details: Phaser.GameObjects.Rectangle[]): void {
-    const centerX = surface.x + surface.width / 2;
-    const centerY = surface.y + surface.height / 2;
-    const bandHeight = Math.max(2, Math.floor(surface.height * 0.24));
+  private syncStickyTerrainVariantDetails(platform: PlatformState, details: Phaser.GameObjects.Rectangle[]): void {
+    const centerX = platform.x + platform.width / 2;
+    const centerY = platform.y + platform.height / 2;
+    const bandHeight = Math.max(2, Math.floor(platform.height * 0.24));
     const baseWidths = [0.84, 0.62, 0.74];
     const yOffsets = [-0.16, 0.04, 0.22];
-    const driftStep = (this.time.now + surface.x) / 140;
+    const driftStep = (this.time.now + platform.x) / 140;
 
     details.forEach((detail, index) => {
-      const drift = Math.sin(driftStep + index * 0.9) * Math.max(4, surface.width * 0.04);
-      const widthPulse = (Math.cos(driftStep * 1.2 + index) + 1) * Math.max(2, surface.width * 0.03);
-      const bandWidth = Math.max(12, Math.floor(surface.width * baseWidths[index] - widthPulse));
+      const drift = Math.sin(driftStep + index * 0.9) * Math.max(4, platform.width * 0.04);
+      const widthPulse = (Math.cos(driftStep * 1.2 + index) + 1) * Math.max(2, platform.width * 0.03);
+      const bandWidth = Math.max(12, Math.floor(platform.width * baseWidths[index] - widthPulse));
       detail
-        .setPosition(centerX + drift * (index === 1 ? -1 : 1), centerY + surface.height * yOffsets[index])
+        .setPosition(centerX + drift * (index === 1 ? -1 : 1), centerY + platform.height * yOffsets[index])
         .setSize(bandWidth, bandHeight)
         .setFillStyle(index === 1 ? this.retroPalette.warm : this.retroPalette.alert, index === 1 ? 0.34 : 0.46)
         .setVisible(true);
     });
   }
 
-  private syncCheckpoint(checkpoint: CheckpointState): void {
-    syncCheckpointRendering(this.getRewardRenderingContext(), checkpoint);
+  private syncCheckpoint(checkpoint: CheckpointState, platformTopById: ReadonlyMap<string, number>): void {
+    const supportTopY = checkpoint.supportPlatformId ? platformTopById.get(checkpoint.supportPlatformId) : undefined;
+    syncCheckpointRendering(this.getRewardRenderingContext(), checkpoint, supportTopY);
   }
 
   private syncCollectible(collectible: CollectibleState): void {
@@ -1314,48 +1299,44 @@ export class GameScene extends Phaser.Scene {
     return activationNodeColor(this.retroPalette, node);
   }
 
-  private terrainSurfaceColor(surface: TerrainSurfaceState): number {
-    return terrainSurfaceColor(this.retroPalette, surface);
+  private terrainVariantColor(platform: PlatformState): number {
+    return terrainVariantColor(this.retroPalette, platform);
   }
 
-  private terrainSurfaceAccentColor(surface: TerrainSurfaceState): number {
-    return terrainSurfaceAccentColor(this.retroPalette, surface);
+  private terrainVariantAccentColor(platform: PlatformState): number {
+    return terrainVariantAccentColor(this.retroPalette, platform);
   }
 
-  private launcherColor(launcherEntry: LauncherState): number {
-    return launcherColor(this.retroPalette, launcherEntry);
+  private terrainVariantAlpha(platform: PlatformState): number {
+    return terrainVariantAlpha(platform);
   }
 
-  private terrainSurfaceAlpha(surface: TerrainSurfaceState): number {
-    return terrainSurfaceAlpha(surface);
+  private terrainVariantStrokeColor(platform: PlatformState): number {
+    return terrainVariantStrokeColor(this.retroPalette, platform);
   }
 
-  private terrainSurfaceStrokeColor(surface: TerrainSurfaceState): number {
-    return terrainSurfaceStrokeColor(this.retroPalette, surface);
+  private terrainVariantStrokeAlpha(platform: PlatformState): number {
+    return terrainVariantStrokeAlpha(platform);
   }
 
-  private terrainSurfaceStrokeAlpha(surface: TerrainSurfaceState): number {
-    return terrainSurfaceStrokeAlpha(surface);
+  private terrainVariantShadowAlpha(platform: PlatformState): number {
+    return terrainVariantShadowAlpha(platform);
   }
 
-  private terrainSurfaceShadowAlpha(surface: TerrainSurfaceState): number {
-    return terrainSurfaceShadowAlpha(surface);
+  private terrainVariantAccentY(platform: PlatformState): number {
+    return terrainVariantAccentY(platform);
   }
 
-  private terrainSurfaceAccentY(surface: TerrainSurfaceState): number {
-    return terrainSurfaceAccentY(surface);
+  private terrainVariantAccentWidth(platform: PlatformState): number {
+    return terrainVariantAccentWidth(platform);
   }
 
-  private terrainSurfaceAccentWidth(surface: TerrainSurfaceState): number {
-    return terrainSurfaceAccentWidth(surface);
+  private terrainVariantAccentHeight(platform: PlatformState): number {
+    return terrainVariantAccentHeight(platform);
   }
 
-  private terrainSurfaceAccentHeight(surface: TerrainSurfaceState): number {
-    return terrainSurfaceAccentHeight(surface);
-  }
-
-  private terrainSurfaceAccentAlpha(surface: TerrainSurfaceState): number {
-    return terrainSurfaceAccentAlpha(surface);
+  private terrainVariantAccentAlpha(platform: PlatformState): number {
+    return terrainVariantAccentAlpha(platform);
   }
 
   private gravityFieldColor(field: GravityFieldState, capsule: GravityCapsuleState | null = null): number {

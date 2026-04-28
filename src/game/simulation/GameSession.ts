@@ -1,13 +1,20 @@
 import { stageDefinitions, type StageDefinition } from '../content/stages';
 import { gravityCapsuleShellWallThickness } from '../content/stages/builders';
+import {
+  findGroundedEnemySupport,
+  resolveGroundedEnemyRect,
+  resolveCheckpointRect,
+  resolveCheckpointRespawnPoint,
+  resolveHazardRect,
+} from '../content/stages/builders';
 import type { InputState } from '../input/actions';
 import { AUDIO_CUES, type AudioCue } from '../../audio/audioContract';
 import { clamp } from './math';
 import {
+  BRITTLE_READY_BREAK_DELAY_MS,
   BRITTLE_WARNING_MS,
   SLUDGE_GROUND_ACCEL_MULTIPLIER,
   SLUDGE_MAX_SPEED_MULTIPLIER,
-  createTerrainSurfaceState,
   createDefaultPowerInventory,
   createDefaultPowerTimers,
   createDefaultRunSettings,
@@ -29,15 +36,12 @@ import {
   type GravityFieldKind,
   type GravityFieldState,
   type HazardState,
-  type LauncherState,
   type LowGravityZoneState,
   type PlatformState,
   type PlayerState,
   type PowerType,
   type ProjectileState,
   type ScannerVolumeState,
-  type TerrainSurfaceKind,
-  type TerrainSurfaceState,
   type TemporaryBridgeState,
   type RevealVolumeState,
   type Rect,
@@ -54,9 +58,9 @@ import {
   createInactiveScannerVolumeState,
   createInactiveTemporaryBridgeState,
   isPlatformActive,
+  isPlatformTerrainSupportActive,
   isTopSurfaceOnlyPlatform,
   isTimedRevealBridgeLegible,
-  isTerrainSurfaceSupportActive,
   normalizeRevealedPlatformIds,
 } from './state';
 
@@ -81,7 +85,6 @@ const POWER_INVINCIBLE_MS = 10_000;
 const REWARD_REVEAL_MS = 1000;
 const REWARD_BLOCK_FLASH_MS = 180;
 const EXIT_FINISH_DURATION_MS = 720;
-const LAUNCHER_DIRECTION_EPSILON = 0.0001;
 const TURRET_VIEW_LEAD_MARGIN = 96;
 const CHARGER_TRIGGER_RANGE = 220;
 const ENEMY_SPACING_BUFFER = 28;
@@ -92,6 +95,8 @@ const HOP_FLIGHT_TIME_MIN = 0.42;
 const HOP_FLIGHT_TIME_MAX = 0.78;
 const HOP_HORIZONTAL_SPEED_LIMIT = 420;
 const HOP_IMPULSE_LIMIT = 980;
+const FALL_STAY_ARM_THRESHOLD_MS = 120;
+const FALL_HOP_GAP_THRESHOLD_MS = 50;
 const PLAYER_PRESENTATION_ORDER: PowerType[] = ['invincible', 'shooter', 'doubleJump', 'dash'];
 const DEFAULT_TURRET_PROJECTILE_SPEED = 260;
 const GRAVITY_FIELD_SCALE: Record<GravityFieldKind, number> = {
@@ -249,23 +254,13 @@ const groundedEnemyKinds: EnemyState['kind'][] = ['walker', 'hopper', 'turret', 
 
 const isGroundedEnemy = (enemy: Pick<EnemyState, 'kind'>): boolean => groundedEnemyKinds.includes(enemy.kind);
 
-const isStableEnemySupport = (platform: Pick<PlatformState, 'kind'>): boolean =>
-  platform.kind === 'static' || platform.kind === 'spring';
-
-const findStableSupportForSpan = (
-  platforms: PlatformState[],
-  left: number,
-  right: number,
-  expectedTop: number,
-): PlatformState | null =>
-  platforms.find((platform) => {
-    if (!isStableEnemySupport(platform)) {
-      return false;
-    }
-
-    const overlap = Math.min(right, platform.x + platform.width) - Math.max(left, platform.x);
-    return overlap >= Math.min(right - left, platform.width) * 0.55 && Math.abs(platform.y - expectedTop) <= 40;
-  }) ?? null;
+const isStableEnemySupport = (
+  platform: Pick<PlatformState, 'kind' | 'reveal' | 'temporaryBridge' | 'magnetic'>,
+): boolean =>
+  (platform.kind === 'static' || platform.kind === 'spring') &&
+  !platform.reveal &&
+  !platform.temporaryBridge &&
+  !platform.magnetic;
 
 const clampLaneToSupport = (
   support: PlatformState | null,
@@ -405,26 +400,7 @@ const resolveTurretPosition = (
     return;
   }
 
-  const supportCenterX = support.x + support.width / 2;
-  const fallbackSupports = platforms
-    .filter(
-      (platform) =>
-        platform.id !== support.id &&
-        isStableEnemySupport(platform) &&
-        Math.abs(platform.y - support.y) <= 120 &&
-        Math.abs(platform.x + platform.width / 2 - supportCenterX) <= 360,
-    )
-    .sort(
-      (a, b) =>
-        Math.abs(a.x + a.width / 2 - supportCenterX) - Math.abs(b.x + b.width / 2 - supportCenterX),
-    );
-
-  for (const fallbackSupport of fallbackSupports) {
-    const anchorX = clamp(turret.x, fallbackSupport.x, fallbackSupport.x + fallbackSupport.width - turret.width);
-    if (tryPlaceOnSupport(fallbackSupport, anchorX)) {
-      return;
-    }
-  }
+  throw new Error(`Turret cannot resolve on authored support without fallback: ${turret.id}`);
 };
 
 const getPlatformTopRect = (platform: PlatformState): Rect => ({
@@ -438,6 +414,7 @@ const findReachableHopTarget = (
   enemy: EnemyState,
   platforms: PlatformState[],
   gravity: number,
+  options?: { respectDirection?: boolean },
 ): { platform: PlatformState; landingX: number; landingY: number; vx: number; vy: number } | null => {
   const hop = enemy.hop;
   if (!hop || !enemy.supportPlatformId) {
@@ -452,16 +429,21 @@ const findReachableHopTarget = (
   const desiredDirection = enemy.direction;
   const currentCenterX = enemy.x + enemy.width / 2;
   const currentY = enemy.y;
+  const currentSupportCenterX = currentSupport.x + currentSupport.width / 2;
+  const respectDirection = options?.respectDirection ?? true;
   const candidates = platforms
     .filter((platform) => platform.id !== currentSupport.id && isStableEnemySupport(platform))
     .map((platform) => {
       const targetLeft = platform.x;
       const targetRight = platform.x + platform.width - enemy.width;
+      if (targetRight < targetLeft) {
+        return null;
+      }
       const landingX = clamp(currentCenterX - enemy.width / 2, targetLeft, targetRight);
       const landingCenterX = landingX + enemy.width / 2;
       const dx = landingCenterX - currentCenterX;
       const dy = platform.y - enemy.height - currentY;
-      if (Math.sign(dx || desiredDirection) !== desiredDirection) {
+      if (respectDirection && Math.sign(dx || desiredDirection) !== desiredDirection) {
         return null;
       }
       if (Math.abs(dx) > HOP_HORIZONTAL_REACH || Math.abs(dy) > HOP_VERTICAL_REACH) {
@@ -491,10 +473,12 @@ const findReachableHopTarget = (
         vx,
         vy,
         score: Math.abs(dx) + Math.abs(dy) * 0.75,
+        laneScore: Math.abs(platform.x + platform.width / 2 - currentSupportCenterX),
+        travelScore: Math.abs(landingX - enemy.x),
       };
     })
     .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null)
-    .sort((a, b) => a.score - b.score);
+    .sort((a, b) => a.score - b.score || a.laneScore - b.laneScore || a.travelScore - b.travelScore || a.landingX - b.landingX);
 
   return candidates[0] ?? null;
 };
@@ -628,10 +612,16 @@ type GravityCapsuleContainmentResolution = {
   hitVerticalWall: boolean;
 };
 
+type GravityCapsuleContainmentOptions = {
+  allowEntryDoorPassage: boolean;
+  allowExitDoorPassage: boolean;
+};
+
 const resolveGravityCapsuleContainment = (
   currentRect: Rect,
   previousRect: Rect,
   capsules: readonly GravityCapsuleState[],
+  options: GravityCapsuleContainmentOptions,
 ): GravityCapsuleContainmentResolution => {
   let resolvedX = currentRect.x;
   let resolvedY = currentRect.y;
@@ -648,12 +638,22 @@ const resolveGravityCapsuleContainment = (
     const overlapsEntryDoor = resolvedY < capsule.entryDoor.y + capsule.entryDoor.height && resolvedBottom > capsule.entryDoor.y;
     const overlapsExitDoor = resolvedY < capsule.exitDoor.y + capsule.exitDoor.height && resolvedBottom > capsule.exitDoor.y;
 
-    if (overlapsShellHeight && !overlapsEntryDoor && resolvedX < capsule.shell.x && resolvedRight > capsule.shell.x) {
+    if (
+      overlapsShellHeight &&
+      (!options.allowEntryDoorPassage || !overlapsEntryDoor) &&
+      resolvedX < capsule.shell.x &&
+      resolvedRight > capsule.shell.x
+    ) {
       resolvedX = previousRect.x < capsule.shell.x ? capsule.shell.x - currentRect.width : capsule.shell.x;
       hitHorizontalWall = true;
     }
 
-    if (overlapsShellHeight && !overlapsExitDoor && resolvedX < shellRight && resolvedRight > shellRight) {
+    if (
+      overlapsShellHeight &&
+      (!options.allowExitDoorPassage || !overlapsExitDoor) &&
+      resolvedX < shellRight &&
+      resolvedRight > shellRight
+    ) {
       resolvedX = previousRect.x >= shellRight ? shellRight : shellRight - currentRect.width;
       hitHorizontalWall = true;
     }
@@ -682,12 +682,7 @@ const pointInRect = (point: { x: number; y: number }, rect: Rect): boolean =>
 
 const TERRAIN_SURFACE_TOP_EPSILON = 8;
 
-const LAUNCHER_CONFIG: Record<LauncherState['kind'], { impulse: number; cooldownMs: number; cue: AudioCue }> = {
-  bouncePod: { impulse: 980, cooldownMs: 260, cue: AUDIO_CUES.bouncePod },
-  gasVent: { impulse: 820, cooldownMs: 520, cue: AUDIO_CUES.gasVent },
-};
-
-const terrainSurfaceSupportPoint = (
+const platformSupportPoint = (
   playerWidth: number,
   playerHeight: number,
   x: number,
@@ -696,22 +691,6 @@ const terrainSurfaceSupportPoint = (
   x: x + playerWidth / 2,
   y: y + playerHeight,
 });
-
-const normalizeLauncherDirection = (direction: { x: number; y: number } | undefined): { x: number; y: number } => {
-  if (!direction) {
-    return { x: 0, y: -1 };
-  }
-
-  const magnitude = Math.hypot(direction.x, direction.y);
-  if (magnitude <= LAUNCHER_DIRECTION_EPSILON) {
-    return { x: 0, y: -1 };
-  }
-
-  return {
-    x: direction.x / magnitude,
-    y: direction.y / magnitude,
-  };
-};
 
 const activePlatforms = (
   platforms: PlatformState[],
@@ -748,6 +727,8 @@ const findPlayerGravityField = (
         if (!capsule?.enabled) {
           return false;
         }
+
+        return pointInRect(center, capsule.shell);
       }
 
       return pointInRect(center, field);
@@ -755,19 +736,10 @@ const findPlayerGravityField = (
   );
 };
 
-const findLauncherSupportPlatform = (
-  platforms: PlatformState[],
-  launcher: Pick<LauncherState, 'x' | 'y' | 'width'>,
-): PlatformState | null =>
-  platforms.find(
-    (platform) =>
-      platform.kind === 'static' &&
-      !platform.reveal &&
-      !platform.temporaryBridge &&
-      launcher.x >= platform.x &&
-      launcher.x + launcher.width <= platform.x + platform.width &&
-      Math.abs(launcher.y - platform.y) <= 1,
-  ) ?? null;
+const findEnabledGravityCapsuleAtPoint = (
+  point: { x: number; y: number },
+  capsules: GravityCapsuleState[],
+): GravityCapsuleState | null => capsules.find((capsule) => capsule.enabled && pointInRect(point, capsule.shell)) ?? null;
 
 export class GameSession {
   private snapshot: SessionSnapshot;
@@ -876,15 +848,26 @@ export class GameSession {
 
     this.updateTemporaryBridges(deltaMs);
     this.updatePlatforms(deltaMs, deltaSec);
-    this.updateTerrainSurfaces(deltaMs);
 
     const supportSurface = player.supportPlatformId ? this.findSupportSurface(player.supportPlatformId) : null;
     let retainedSupportSurface: SolidSurface | null = null;
-    const supportTerrainSurface =
+    let detachFrameHorizontalCollisionExemptSurfaceId: string | null = null;
+    const supportTerrainPlatform =
       supportSurface?.kind === 'platform'
-        ? this.findSupportingTerrainSurface(supportSurface.platform.id, player.x, player.y)
+        ? this.findSupportingTerrainPlatform(supportSurface.platform.id, player.x, player.y)
         : null;
     if (supportSurface && player.onGround) {
+        const priorSupportX = supportSurface.x - supportSurface.vx * deltaSec;
+        const priorSupportY = supportSurface.y - supportSurface.vy * deltaSec;
+        const wasSupportedBeforePlatformMotion =
+          Math.abs(player.y + player.height - priorSupportY) <= 8 &&
+          player.x + player.width > priorSupportX + 6 &&
+          player.x < priorSupportX + supportSurface.width - 6;
+      const nextPlayerXWithoutSupportMotion = player.x + player.vx * deltaSec;
+      const wouldRemainSupportedWithoutSupportMotion =
+        Math.abs(player.y + player.height - priorSupportY) <= 8 &&
+        nextPlayerXWithoutSupportMotion + player.width > priorSupportX + 6 &&
+        nextPlayerXWithoutSupportMotion < priorSupportX + supportSurface.width - 6;
       const stillSupported =
         Math.abs(player.y + player.height - supportSurface.y) <= 8 &&
         player.x + player.width > supportSurface.x + 6 &&
@@ -895,6 +878,13 @@ export class GameSession {
         player.y += supportSurface.vy * deltaSec;
         retainedSupportSurface = supportSurface;
       } else {
+          const supportMovedAwayThisFrame =
+          wasSupportedBeforePlatformMotion &&
+          wouldRemainSupportedWithoutSupportMotion &&
+          (Math.abs(supportSurface.vx) > 0 || Math.abs(supportSurface.vy) > 0);
+          if (supportMovedAwayThisFrame) {
+            detachFrameHorizontalCollisionExemptSurfaceId = supportSurface.id;
+          }
         player.onGround = false;
         player.supportPlatformId = null;
       }
@@ -937,7 +927,7 @@ export class GameSession {
     }
 
     if (player.dashTimerMs <= 0) {
-      const groundedOnSticky = player.onGround && supportTerrainSurface?.kind === 'stickySludge';
+      const groundedOnSticky = player.onGround && supportTerrainPlatform?.surfaceMechanic?.kind === 'stickySludge';
       const groundAccel = groundedOnSticky ? GROUND_ACCEL * SLUDGE_GROUND_ACCEL_MULTIPLIER : GROUND_ACCEL;
       const groundMaxSpeed = groundedOnSticky ? MAX_MOVE_SPEED * SLUDGE_MAX_SPEED_MULTIPLIER : MAX_MOVE_SPEED;
       const accel = player.onGround ? groundAccel : AIR_ACCEL;
@@ -952,26 +942,39 @@ export class GameSession {
         player.vx -= Math.sign(player.vx) * drag;
       }
 
+      const ceilingSupport = this.findActiveGravityRoomCeilingSupport();
+
       if (player.onGround) {
         player.coyoteMs = COYOTE_TIME_MS;
         player.airJumpsRemaining = this.snapshot.progress.activePowers.doubleJump ? 1 : 0;
+      } else if (ceilingSupport) {
+        player.coyoteMs = COYOTE_TIME_MS;
       } else {
         player.coyoteMs = Math.max(0, player.coyoteMs - deltaMs);
       }
 
-      player.jumpBufferMs = input.jumpPressed ? JUMP_BUFFER_MS : Math.max(0, player.jumpBufferMs - deltaMs);
+      const supportedGravityCapsule = player.onGround ? this.findSupportedPlayerGravityCapsule() : null;
+      if (supportedGravityCapsule && player.supportPlatformId) {
+        player.jumpSourceGravityCapsuleId = supportedGravityCapsule.id;
+        player.jumpSourceSupportPlatformId = player.supportPlatformId;
+      } else if (ceilingSupport) {
+        player.jumpSourceGravityCapsuleId = ceilingSupport.capsule.id;
+        player.jumpSourceSupportPlatformId = ceilingSupport.phaseThroughSupportPlatformId;
+      } else if (player.onGround || player.coyoteMs <= 0) {
+        player.jumpSourceGravityCapsuleId = null;
+        player.jumpSourceSupportPlatformId = null;
+      }
+
+      const wantsCeilingHeldJump = Boolean(ceilingSupport && input.jumpHeld && player.vy === 0);
+      player.jumpBufferMs = input.jumpPressed || wantsCeilingHeldJump ? JUMP_BUFFER_MS : Math.max(0, player.jumpBufferMs - deltaMs);
       if (player.jumpBufferMs > 0) {
         if (player.coyoteMs > 0) {
-          player.vy = -JUMP_SPEED;
-          player.onGround = false;
-          player.supportPlatformId = null;
-          player.coyoteMs = 0;
-          player.jumpBufferMs = 0;
-          this.emitCue(AUDIO_CUES.jump);
+          this.startSupportedPlayerJump(AUDIO_CUES.jump);
         } else if (this.snapshot.progress.activePowers.doubleJump && player.airJumpsRemaining > 0) {
           player.vy = -JUMP_SPEED;
           player.onGround = false;
           player.supportPlatformId = null;
+          player.phaseThroughSupportPlatformId = null;
           player.airJumpsRemaining -= 1;
           player.jumpBufferMs = 0;
           this.emitCue(AUDIO_CUES.doubleJump);
@@ -999,6 +1002,9 @@ export class GameSession {
       if (player.onGround && surface.id === player.supportPlatformId) {
         continue;
       }
+      if (surface.id === detachFrameHorizontalCollisionExemptSurfaceId) {
+        continue;
+      }
       if (surface.kind === 'platform' && isTopSurfaceOnlyPlatform(surface.platform)) {
         continue;
       }
@@ -1018,6 +1024,9 @@ export class GameSession {
     let ridingSurface: SolidSurface | null = null;
     const verticalRect: Rect = { x: nextX, y: nextY, width: player.width, height: player.height };
     for (const surface of solidSurfaces) {
+      if (surface.id === player.phaseThroughSupportPlatformId) {
+        continue;
+      }
       if (!intersectsRect(verticalRect, surfaceRect(surface))) {
         continue;
       }
@@ -1028,18 +1037,18 @@ export class GameSession {
       const wasAboveSurface = player.y + player.height <= surface.y + TERRAIN_SURFACE_TOP_EPSILON;
 
       if (player.vy >= 0 && wasAboveSurface) {
-        const terrainSurface =
+        const terrainPlatform =
           surface.kind === 'platform'
-            ? this.findSupportingTerrainSurface(surface.id, nextX, surface.y - player.height)
+            ? this.findSupportingTerrainPlatform(surface.id, nextX, surface.y - player.height)
             : null;
-        if (terrainSurface && !isTerrainSurfaceSupportActive(terrainSurface)) {
+        if (terrainPlatform && !isPlatformTerrainSupportActive(terrainPlatform)) {
           continue;
         }
         nextY = surface.y - player.height;
         player.onGround = true;
         player.supportPlatformId = surface.id;
         ridingSurface = surface;
-        this.armBrittleSurface(terrainSurface);
+        this.armBrittlePlatform(terrainPlatform);
       } else if (player.vy < 0) {
         nextY = surface.y + surface.height;
         if (surface.kind === 'rewardBlock') {
@@ -1059,70 +1068,53 @@ export class GameSession {
 
     player.x = clamp(nextX, 0, stage.world.width - player.width);
     player.y = nextY;
+    if (player.phaseThroughSupportPlatformId) {
+      const phaseThroughSurface = this.findSupportSurface(player.phaseThroughSupportPlatformId);
+      if (!phaseThroughSurface || !intersectsRect(playerRect(player), surfaceRect(phaseThroughSurface))) {
+        player.phaseThroughSupportPlatformId = null;
+      }
+    }
     this.handleActivationNodes();
     this.handleGravityCapsules();
     this.handleScannerVolumes();
     this.handleRevealVolumes();
     this.finalizeTemporaryBridgeExpiry();
     this.updatePlayerGravityState();
-    const landedTerrainSurface =
+    const contactedSpringPlatform =
       player.onGround && player.supportPlatformId
-        ? this.findSupportingTerrainSurface(player.supportPlatformId, player.x, player.y)
-        : null;
-    const contactedLauncher = player.onGround && player.supportPlatformId
-      ? this.findSupportingLauncher(player.supportPlatformId, player.x, player.y)
-      : player.dashTimerMs > 0
-        ? this.findLauncherContactAtPosition(player.x, player.y)
-        : null;
-    this.armBrittleSurface(landedTerrainSurface);
-    this.finalizeTerrainSurfaceExpiry();
+        ? this.findContactedSpringPlatform(player.x, player.y, player.supportPlatformId)
+        : player.dashTimerMs > 0
+          ? this.findContactedSpringPlatform(player.x, player.y)
+          : null;
+    this.updateTerrainVariantPlatforms(deltaMs);
+    this.updateFallingPlatformContactTiming(deltaMs);
 
     if (ridingSurface) {
       if (!wasOnGround) {
         this.emitCue(AUDIO_CUES.land);
       }
-
-      if (ridingSurface.kind === 'platform' && ridingSurface.platform.kind === 'falling' && ridingSurface.platform.fall && !ridingSurface.platform.fall.triggered) {
-        ridingSurface.platform.fall.triggered = true;
-        ridingSurface.platform.fall.timerMs = ridingSurface.platform.fall.triggerDelayMs;
-        this.emitCue(AUDIO_CUES.collapse);
-      }
-
-      if (
-        ridingSurface.kind === 'platform' &&
-        ridingSurface.platform.kind === 'spring' &&
-        ridingSurface.platform.spring &&
-        ridingSurface.platform.spring.timerMs <= 0 &&
-        !input.jumpHeld
-      ) {
-        ridingSurface.platform.spring.timerMs = ridingSurface.platform.spring.cooldownMs;
-        player.vy = -ridingSurface.platform.spring.boost;
-        player.onGround = false;
-        player.supportPlatformId = null;
-        this.emitCue(AUDIO_CUES.spring);
-      }
     }
 
-    if (!contactedLauncher) {
-      player.launcherContactId = null;
+    if (!contactedSpringPlatform) {
+      player.springContactPlatformId = null;
     } else {
-      const isFreshLauncherContact = player.launcherContactId !== contactedLauncher.id;
-      player.launcherContactId = contactedLauncher.id;
+      const freshSpringContact = player.springContactPlatformId !== contactedSpringPlatform.id;
+      player.springContactPlatformId = contactedSpringPlatform.id;
 
       if (
-        isFreshLauncherContact &&
-        contactedLauncher.timerMs <= 0 &&
+        freshSpringContact &&
+        contactedSpringPlatform.spring &&
+        contactedSpringPlatform.spring.timerMs <= 0 &&
         player.dashTimerMs <= 0 &&
         !input.jumpHeld &&
         player.jumpBufferMs <= 0
       ) {
-        contactedLauncher.timerMs = contactedLauncher.cooldownMs;
-        player.vx = contactedLauncher.direction.x * contactedLauncher.impulse;
-        player.vy = contactedLauncher.direction.y * contactedLauncher.impulse;
+        contactedSpringPlatform.spring.timerMs = contactedSpringPlatform.spring.cooldownMs;
+        player.vy = -contactedSpringPlatform.spring.boost;
         player.onGround = false;
         player.supportPlatformId = null;
-        this.emitCue(LAUNCHER_CONFIG[contactedLauncher.kind].cue);
-        this.completeStageObjective('launcher', contactedLauncher.id);
+        player.phaseThroughSupportPlatformId = null;
+        this.emitCue(AUDIO_CUES.spring);
       }
     }
 
@@ -1218,13 +1210,6 @@ export class GameSession {
         platform.spring.timerMs = Math.max(0, platform.spring.timerMs - deltaMs);
       }
 
-      if (platform.fall?.triggered && !platform.fall.falling) {
-        platform.fall.timerMs -= deltaMs;
-        if (platform.fall.timerMs <= 0) {
-          platform.fall.falling = true;
-        }
-      }
-
       if (platform.fall?.falling) {
         platform.vy += this.snapshot.stage.world.gravity * 0.75 * deltaSec;
         platform.y += platform.vy * deltaSec;
@@ -1234,6 +1219,7 @@ export class GameSession {
         { x: platform.x, y: platform.y, width: platform.width, height: platform.height },
         previousRect,
         this.snapshot.stageRuntime.gravityCapsules,
+        { allowEntryDoorPassage: true, allowExitDoorPassage: true },
       );
 
       platform.x = containment.x;
@@ -1251,9 +1237,48 @@ export class GameSession {
         this.emitCue(AUDIO_CUES.movingPlatform);
       }
     }
+  }
 
-    for (const launcherEntry of this.snapshot.stageRuntime.launchers) {
-      launcherEntry.timerMs = Math.max(0, launcherEntry.timerMs - deltaMs);
+  private updateFallingPlatformContactTiming(deltaMs: number): void {
+    const supportedPlatformId = this.snapshot.player.onGround ? this.snapshot.player.supportPlatformId : null;
+
+    for (const platform of this.snapshot.stageRuntime.platforms) {
+      if (platform.kind !== 'falling' || !platform.fall || platform.fall.falling) {
+        continue;
+      }
+
+      const hasTopSupportContact = supportedPlatformId === platform.id;
+
+      if (!platform.fall.triggered) {
+        if (hasTopSupportContact) {
+          if (platform.fall.unsupportedGapMs > platform.fall.hopGapThresholdMs) {
+            platform.fall.accumulatedSupportMs = 0;
+          }
+          platform.fall.unsupportedGapMs = 0;
+          platform.fall.accumulatedSupportMs += deltaMs;
+
+          if (platform.fall.accumulatedSupportMs >= platform.fall.stayArmThresholdMs) {
+            platform.fall.triggered = true;
+            platform.fall.timerMs = platform.fall.triggerDelayMs;
+            this.emitCue(AUDIO_CUES.collapse);
+          }
+        } else {
+          platform.fall.unsupportedGapMs += deltaMs;
+          if (platform.fall.unsupportedGapMs > platform.fall.hopGapThresholdMs) {
+            platform.fall.accumulatedSupportMs = 0;
+          }
+        }
+        continue;
+      }
+
+      if (!hasTopSupportContact) {
+        continue;
+      }
+
+      platform.fall.timerMs = Math.max(0, platform.fall.timerMs - deltaMs);
+      if (platform.fall.timerMs <= 0) {
+        platform.fall.falling = true;
+      }
     }
   }
 
@@ -1283,25 +1308,77 @@ export class GameSession {
     }
   }
 
-  private updateTerrainSurfaces(deltaMs: number): void {
+  private updateTerrainVariantPlatforms(deltaMs: number): void {
     const { player, stageRuntime } = this.snapshot;
+    const supportedPlatformId = player.onGround ? player.supportPlatformId : null;
 
-    for (const surface of stageRuntime.terrainSurfaces) {
-      if (surface.kind !== 'brittleCrystal' || !surface.brittle) {
+    for (const platform of stageRuntime.platforms) {
+      if (platform.surfaceMechanic?.kind !== 'brittleCrystal' || !platform.brittle) {
         continue;
       }
 
-      if (surface.brittle.phase === 'warning') {
-        surface.brittle.warningMs = Math.max(0, surface.brittle.warningMs - deltaMs);
-        if (surface.brittle.warningMs > 0) {
+      const brittle = platform.brittle;
+      const hasTopSupportContact = supportedPlatformId === platform.id;
+      const unsupportedGapMs = brittle.unsupportedGapMs ?? 0;
+
+      if (brittle.phase === 'intact') {
+        brittle.unsupportedGapMs = 0;
+        if (!hasTopSupportContact) {
+          continue;
+        }
+        this.armBrittlePlatform(platform);
+      }
+
+      if (brittle.phase === 'warning') {
+        if (hasTopSupportContact) {
+          brittle.unsupportedGapMs = 0;
+          brittle.warningMs = Math.max(0, brittle.warningMs - deltaMs);
+
+          if (brittle.warningMs <= 0) {
+            brittle.phase = 'ready';
+            brittle.warningMs = 0;
+            brittle.readyElapsedMs = 0;
+            brittle.readyBreakDelayMs = BRITTLE_READY_BREAK_DELAY_MS;
+            brittle.readyRemainingMs = BRITTLE_READY_BREAK_DELAY_MS;
+          }
           continue;
         }
 
-        surface.brittle.phase = player.onGround && player.supportPlatformId === surface.supportPlatformId ? 'expired' : 'broken';
+        const nextGapMs = unsupportedGapMs + deltaMs;
+        if (nextGapMs > FALL_HOP_GAP_THRESHOLD_MS) {
+          brittle.phase = 'intact';
+          brittle.warningMs = BRITTLE_WARNING_MS;
+          brittle.unsupportedGapMs = 0;
+          brittle.readyElapsedMs = 0;
+          brittle.readyBreakDelayMs = BRITTLE_READY_BREAK_DELAY_MS;
+          brittle.readyRemainingMs = BRITTLE_READY_BREAK_DELAY_MS;
+          continue;
+        }
+
+        brittle.unsupportedGapMs = nextGapMs;
+        continue;
       }
 
-      if (surface.brittle.phase === 'expired' && (!player.onGround || player.supportPlatformId !== surface.supportPlatformId)) {
-        surface.brittle.phase = 'broken';
+      if (brittle.phase === 'ready') {
+        const readyBreakDelayMs = brittle.readyBreakDelayMs ?? BRITTLE_READY_BREAK_DELAY_MS;
+        const readyElapsedMs = Math.min(readyBreakDelayMs, (brittle.readyElapsedMs ?? 0) + deltaMs);
+        brittle.readyBreakDelayMs = readyBreakDelayMs;
+        brittle.readyElapsedMs = readyElapsedMs;
+        brittle.readyRemainingMs = Math.max(0, readyBreakDelayMs - readyElapsedMs);
+
+        if (readyElapsedMs < readyBreakDelayMs) {
+          brittle.unsupportedGapMs = 0;
+          continue;
+        }
+
+        brittle.phase = 'broken';
+        brittle.readyRemainingMs = 0;
+        brittle.unsupportedGapMs = 0;
+        continue;
+      }
+
+      if (hasTopSupportContact) {
+        brittle.unsupportedGapMs = 0;
       }
     }
   }
@@ -1347,6 +1424,114 @@ export class GameSession {
     this.snapshot.player.gravityScale = field ? GRAVITY_FIELD_SCALE[field.kind] : zone?.gravityScale ?? 1;
   }
 
+  private findSupportedPlayerGravityCapsule(): GravityCapsuleState | null {
+    const { player, stageRuntime } = this.snapshot;
+    if (!player.onGround || !player.supportPlatformId) {
+      return null;
+    }
+
+    return findEnabledGravityCapsuleAtPoint(
+      {
+        x: player.x + player.width / 2,
+        y: player.y + player.height - 1,
+      },
+      stageRuntime.gravityCapsules,
+    );
+  }
+
+  private findActiveGravityRoomCeilingSupport(): { capsule: GravityCapsuleState; phaseThroughSupportPlatformId: string | null } | null {
+    const { player, stageRuntime } = this.snapshot;
+    if (player.onGround || player.vy > 0) {
+      return null;
+    }
+
+    const capsule = findEnabledGravityCapsuleAtPoint(
+      {
+        x: player.x + player.width / 2,
+        y: player.y + 1,
+      },
+      stageRuntime.gravityCapsules,
+    );
+    if (!capsule) {
+      return null;
+    }
+
+    const supportPlatform = stageRuntime.platforms.find((platform) => {
+      if (isTopSurfaceOnlyPlatform(platform)) {
+        return false;
+      }
+
+      const overlap = Math.min(player.x + player.width, platform.x + platform.width) - Math.max(player.x, platform.x);
+      return overlap > 12 && player.y >= platform.y + platform.height - 4 && player.y <= platform.y + platform.height + 16;
+    });
+
+    if (supportPlatform) {
+      return {
+        capsule,
+        phaseThroughSupportPlatformId: supportPlatform.id,
+      };
+    }
+
+    const topWall = createSolidSurfaceList(stageRuntime).find(
+      (surface) =>
+        surface.kind === 'gravityCapsuleWall' &&
+        surface.gravityCapsuleId === capsule.id &&
+        Math.abs(surface.y - capsule.shell.y) <= 1 &&
+        Math.min(player.x + player.width, surface.x + surface.width) - Math.max(player.x, surface.x) > 12 &&
+        player.y >= surface.y + surface.height - 4 &&
+        player.y <= surface.y + surface.height + 16,
+    );
+
+    if (!topWall) {
+      return null;
+    }
+
+    return {
+      capsule,
+      phaseThroughSupportPlatformId: null,
+    };
+  }
+
+  private resolveSupportedPlayerJumpTakeoff(): { velocityY: number; phaseThroughSupportPlatformId: string | null } {
+    const { player, stageRuntime } = this.snapshot;
+    const currentSupportedCapsule = this.findSupportedPlayerGravityCapsule();
+    const jumpSourceCapsule = currentSupportedCapsule
+      ? currentSupportedCapsule
+      : player.jumpSourceGravityCapsuleId
+        ? stageRuntime.gravityCapsules.find(
+            (capsule) => capsule.id === player.jumpSourceGravityCapsuleId && capsule.enabled,
+          ) ?? null
+        : null;
+
+    if (!jumpSourceCapsule) {
+      return {
+        velocityY: -JUMP_SPEED,
+        phaseThroughSupportPlatformId: null,
+      };
+    }
+
+    return {
+      velocityY: JUMP_SPEED,
+      phaseThroughSupportPlatformId: currentSupportedCapsule
+        ? player.supportPlatformId
+        : player.jumpSourceSupportPlatformId,
+    };
+  }
+
+  private startSupportedPlayerJump(cue: AudioCue): void {
+    const { player } = this.snapshot;
+    const takeoff = this.resolveSupportedPlayerJumpTakeoff();
+    player.vy = takeoff.velocityY;
+    player.onGround = false;
+    player.supportPlatformId = null;
+    player.phaseThroughSupportPlatformId = takeoff.phaseThroughSupportPlatformId;
+    player.coyoteMs = 0;
+    player.jumpBufferMs = 0;
+    player.jumpSourceGravityCapsuleId = null;
+    player.jumpSourceSupportPlatformId = null;
+    this.emitCue(cue);
+  }
+
   private handleGravityCapsules(): void {
     const { player, stageRuntime } = this.snapshot;
     const playerBounds = playerRect(player);
@@ -1365,31 +1550,22 @@ export class GameSession {
     }
   }
 
-  private armBrittleSurface(surface: TerrainSurfaceState | null): void {
-    if (!surface || surface.kind !== 'brittleCrystal' || !surface.brittle) {
+  private armBrittlePlatform(platform: PlatformState | null): void {
+    if (!platform || platform.surfaceMechanic?.kind !== 'brittleCrystal' || !platform.brittle) {
       return;
     }
 
-    if (surface.brittle.phase !== 'intact') {
+    if (platform.brittle.phase !== 'intact') {
       return;
     }
 
-    surface.brittle.phase = 'warning';
-    surface.brittle.warningMs = BRITTLE_WARNING_MS;
+    platform.brittle.phase = 'warning';
+    platform.brittle.warningMs = BRITTLE_WARNING_MS;
+    platform.brittle.unsupportedGapMs = 0;
+    platform.brittle.readyBreakDelayMs = BRITTLE_READY_BREAK_DELAY_MS;
+    platform.brittle.readyElapsedMs = 0;
+    platform.brittle.readyRemainingMs = BRITTLE_READY_BREAK_DELAY_MS;
     this.emitCue(AUDIO_CUES.danger);
-  }
-
-  private finalizeTerrainSurfaceExpiry(): void {
-    const supportedPlatformId = this.snapshot.player.onGround ? this.snapshot.player.supportPlatformId : null;
-    for (const surface of this.snapshot.stageRuntime.terrainSurfaces) {
-      if (surface.kind !== 'brittleCrystal' || !surface.brittle) {
-        continue;
-      }
-
-      if (surface.brittle.phase === 'expired' && supportedPlatformId !== surface.supportPlatformId) {
-        surface.brittle.phase = 'broken';
-      }
-    }
   }
 
   private updateEnemies(deltaMs: number, deltaSec: number): void {
@@ -1447,14 +1623,18 @@ export class GameSession {
           enemy.vy = 0;
           hop.timerMs -= deltaMs;
           if (hop.timerMs <= 0) {
-            let target = findReachableHopTarget(enemy, traversablePlatforms, stage.world.gravity);
-            if (!target) {
+            const firstCommittedHop = (hop.committedHops ?? 0) === 0;
+            let target = findReachableHopTarget(enemy, traversablePlatforms, stage.world.gravity, {
+              respectDirection: !firstCommittedHop,
+            });
+            if (!target && !firstCommittedHop) {
               enemy.direction = enemy.direction === 1 ? -1 : 1;
               target = findReachableHopTarget(enemy, traversablePlatforms, stage.world.gravity);
             }
 
             if (target) {
               hop.timerMs = hop.intervalMs;
+              hop.committedHops = (hop.committedHops ?? 0) + 1;
               hop.targetPlatformId = target.platform.id;
               hop.targetX = target.landingX;
               hop.targetY = target.landingY;
@@ -1466,7 +1646,9 @@ export class GameSession {
               emitVisibleCue(AUDIO_CUES.enemyHop);
             } else {
               hop.timerMs = Math.min(hop.intervalMs, 220);
-              enemy.direction = enemy.direction === 1 ? -1 : 1;
+              if (!firstCommittedHop) {
+                enemy.direction = enemy.direction === 1 ? -1 : 1;
+              }
             }
           }
         }
@@ -1509,17 +1691,6 @@ export class GameSession {
           }
 
           if (hop.targetY !== null && enemy.y > hop.targetY + HOP_VERTICAL_REACH) {
-            const rescuePlatform = hop.targetPlatformId
-              ? traversablePlatforms.find((platform) => platform.id === hop.targetPlatformId) ?? null
-              : null;
-            if (rescuePlatform) {
-              enemy.y = rescuePlatform.y - enemy.height;
-              enemy.x = clamp(enemy.x, rescuePlatform.x, rescuePlatform.x + rescuePlatform.width - enemy.width);
-              enemy.supportY = enemy.y;
-              enemy.supportPlatformId = rescuePlatform.id;
-              enemy.vx = 0;
-              enemy.vy = 0;
-            }
             hop.targetPlatformId = null;
             hop.targetX = null;
             hop.targetY = null;
@@ -1609,7 +1780,10 @@ export class GameSession {
         }
       }
 
-      const containment = resolveGravityCapsuleContainment(enemyRect(enemy), previousRect, stageRuntime.gravityCapsules);
+      const containment = resolveGravityCapsuleContainment(enemyRect(enemy), previousRect, stageRuntime.gravityCapsules, {
+        allowEntryDoorPassage: false,
+        allowExitDoorPassage: false,
+      });
       enemy.x = containment.x;
       enemy.y = containment.y;
 
@@ -1975,7 +2149,10 @@ export class GameSession {
     player.jumpBufferMs = 0;
     player.onGround = false;
     player.supportPlatformId = null;
-    player.launcherContactId = null;
+    player.jumpSourceGravityCapsuleId = null;
+    player.jumpSourceSupportPlatformId = null;
+    player.phaseThroughSupportPlatformId = null;
+    player.springContactPlatformId = null;
     player.lowGravityZoneId = null;
     player.gravityFieldId = null;
     player.gravityFieldKind = null;
@@ -2224,43 +2401,38 @@ export class GameSession {
     return createSolidSurfaceList(this.snapshot.stageRuntime).find((surface) => surface.id === id) ?? null;
   }
 
-  private findSupportingTerrainSurface(platformId: string, playerX: number, playerY: number): TerrainSurfaceState | null {
-    const supportPoint = terrainSurfaceSupportPoint(PLAYER_WIDTH, PLAYER_HEIGHT, playerX, playerY);
+  private findSupportingTerrainPlatform(platformId: string, playerX: number, playerY: number): PlatformState | null {
+    const supportPoint = platformSupportPoint(PLAYER_WIDTH, PLAYER_HEIGHT, playerX, playerY);
     return (
-      this.snapshot.stageRuntime.terrainSurfaces.find(
-        (surface) =>
-          surface.supportPlatformId === platformId &&
-          supportPoint.x >= surface.x &&
-          supportPoint.x <= surface.x + surface.width &&
-          supportPoint.y >= surface.y - TERRAIN_SURFACE_TOP_EPSILON &&
-          supportPoint.y <= surface.y + surface.height + TERRAIN_SURFACE_TOP_EPSILON,
+      this.snapshot.stageRuntime.platforms.find(
+        (platform) =>
+          platform.id === platformId &&
+          (platform.surfaceMechanic?.kind === 'brittleCrystal' || platform.surfaceMechanic?.kind === 'stickySludge') &&
+          supportPoint.x >= platform.x &&
+          supportPoint.x <= platform.x + platform.width &&
+          supportPoint.y >= platform.y - TERRAIN_SURFACE_TOP_EPSILON &&
+          supportPoint.y <= platform.y + platform.height + TERRAIN_SURFACE_TOP_EPSILON,
       ) ?? null
     );
   }
 
-  private findSupportingLauncher(platformId: string, playerX: number, playerY: number): LauncherState | null {
-    const supportPoint = terrainSurfaceSupportPoint(PLAYER_WIDTH, PLAYER_HEIGHT, playerX, playerY);
+  private findContactedSpringPlatform(playerX: number, playerY: number, platformId?: string): PlatformState | null {
+    const supportPoint = platformSupportPoint(PLAYER_WIDTH, PLAYER_HEIGHT, playerX, playerY);
     return (
-      this.snapshot.stageRuntime.launchers.find(
-        (launcherEntry) =>
-          launcherEntry.supportPlatformId === platformId &&
-          supportPoint.x >= launcherEntry.x &&
-          supportPoint.x <= launcherEntry.x + launcherEntry.width &&
-          supportPoint.y >= launcherEntry.y - TERRAIN_SURFACE_TOP_EPSILON &&
-          supportPoint.y <= launcherEntry.y + launcherEntry.height + TERRAIN_SURFACE_TOP_EPSILON,
-      ) ?? null
-    );
-  }
-
-  private findLauncherContactAtPosition(playerX: number, playerY: number): LauncherState | null {
-    const supportPoint = terrainSurfaceSupportPoint(PLAYER_WIDTH, PLAYER_HEIGHT, playerX, playerY);
-    return (
-      this.snapshot.stageRuntime.launchers.find(
-        (launcherEntry) =>
-          supportPoint.x >= launcherEntry.x &&
-          supportPoint.x <= launcherEntry.x + launcherEntry.width &&
-          supportPoint.y >= launcherEntry.y - TERRAIN_SURFACE_TOP_EPSILON &&
-          supportPoint.y <= launcherEntry.y + launcherEntry.height + TERRAIN_SURFACE_TOP_EPSILON,
+      this.snapshot.stageRuntime.platforms.find(
+        (platform) => {
+          const overlap = Math.max(0, Math.min(playerX + PLAYER_WIDTH, platform.x + platform.width) - Math.max(playerX, platform.x));
+          return (
+            (!platformId || platform.id === platformId) &&
+            platform.kind === 'spring' &&
+            Boolean(platform.spring) &&
+            overlap >= Math.min(PLAYER_WIDTH - 2, platform.width) &&
+            supportPoint.x >= platform.x &&
+            supportPoint.x <= platform.x + platform.width &&
+            supportPoint.y >= platform.y - TERRAIN_SURFACE_TOP_EPSILON &&
+            supportPoint.y <= platform.y + platform.height + TERRAIN_SURFACE_TOP_EPSILON
+          );
+        },
       ) ?? null
     );
   }
@@ -2344,8 +2516,11 @@ export class GameSession {
     const respawnCheckpoint = activeCheckpointId
       ? stage.checkpoints.find((checkpoint) => checkpoint.id === activeCheckpointId) ?? null
       : null;
-    const spawnX = respawnCheckpoint ? respawnCheckpoint.rect.x + 12 : stage.playerSpawn.x;
-    const spawnY = respawnCheckpoint ? respawnCheckpoint.rect.y - PLAYER_HEIGHT : stage.playerSpawn.y;
+    const respawnAnchor = respawnCheckpoint
+      ? resolveCheckpointRespawnPoint(stage, respawnCheckpoint.rect, PLAYER_WIDTH, PLAYER_HEIGHT)
+      : null;
+    const spawnX = respawnAnchor?.x ?? stage.playerSpawn.x;
+    const spawnY = respawnAnchor?.y ?? stage.playerSpawn.y;
     const player: PlayerState = {
       x: spawnX,
       y: spawnY,
@@ -2366,7 +2541,10 @@ export class GameSession {
       airJumpsRemaining: progress.activePowers.doubleJump ? 1 : 0,
       presentationPower: null,
       supportPlatformId: null,
-      launcherContactId: null,
+      jumpSourceGravityCapsuleId: null,
+      jumpSourceSupportPlatformId: null,
+      phaseThroughSupportPlatformId: null,
+      springContactPlatformId: null,
       lowGravityZoneId: null,
       gravityFieldId: null,
       gravityFieldKind: null,
@@ -2378,7 +2556,18 @@ export class GameSession {
     const platforms = stage.platforms.map<PlatformState>((platform) => ({
       id: platform.id,
       kind: platform.kind,
-      terrainVariant: platform.terrainVariant,
+      surfaceMechanic: platform.surfaceMechanic ? { kind: platform.surfaceMechanic.kind } : undefined,
+      brittle:
+        platform.surfaceMechanic?.kind === 'brittleCrystal'
+          ? {
+              phase: 'intact',
+              warningMs: BRITTLE_WARNING_MS,
+              unsupportedGapMs: 0,
+              readyBreakDelayMs: BRITTLE_READY_BREAK_DELAY_MS,
+              readyElapsedMs: 0,
+              readyRemainingMs: BRITTLE_READY_BREAK_DELAY_MS,
+            }
+          : undefined,
       x: platform.x,
       y: platform.y,
       width: platform.width,
@@ -2391,9 +2580,13 @@ export class GameSession {
       fall: platform.fall
         ? {
             triggerDelayMs: platform.fall.triggerDelayMs,
+            stayArmThresholdMs: platform.fall.stayArmThresholdMs ?? FALL_STAY_ARM_THRESHOLD_MS,
+            hopGapThresholdMs: platform.fall.hopGapThresholdMs ?? FALL_HOP_GAP_THRESHOLD_MS,
             timerMs: platform.fall.triggerDelayMs,
             triggered: false,
             falling: false,
+            accumulatedSupportMs: 0,
+            unsupportedGapMs: 0,
           }
         : undefined,
       spring: platform.spring
@@ -2428,8 +2621,10 @@ export class GameSession {
       const variantRuntime = enemy.variant ? createTurretVariantRuntime(enemy.variant, intervalMultiplier) : null;
       const width = enemy.kind === 'turret' ? 28 : 34;
       const height = enemy.kind === 'turret' ? 38 : enemy.kind === 'flyer' ? 24 : 30;
-      const support = isGroundedEnemy(enemy)
-        ? findStableSupportForSpan(traversablePlatforms, enemy.position.x, enemy.position.x + width, enemy.position.y + height)
+      const resolvedGroundedRect = isGroundedEnemy(enemy) ? resolveGroundedEnemyRect(stage, enemy) : null;
+      const authoredSupport = isGroundedEnemy(enemy) ? findGroundedEnemySupport(stage, enemy) : null;
+      const support = authoredSupport
+        ? traversablePlatforms.find((platform) => platform.id === authoredSupport.id) ?? null
         : null;
       const supportY = support ? support.y - height : null;
       const lane =
@@ -2440,17 +2635,19 @@ export class GameSession {
             : enemy.kind === 'charger' && enemy.charger
               ? clampLaneToSupport(support, enemy.charger.left, enemy.charger.right, width)
               : clampLaneToSupport(support, null, null, width);
-      const initialX =
-        lane.laneLeft !== null && lane.laneRight !== null
-          ? clamp(enemy.position.x, lane.laneLeft, lane.laneRight)
-          : enemy.position.x;
+      if (isGroundedEnemy(enemy) && (!support || !resolvedGroundedRect || supportY !== resolvedGroundedRect.y)) {
+        throw new Error(`Grounded enemy is missing authored flush support at runtime: ${enemy.id}`);
+      }
+
+      const initialX = resolvedGroundedRect?.x ?? enemy.position.x;
+      const initialY = resolvedGroundedRect?.y ?? supportY ?? enemy.position.y;
 
       return {
         id: enemy.id,
         kind: enemy.kind,
         variant: enemy.variant,
         x: initialX,
-        y: supportY ?? enemy.position.y,
+        y: initialY,
         vx: 0,
         vy: 0,
         width,
@@ -2476,6 +2673,7 @@ export class GameSession {
               timerMs: enemy.hop.intervalMs * intervalMultiplier,
               impulse: enemy.hop.impulse,
               speed: enemy.hop.speed * speedMultiplier,
+              committedHops: 0,
               targetPlatformId: null,
               targetX: null,
               targetY: null,
@@ -2563,25 +2761,6 @@ export class GameSession {
       respawnTimerMs: 0,
       stageRuntime: {
         platforms,
-        terrainSurfaces: platforms
-          .filter((platform): platform is PlatformState & { terrainVariant: TerrainSurfaceKind } => Boolean(platform.terrainVariant))
-          .map<TerrainSurfaceState>((platform) => createTerrainSurfaceState(platform)),
-        launchers: stage.launchers.map<LauncherState>((launcherEntry) => {
-          const supportPlatform = findLauncherSupportPlatform(platforms, launcherEntry);
-          if (!supportPlatform) {
-            throw new Error(`Launcher is missing platform support at runtime: ${launcherEntry.id}`);
-          }
-
-          const config = LAUNCHER_CONFIG[launcherEntry.kind];
-          return {
-            ...launcherEntry,
-            supportPlatformId: supportPlatform.id,
-            direction: normalizeLauncherDirection(launcherEntry.direction),
-            impulse: config.impulse,
-            cooldownMs: config.cooldownMs,
-            timerMs: 0,
-          };
-        }),
         lowGravityZones: stage.lowGravityZones.map<LowGravityZoneState>((zone) => ({ ...zone })),
         gravityFields: stage.gravityFields.map<GravityFieldState>((field) => ({
           ...field,
@@ -2600,10 +2779,24 @@ export class GameSession {
         activationNodes: stage.activationNodes.map<ActivationNodeState>((node) => createInactiveActivationNodeState(node)),
         temporaryBridges,
         revealedPlatformIds: activeRevealIds,
-        checkpoints: stage.checkpoints.map<CheckpointState>((checkpoint) => ({
-          ...checkpoint,
-          activated: checkpoint.id === activeCheckpointId,
-        })),
+        checkpoints: stage.checkpoints.map<CheckpointState>((checkpoint) => {
+          const checkpointRect = resolveCheckpointRect(stage, checkpoint.rect);
+          const checkpointRespawn = resolveCheckpointRespawnPoint(stage, checkpoint.rect, PLAYER_WIDTH, PLAYER_HEIGHT);
+          if (!checkpointRespawn || !checkpointRect) {
+            throw new Error(`Checkpoint is missing grounded visible support at runtime: ${checkpoint.id}`);
+          }
+
+          return {
+            ...checkpoint,
+            rect: checkpointRect,
+            activated: checkpoint.id === activeCheckpointId,
+            supportPlatformId: checkpointRespawn.supportPlatformId,
+            respawn: {
+              x: checkpointRespawn.x,
+              y: checkpointRespawn.y,
+            },
+          };
+        }),
         collectibles: stage.collectibles.map<CollectibleState>((collectible) => ({
           ...collectible,
           collected: checkpointRestore?.collectedCollectibleIds.has(collectible.id) ?? false,
@@ -2621,7 +2814,17 @@ export class GameSession {
           hitFlashMs: 0,
         })),
         rewardReveals: [],
-        hazards: stage.hazards.map<HazardState>((hazard) => ({ ...hazard })),
+        hazards: stage.hazards.map<HazardState>((hazard) => {
+          const rect = resolveHazardRect(stage, hazard.rect);
+          if (!rect) {
+            throw new Error(`Hazard is missing grounded visible support at runtime: ${hazard.id}`);
+          }
+
+          return {
+            ...hazard,
+            rect,
+          };
+        }),
         enemies: (() => {
           const resolvedEnemies = [...enemies];
           for (const enemy of resolvedEnemies) {

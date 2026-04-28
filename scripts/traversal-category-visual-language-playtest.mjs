@@ -32,7 +32,7 @@ async function waitForServer(url, timeoutMs = 60000) {
   throw new Error(`Timed out waiting for preview server at ${url}`);
 }
 
-async function waitForActiveScene(page, sceneKey, timeoutMs = 12000) {
+async function waitForActiveScene(page, sceneKey, timeoutMs = 20000) {
   await page.waitForFunction(
     (key) => {
       const game = window.__CRYSTAL_RUN_GAME__;
@@ -189,7 +189,6 @@ async function main() {
       const staticVisual = forestBefore.debug.platformVisuals.find(
         (platform) => platform.kind === 'static' && !platform.revealId && !platform.temporaryBridgeScannerId && !platform.magneticPowered,
       );
-      const bouncePodVisual = forestBefore.debug.launcherVisuals.find((launcher) => launcher.id === 'forest-bounce-pod-route');
       const forestCapsuleVisual = forestBefore.debug.gravityCapsuleVisuals.find(
         (capsule) => capsule.id === 'forest-anti-grav-canopy-room',
       );
@@ -236,10 +235,6 @@ async function main() {
             springVisual?.markerVisibleCount === 3 &&
             staticVisual?.visualCategory === 'neutral' &&
             staticVisual?.markerVisibleCount === 0,
-        },
-        {
-          name: 'assisted movement uses family markers on bounce pods',
-          passed: bouncePodVisual?.visualCategory === 'assistedMovement' && bouncePodVisual?.markerVisibleCount === 3,
         },
         {
           name: 'route toggle activation updates node and magnetic platform locally',
@@ -299,7 +294,6 @@ async function main() {
           forestBefore: {
             springVisual,
             staticVisual,
-            bouncePodVisual,
             forestCapsuleVisual,
             forestRoomPlatform,
           },

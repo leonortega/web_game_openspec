@@ -4,103 +4,24 @@
 TBD - created by archiving change mvp-platform-game. Update Purpose after archive.
 ## Requirements
 ### Requirement: Player can move and jump precisely
-The game SHALL provide a player-controlled character that can run left and right, jump, and adjust position in the air with responsive platformer controls. The controller MUST include a forgiving jump window after leaving a platform and a buffered jump input shortly before landing. While the player is still supported by a falling platform's top surface, that support MUST remain valid for normal movement and jump initiation. When the player is inside an authored low-gravity zone, the controller MUST reduce only the player's ongoing vertical acceleration and MUST restore normal gravity immediately after the player exits the zone. When the player is inside an authored anti-grav stream, the controller MUST add only upward-biased ongoing airborne vertical acceleration and MUST restore normal gravity immediately after the player exits the stream. When the player is inside an authored gravity inversion column, the controller MUST reverse only the player's ongoing airborne vertical acceleration and MUST restore normal gravity immediately after the player exits the column. Low gravity, anti-grav streams, and gravity inversion columns MUST modify the airborne arc after a movement impulse is applied rather than rewriting the initial jump, double-jump, spring-launch, biome-launcher, or dash impulse values. While the player is grounded on authored sticky sludge, the controller MUST use reduced grounded acceleration and reduced grounded maximum horizontal speed only. Sticky sludge MUST preserve grounded jump launch strength, jump buffering, coyote timing, spring-launch, biome-launcher, dash, and gravity-field composition rules instead of rewriting them. Authored bounce pods and gas vents MUST trigger only on the first eligible ready-contact update, MUST apply their launch impulse on that update before low-gravity, anti-grav-stream, or gravity-inversion airborne adjustment begins, and MUST use the same jump-hold suppression rule as springs. If jump input is already held, or a buffered jump resolves, on that launcher-contact update, the launcher MUST not auto-launch for that contact and the controller MUST continue with the normal grounded jump or support resolution instead. An active dash MUST NOT be interrupted by launcher contact, and a launcher MUST NOT retroactively fire later during the same uninterrupted contact after dash contact or suppression. An active dash MUST suppress low-gravity, anti-grav-stream, and gravity-inversion acceleration while dash motion still overrides airborne movement.
+The game SHALL provide a player-controlled character that can run left and right, jump, and adjust position in the air with responsive platformer controls. The controller MUST include a forgiving jump window after leaving a platform and a buffered jump input shortly before landing. While the player is still supported by a falling platform's top surface, that support MUST remain valid for normal movement and jump initiation, including falling platforms that are in contact-aware collapse timing states before or after arm. Falling-platform arming and collapse timing MUST use deterministic contact-pattern thresholds (`stayArmThresholdMs = 120`, `hopGapThresholdMs = 50`) without invalidating grounded jump eligibility during active support contact.
 
-#### Scenario: Running on solid ground
-- **WHEN** the player holds a movement input on stable ground
-- **THEN** the character moves horizontally in that direction with predictable acceleration and deceleration
+#### Scenario: Jumping during contact-aware falling-platform timing
+- **WHEN** the player is in valid top-surface support contact with a falling platform while that platform is accumulating pre-arm stay time or consuming armed collapse time
+- **THEN** jump initiation remains valid under normal controller jump rules
 
-#### Scenario: Running on sticky sludge
-- **WHEN** the player holds a movement input while grounded on sticky sludge
-- **THEN** the character accelerates more slowly and reaches a lower grounded top speed than on stable normal ground
 
-#### Scenario: Jumping from a platform edge
-- **WHEN** the player presses jump shortly after walking off a platform
-- **THEN** the character still performs a valid jump
 
-#### Scenario: Jumping from sticky sludge coyote time
-- **WHEN** the player presses jump during coyote time immediately after leaving sticky sludge support
-- **THEN** the controller performs a valid jump using the normal jump launch strength for that takeoff
+### Requirement: Support-detach frames preserve occupied fall position
+The game SHALL preserve the player's occupied position on the single update where authored support motion ends valid top-surface contact without a player-initiated jump. On that detach update, collision resolution MUST ignore only the former support body for horizontal blocking if that body was the immediately preceding valid support and only if the player is leaving its top surface because the support moved away. All other solid bodies, including nearby walls and platforms, MUST still resolve normally on that update. The exemption MUST expire immediately after that update and MUST NOT alter jump initiation, coyote time, buffered jump resolution, dash motion, gravity-field behavior, or falling-platform support retention while top-surface contact remains valid. Contact-aware falling-platform timing thresholds MUST NOT broaden or weaken this single-update exemption.
 
-#### Scenario: Buffering jump before landing
-- **WHEN** the player presses jump shortly before touching the ground
-- **THEN** the character jumps on landing without requiring a second input
+#### Scenario: Detaching from support after contact-aware falling timing
+- **WHEN** authored support motion clears a falling platform away from under the player's occupied footprint after any contact-aware arm/timer state transitions
+- **THEN** the player begins airborne motion from the same occupied position on that detach update
+- **AND** only the immediately former support is exempt from horizontal blocking on that one update
+- **AND** other solids still block normally
 
-#### Scenario: Buffering a jump onto sticky sludge
-- **WHEN** a buffered jump resolves on the frame the player lands on sticky sludge
-- **THEN** the character jumps immediately using the normal jump launch strength
 
-#### Scenario: Jumping from a falling platform
-- **WHEN** the player is still in contact with the top of a falling platform and presses jump
-- **THEN** the controller performs a normal jump rather than dropping the player out of jumpable support early
-
-#### Scenario: Jumping inside a low-gravity zone
-- **WHEN** the player jumps or double jumps while inside an authored low-gravity zone
-- **THEN** the jump or double-jump starts with the normal impulse
-- **AND** the remaining ascent and descent use the reduced vertical acceleration from that zone
-
-#### Scenario: Jumping inside an anti-grav stream
-- **WHEN** the player jumps or double jumps while inside an authored anti-grav stream
-- **THEN** the jump or double-jump starts with the normal impulse
-- **AND** the remaining airborne motion gains the stream's upward-biased acceleration only after that impulse begins
-
-#### Scenario: Crossing a gravity inversion column while airborne
-- **WHEN** the player is airborne and enters an authored gravity inversion column
-- **THEN** the controller reverses only the ongoing airborne vertical acceleration while the player remains inside the column
-- **AND** normal gravity resumes immediately after the player exits the column
-
-#### Scenario: Jumping from sticky sludge inside an anti-grav stream
-- **WHEN** the player initiates a grounded jump from sticky sludge while inside an authored anti-grav stream
-- **THEN** the jump starts with the normal impulse
-- **AND** the remaining airborne motion gains the stream's upward-biased acceleration only after that jump has started
-
-#### Scenario: Dashing through an authored gravity field
-- **WHEN** the player dashes while entering, leaving, or crossing a low-gravity zone, anti-grav stream, or gravity inversion column
-- **THEN** the dash keeps its normal dash motion while active
-- **AND** the field-specific airborne acceleration rule resumes only after the dash no longer overrides airborne motion
-
-#### Scenario: Dashing through sticky sludge
-- **WHEN** the player dashes while entering, leaving, or crossing sticky sludge
-- **THEN** the dash keeps its normal dash motion while active
-- **AND** any sticky-sludge grounded penalties resume only after the dash no longer overrides movement and the player is grounded on sludge again
-
-#### Scenario: Launching from a spring in an authored gravity field
-- **WHEN** a spring launches the player while the player is inside a low-gravity zone, anti-grav stream, or gravity inversion column
-- **THEN** the spring applies its normal launch impulse first
-- **AND** the field changes the resulting airborne arc only after that launch begins
-
-#### Scenario: Launching from a spring on sticky sludge
-- **WHEN** a spring launches the player from sticky sludge support
-- **THEN** the spring applies its normal launch impulse rather than a sludge-reduced jump impulse
-
-#### Scenario: Launching from a biome launcher in an authored gravity field
-- **WHEN** a bounce pod or gas vent launches the player while the player is inside a low-gravity zone, anti-grav stream, or gravity inversion column
-- **THEN** the launcher applies its authored launch impulse first
-- **AND** the field changes the resulting airborne arc only after that launch begins
-
-#### Scenario: Launching from a biome launcher on sticky sludge
-- **WHEN** a bounce pod or gas vent launches the player from sticky sludge support
-- **THEN** the launcher applies its normal authored launch impulse rather than a sludge-reduced jump impulse
-
-#### Scenario: Suppressing a launcher by holding jump
-- **WHEN** the player first contacts a ready bounce pod or gas vent while jump is already held
-- **THEN** the launcher does not auto-launch on that contact
-- **AND** the player keeps normal grounded jump and support behavior for that landing
-
-#### Scenario: Resolving a buffered jump on a launcher
-- **WHEN** a buffered jump resolves on the frame the player first lands on a ready bounce pod or gas vent
-- **THEN** the buffered jump takes priority for that contact
-- **AND** the launcher does not auto-launch until a later eligible new contact
-
-#### Scenario: Dashing onto a ready launcher
-- **WHEN** the player contacts a ready bounce pod or gas vent while dash still overrides movement
-- **THEN** the dash continues without interruption
-- **AND** the launcher does not fire later unless the player creates a new eligible contact after dash no longer overrides motion
-
-#### Scenario: Escaping a falling platform through a gravity inversion column
-- **WHEN** the player escape-jumps from a falling platform while still inside a gravity inversion column
-- **THEN** the falling platform support window remains valid for jump initiation
-- **AND** the gravity inversion affects only the airborne arc after the jump has started
 
 ### Requirement: Player can take damage and recover through respawn
 The game SHALL track player health or hit state, apply damage from enemies and hazards, and return the player to active play through death and respawn rules. When the player collides with a damaging enemy or hazard while one or more active non-invincible powers are present and invincibility is not active, the game MUST clear those active non-invincible powers and MUST NOT reduce health for that hit. When invincibility is active, damaging contact MUST preserve invincibility until its timer expires, MUST keep health unchanged for that hit, and MUST still clear any other active non-invincible powers. When the player has no active powers, damaging contact MUST reduce health as normal. When the player reaches the defeat condition, the game MUST enter a short non-controllable death presentation state that emits a bounded blow-apart particle burst from the player's last position before respawning at the most recently activated checkpoint or level start. That defeat presentation MUST keep the player visible for a brief bounded defeat-flash window of no more than 120 ms, MUST play a local victim-side defeat tween or flash before the sprite hides, MUST stay local, deterministic, and clearly visible above ordinary gameplay objects, MUST remain visually distinct from stomp and Plasma Blaster enemy-defeat bursts, MUST preserve the existing respawn point and timing semantics, MAY temporarily break apart or distort the player's presentation for effect, and MUST remain short enough to preserve the current respawn flow without changing damage immunity rules, checkpoint semantics, or which respawn point is selected. The defeat transition MUST also trigger one dedicated fatal-death audio event that remains distinct from survivable damage and enemy-defeat cues without changing when respawn begins. Before the respawned player returns to active play, the game MUST restore the full player visual composition, including all body parts, pose offsets, alpha, tint, scale, rotation, visibility, and active-power presentation details, so the avatar never appears broken after respawn.
@@ -194,23 +115,42 @@ The game SHALL attach readable event-based visual feedback to supported controll
 - **AND** the activation feedback does not change respawn location, checkpoint persistence, or controller state timing
 
 ### Requirement: Gated gravity capsule sections preserve existing controller semantics
-The game SHALL apply active enclosed gravity room sections as a gating layer on top of the current anti-grav-stream and gravity-inversion controller rules without changing the underlying movement model. An enclosed gravity room section that has not yet been disabled MUST modify only the player's ongoing airborne vertical acceleration after the relevant jump, launcher, or dash-overridden motion rule has already been determined. Once the linked interior disable button has been triggered, that room section MUST leave the player's jump, fall, dash, launcher impulse, and grounded movement behavior unchanged until the next reset event. Normal gravity MUST resume immediately when the player leaves an active room field or when that room has been disabled. This controller contract MUST apply consistently across every current playable stage's enclosed gravity room rollout, including rooms that replace formerly open anti-grav and inversion sections.
+The game SHALL apply active enclosed gravity room sections as a gating layer on top of the current anti-grav-stream and gravity-inversion controller rules without broadening into a global movement rewrite. An enclosed gravity room section that has not yet been disabled MUST continue applying its room-specific airborne acceleration anywhere inside the room's interior play volume. While that room field is still active, player jump initiation from valid support inside that room MUST use a room-scoped inverse takeoff instead of the normal upward takeoff. Buffered jump resolution and coyote-time jump resolution sourced from that same active room support MUST follow the same inverse takeoff rule. Double jump, launcher, and dash initiation rules MUST otherwise remain unchanged, and the room-specific airborne acceleration MUST continue after the inverse takeoff has begun. Once the linked interior disable button has been triggered, that room section MUST leave the player's grounded jump, buffered jump, coyote jump, fall, dash, launcher impulse, and grounded movement behavior unchanged until the next reset event. Normal gravity and normal jump semantics MUST resume immediately when the player leaves an active room interior or when that room has been disabled. Enemies inside or outside enclosed gravity rooms MUST keep their normal enemy movement and gravity behavior regardless of the room field state. This controller contract MUST apply consistently across every current playable stage's enclosed gravity room rollout, including rooms that replace formerly open anti-grav and inversion sections.
 
 #### Scenario: Jumping through an active enclosed gravity room section
-- **WHEN** the player jumps or falls through an enclosed gravity room section before its linked disable button has been triggered
-- **THEN** the player's initial jump or launcher impulse remains unchanged
-- **AND** the room-specific airborne acceleration applies only after that impulse has begun and only while the player remains inside the active field bounds
+- **WHEN** the player initiates a grounded, buffered, or coyote-time jump from valid support inside an enclosed gravity room before its linked disable button has been triggered
+- **THEN** the jump begins with the room-scoped inverse takeoff instead of the normal upward takeoff
+- **AND** the room-specific airborne acceleration applies only after that takeoff has begun and only while the player remains inside the room interior
+
+#### Scenario: Reaching the disable button while room gravity is active
+- **WHEN** the player follows the intended route inside an active enclosed gravity room toward its linked interior disable button
+- **THEN** the player can still use the room's inverse jump semantics and existing contact rules to gain eligible button contact before the room is disabled
+- **AND** the room does not require a new interact input, jump-triggered gravity shutdown, or compliance-only support piece for that reach
+
+#### Scenario: Reading jump takeoff inside an active enclosed gravity room
+- **WHEN** the player initiates a jump from valid support inside an active enclosed gravity room
+- **THEN** the jump begins with a readable inverse takeoff from that support rather than the normal upward jump
+- **AND** the room's linked anti-grav or inversion effect continues bending the airborne arc after takeoff instead of replacing the room jump rule itself
 
 #### Scenario: Jumping through a disabled enclosed gravity room section
 - **WHEN** the player jumps or falls through an enclosed gravity room section after its linked interior button has disabled the room field
-- **THEN** the player's airborne arc follows the surrounding normal gravity rule with no room-specific acceleration applied
+- **THEN** the player's airborne arc follows the surrounding normal gravity rule with no room-specific acceleration applied anywhere in that room interior
+- **AND** supported jump initiation inside that disabled room uses the normal upward takeoff again
+
+#### Scenario: Enemy motion inside an enclosed gravity room
+- **WHEN** an enemy moves or becomes airborne inside an enclosed gravity room while the room field is active or disabled
+- **THEN** that enemy keeps its normal enemy gravity and movement behavior
+- **AND** the room-specific gravity rule still applies only to the player
 
 #### Scenario: Dashing through an active enclosed gravity room section
 - **WHEN** the player dashes through an enclosed gravity room section while dash motion still overrides airborne movement
 - **THEN** the dash keeps its normal motion while active
 - **AND** the room-specific airborne acceleration resumes only after dash no longer overrides airborne movement
 
-#### Scenario: Traversing multiple rolled-out gravity rooms across stages
-- **WHEN** the player encounters enclosed gravity rooms in different current playable stages
-- **THEN** each room uses the same controller composition rules without changing jump, dash, launcher, or grounded semantics between stages
+### Requirement: Broad helper falling-platform jump coverage matches controller truth
+The project SHALL keep broad automated `Mechanic Checks` coverage for falling-platform jump behavior aligned with the current shipped controller contract. When the helper evaluates a falling-platform jump, it MUST treat top-surface contact on the falling platform as valid support for jump initiation, including escape jumps that begin while the player is still inside a gravity inversion column. The helper MUST derive its jump-input sequencing and pass criteria from the same controller truth already exercised by runtime coverage, and it MUST NOT fail solely because it still assumes an older helper-side jump timing model.
+
+#### Scenario: Checking an escape jump from a falling platform
+- **WHEN** broad automated coverage evaluates an escape jump that starts from valid falling-platform top-surface contact inside a gravity inversion column
+- **THEN** it accepts the probe only if the jump initiation and post-takeoff gravity behavior match the shipped controller contract already covered by runtime tests
 
