@@ -663,7 +663,7 @@ const resolveGravityCapsuleContainment = (
       hitVerticalWall = true;
     }
 
-    if (resolvedY < shellBottom && resolvedBottom > shellBottom) {
+    if (overlapsShellWidth && resolvedY < shellBottom && resolvedBottom > shellBottom) {
       resolvedY = previousRect.y + previousRect.height <= shellBottom ? shellBottom - currentRect.height : shellBottom;
       hitVerticalWall = true;
     }
@@ -829,6 +829,7 @@ export class GameSession {
     this.syncPlayerPresentationPower();
 
     if (player.dead) {
+      this.settleGroundedEnemiesForDeathFreeze();
       this.snapshot.respawnTimerMs -= deltaMs;
       if (this.snapshot.respawnTimerMs <= 0) {
         this.respawnPlayer();
@@ -2228,6 +2229,7 @@ export class GameSession {
       this.captureCheckpointRestoreState(),
       this.snapshot.activeCheckpointId ? this.checkpointRevealIds : [],
     );
+    this.settleGroundedEnemiesForDeathFreeze();
   }
 
   private activateRewardBlock(block: RewardBlockState): void {
@@ -2435,6 +2437,56 @@ export class GameSession {
         },
       ) ?? null
     );
+  }
+
+  private settleGroundedEnemiesForDeathFreeze(): void {
+    const { stageRuntime } = this.snapshot;
+    const traversablePlatforms = activePlatforms(
+      stageRuntime.platforms,
+      stageRuntime.revealedPlatformIds,
+      getActiveTemporaryBridgeIds(stageRuntime.temporaryBridges),
+    );
+
+    for (const enemy of stageRuntime.enemies) {
+      if (!enemy.alive || !isGroundedEnemy(enemy)) {
+        continue;
+      }
+
+      const enemyBottom = enemy.y + enemy.height;
+      let support = enemy.supportPlatformId
+        ? traversablePlatforms.find((platform) => platform.id === enemy.supportPlatformId) ?? null
+        : null;
+
+      if (!support || !isStableEnemySupport(support)) {
+        support =
+          traversablePlatforms
+            .filter(isStableEnemySupport)
+            .filter(
+              (platform) =>
+                enemy.x + enemy.width > platform.x &&
+                enemy.x < platform.x + platform.width &&
+                Math.abs(enemyBottom - platform.y) <= 64,
+            )
+            .sort((left, right) => Math.abs(enemyBottom - left.y) - Math.abs(enemyBottom - right.y))[0] ?? null;
+      }
+
+      if (!support) {
+        continue;
+      }
+
+      enemy.supportPlatformId = support.id;
+      enemy.supportY = support.y - enemy.height;
+      enemy.x = clamp(enemy.x, support.x, support.x + support.width - enemy.width);
+      enemy.y = enemy.supportY;
+      enemy.vx = 0;
+      enemy.vy = 0;
+
+      if (enemy.kind === 'hopper' && enemy.hop) {
+        enemy.hop.targetPlatformId = null;
+        enemy.hop.targetX = null;
+        enemy.hop.targetY = null;
+      }
+    }
   }
 
   private syncPlayerPresentationPower(): void {
@@ -2830,6 +2882,12 @@ export class GameSession {
           for (const enemy of resolvedEnemies) {
             if (enemy.kind === 'turret') {
               resolveTurretPosition(enemy, resolvedEnemies, stage.hazards, platforms);
+            }
+          }
+          // Snap grounded enemies to support platform (prevent float after respawn)
+          for (const enemy of resolvedEnemies) {
+            if (isGroundedEnemy(enemy) && enemy.supportY !== null) {
+              enemy.y = enemy.supportY;
             }
           }
           return resolvedEnemies;

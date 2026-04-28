@@ -1096,6 +1096,27 @@ describe('GameSession regression coverage', () => {
     expect(state.stageMessage).toBe('Survey beacon activated');
   });
 
+  it('does not shift unrelated stage 0 platforms when first checkpoint activates', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    let state = getMutableState(session);
+    const checkpoint = state.stageRuntime.checkpoints.find((entry: any) => entry.id === 'cp-1');
+
+    expect(checkpoint).toBeTruthy();
+    expect(state.stageRuntime.platforms.find((entry: any) => entry.id === 'platform-1290-540')?.y).toBe(540);
+    expect(state.stageRuntime.platforms.find((entry: any) => entry.id === 'platform-1920-540')?.y).toBe(540);
+
+    state.player.x = checkpoint.rect.x;
+    state.player.y = checkpoint.rect.y;
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.activeCheckpointId).toBe('cp-1');
+    expect(state.stageRuntime.platforms.find((entry: any) => entry.id === 'platform-1290-540')?.y).toBe(540);
+    expect(state.stageRuntime.platforms.find((entry: any) => entry.id === 'platform-1920-540')?.y).toBe(540);
+  });
+
   it('preserves collected coins and blocks duplicate full-clear rewards across checkpoint respawns', () => {
     const session = new GameSession();
     const state = getMutableState(session);
@@ -2242,6 +2263,38 @@ describe('GameSession regression coverage', () => {
     expect(hopper.hop?.targetPlatformId).toBeNull();
     expect(flyer.supportPlatformId).toBeNull();
     expect(flyer.y).not.toBe(flyer.flyer.originY);
+  });
+
+  it('keeps first-stage hopper grounded across first checkpoint respawn', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    let state = getMutableState(session);
+    const checkpoint = state.stageRuntime.checkpoints.find((entry: any) => entry.id === 'cp-1');
+    expect(checkpoint).toBeTruthy();
+
+    state.player.x = checkpoint.rect.x;
+    state.player.y = checkpoint.rect.y;
+    session.update(16, defaultInputState());
+
+    expect(getMutableState(session).activeCheckpointId).toBe('cp-1');
+
+    (session as any).respawnPlayer();
+
+    state = getMutableState(session);
+    const hopper = state.stageRuntime.enemies.find((entry: any) => entry.id === 'hopper-1');
+    expect(hopper).toBeTruthy();
+    expect(hopper.supportPlatformId).toBeTruthy();
+    expect(hopper.supportY).not.toBeNull();
+    expect(hopper.y).toBe(hopper.supportY);
+
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    const hopperAfterTick = state.stageRuntime.enemies.find((entry: any) => entry.id === 'hopper-1');
+    expect(hopperAfterTick.supportPlatformId).toBeTruthy();
+    expect(hopperAfterTick.supportY).not.toBeNull();
+    expect(hopperAfterTick.y).toBe(hopperAfterTick.supportY);
   });
 
   it('lets grounded hoppers keep falling when a missed landing would otherwise need rescue snap', () => {
