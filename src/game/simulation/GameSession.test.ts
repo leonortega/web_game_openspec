@@ -887,7 +887,7 @@ describe('GameSession regression coverage', () => {
     expect(cues).not.toContain(AUDIO_CUES.death);
   });
 
-  it('emits motion and danger cues only on authored movement beats', () => {
+  it('does not emit moving-platform cue and still emits authored enemy movement cues', () => {
     const session = new GameSession();
     let state = getMutableState(session);
 
@@ -901,8 +901,7 @@ describe('GameSession regression coverage', () => {
     state.stageRuntime.hazards = [];
     advanceSession(session, Math.ceil((movingPlatform.move.range / movingPlatform.move.speed) * 1000) + 32);
     const platformCues = session.consumeCues().filter((cue) => cue === AUDIO_CUES.movingPlatform);
-    expect(platformCues.length).toBeGreaterThan(0);
-    expect(platformCues.length).toBeLessThan(8);
+    expect(platformCues).toHaveLength(0);
 
     session.restartStage();
     state = getMutableState(session);
@@ -986,7 +985,7 @@ describe('GameSession regression coverage', () => {
     expect(session.consumeCues()).toContain(AUDIO_CUES.stageClear);
   });
 
-  it('gates non-turret enemy cues by the viewport while preserving the turret lead-margin exception', () => {
+  it('gates enemy cues by strict viewport visibility', () => {
     const session = new GameSession();
     let state = getMutableState(session);
     const walker = state.stageRuntime.enemies.find((enemy: any) => enemy.kind === 'walker');
@@ -1040,6 +1039,15 @@ describe('GameSession regression coverage', () => {
     state.stageRuntime.enemies = [leadMarginTurret];
     state.stageRuntime.hazards = [];
     session.setCameraViewBox({ x: leadMarginTurret.x - 1040, y: Math.max(0, leadMarginTurret.y - 160), width: 960, height: 540 });
+    advanceSession(session, leadMarginTurret.turret.intervalMs + 32);
+    expect(session.consumeCues()).not.toContain(AUDIO_CUES.turretFire);
+
+    session.setCameraViewBox({
+      x: leadMarginTurret.x - 120,
+      y: Math.max(0, leadMarginTurret.y - 160),
+      width: 960,
+      height: 540,
+    });
     advanceSession(session, leadMarginTurret.turret.intervalMs + 32);
     expect(session.consumeCues()).toContain(AUDIO_CUES.turretFire);
   });

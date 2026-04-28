@@ -122,10 +122,6 @@ import {
   syncRewardReveal as syncRewardRevealRendering,
   type GameSceneRewardRenderingContext,
 } from './gameScene/rewardRendering';
-import {
-  renderDiagnosticOverlay,
-  type GameSceneDiagnosticContext,
-} from './gameScene/diagnosticRendering';
 
 const COMPLETE_TRANSITION_DELAY_MS = 160;
 const STAGE_START_SEQUENCE_DURATION_MS = getStageStartSequenceTotalMs();
@@ -519,10 +515,6 @@ export class GameScene extends Phaser.Scene {
     return this as unknown as GameSceneEnemyRenderingContext;
   }
 
-  private getDiagnosticContext(): GameSceneDiagnosticContext {
-    return this as unknown as GameSceneDiagnosticContext;
-  }
-
   create(): void {
     this.bridge = this.registry.get('bridge') as SceneBridge;
     this.audio = new SynthAudio(this, () => this.bridge.getSession().getState().progress.runSettings.masterVolume);
@@ -874,14 +866,6 @@ export class GameScene extends Phaser.Scene {
         .setAlpha(state.stageRuntime.exitReached ? 0.76 : 0.88)
         .setVisible(true);
     }
-
-    // Diagnostic: render debug lines showing platform tops (green) vs object bottoms (red/blue)
-    renderDiagnosticOverlay(
-      this.getDiagnosticContext(),
-      state.stageRuntime.platforms,
-      state.stageRuntime.checkpoints,
-      state.stageRuntime.enemies,
-    );
   }
 
   getDebugSnapshot(): {

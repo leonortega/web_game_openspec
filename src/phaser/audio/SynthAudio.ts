@@ -102,7 +102,7 @@ const CUE_PROFILES: Record<AudioCue, CueProfile> = {
   [AUDIO_CUES.block]: { family: 'interactive', signature: 'reward block thunk', tones: [{ frequency: 311.13, durationMs: 80, type: 'square', volume: 0.02 }] },
   [AUDIO_CUES.collapse]: { family: 'interactive', signature: 'crumbling platform drop', tones: [{ frequency: 233.08, durationMs: 110, type: 'sawtooth', volume: 0.024 }, { frequency: 174.61, durationMs: 150, type: 'triangle', volume: 0.018, offsetMs: 34 }] },
   [AUDIO_CUES.spring]: { family: 'interactive', signature: 'spring launch pop', tones: [{ frequency: 659.25, durationMs: 70, type: 'square', volume: 0.025 }, { frequency: 783.99, durationMs: 100, type: 'triangle', volume: 0.018, offsetMs: 28 }] },
-  [AUDIO_CUES.movingPlatform]: { family: 'interactive', signature: 'servo reversal clunk', tones: [{ frequency: 233.08, durationMs: 80, type: 'square', volume: 0.022 }, { frequency: 185, durationMs: 100, type: 'triangle', volume: 0.017, offsetMs: 32 }] },
+  [AUDIO_CUES.movingPlatform]: { family: 'interactive', signature: 'removed moving platform cue', tones: [] },
   [AUDIO_CUES.menuNavigate]: { family: 'menu-ui', signature: 'cursor tick', tones: [{ frequency: 659.25, durationMs: 70, type: 'square', volume: 0.02 }] },
   [AUDIO_CUES.menuConfirm]: { family: 'menu-ui', signature: 'menu confirm chirp', tones: [{ frequency: 698.46, durationMs: 80, type: 'square', volume: 0.022 }, { frequency: 932.33, durationMs: 110, type: 'triangle', volume: 0.018, offsetMs: 34 }] },
   [AUDIO_CUES.menuBack]: { family: 'menu-ui', signature: 'menu back descend', tones: [{ frequency: 493.88, durationMs: 80, type: 'triangle', volume: 0.02 }, { frequency: 369.99, durationMs: 110, type: 'sine', volume: 0.016, offsetMs: 34 }] },
@@ -186,6 +186,8 @@ type AssetPlaybackRequest = {
 type PlaybackRequest = ThemePlaybackRequest | AssetPlaybackRequest;
 
 const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+
+const BACKGROUND_MUSIC_ENABLED = true;
 
 const getDebugState = (): AudioDebugState => {
   const audioGlobal = globalThis as AudioContextLike;
@@ -391,6 +393,12 @@ export class SynthAudio {
   }
 
   private requestPlayback(request: PlaybackRequest): void {
+    if (!BACKGROUND_MUSIC_ENABLED) {
+      this.pendingPlaybackRequest = undefined;
+      this.stopMusic();
+      return;
+    }
+
     if (!this.isPlaybackUnlocked()) {
       this.pendingPlaybackRequest = request;
       return;

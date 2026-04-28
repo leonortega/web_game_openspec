@@ -85,7 +85,6 @@ const POWER_INVINCIBLE_MS = 10_000;
 const REWARD_REVEAL_MS = 1000;
 const REWARD_BLOCK_FLASH_MS = 180;
 const EXIT_FINISH_DURATION_MS = 720;
-const TURRET_VIEW_LEAD_MARGIN = 96;
 const CHARGER_TRIGGER_RANGE = 220;
 const ENEMY_SPACING_BUFFER = 28;
 const HAZARD_SPACING_BUFFER = 52;
@@ -1184,11 +1183,9 @@ export class GameSession {
           if (platform.x <= minX) {
             platform.x = minX;
             platform.move.direction = 1;
-            this.emitCue(AUDIO_CUES.movingPlatform);
           } else if (platform.x >= maxX) {
             platform.x = maxX;
             platform.move.direction = -1;
-            this.emitCue(AUDIO_CUES.movingPlatform);
           }
         } else {
           platform.vy = platform.move.direction * platform.move.speed;
@@ -1198,11 +1195,9 @@ export class GameSession {
           if (platform.y <= minY) {
             platform.y = minY;
             platform.move.direction = 1;
-            this.emitCue(AUDIO_CUES.movingPlatform);
           } else if (platform.y >= maxY) {
             platform.y = maxY;
             platform.move.direction = -1;
-            this.emitCue(AUDIO_CUES.movingPlatform);
           }
         }
       }
@@ -1229,13 +1224,11 @@ export class GameSession {
       if (platform.move?.axis === 'x' && containment.hitHorizontalWall) {
         platform.vx = 0;
         platform.move.direction = platform.move.direction === 1 ? -1 : 1;
-        this.emitCue(AUDIO_CUES.movingPlatform);
       }
 
       if (platform.move?.axis === 'y' && containment.hitVerticalWall) {
         platform.vy = 0;
         platform.move.direction = platform.move.direction === 1 ? -1 : 1;
-        this.emitCue(AUDIO_CUES.movingPlatform);
       }
     }
   }
@@ -2510,11 +2503,7 @@ export class GameSession {
       return true;
     }
 
-    const viewBox =
-      enemy.kind === 'turret'
-        ? expandRect(this.cameraViewBox, TURRET_VIEW_LEAD_MARGIN, 0)
-        : this.cameraViewBox;
-    return intersectsRect(viewBox, enemyRect(enemy));
+    return intersectsRect(this.cameraViewBox, enemyRect(enemy));
   }
 
   private emitEnemyViewportEntryCue(enemy: EnemyState, emittedCueThisFrame: boolean): void {
