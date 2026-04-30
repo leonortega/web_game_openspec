@@ -29,6 +29,7 @@ export type GameSceneInputContext = Phaser.Scene & {
     setRight(value: boolean): void;
     setJumpHeld(value: boolean): void;
     pressJump(): void;
+    pressThruster(): void;
     pressDash(): void;
     pressShoot(): void;
     restartStage(): void;
@@ -174,6 +175,7 @@ export function setupGameSceneInput(scene: GameSceneInputContext): void {
   const left = scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.A);
   const right = scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.D);
   const up = scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+  const down = scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.S);
   const shift = scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
   const space = scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
   const f = scene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.F);
@@ -202,6 +204,9 @@ export function setupGameSceneInput(scene: GameSceneInputContext): void {
 
   for (const key of [cursors?.up, up, space]) {
     key?.on('down', () => scene.bridge.pressJump());
+  }
+  for (const key of [cursors?.down, down]) {
+    key?.on('down', () => scene.bridge.pressThruster());
   }
   shift?.on('down', () => scene.bridge.pressDash());
   f?.on('down', () => scene.bridge.pressShoot());

@@ -101,6 +101,8 @@ const createSceneFixture = (finalStage = false) => {
       },
       runSettings: {
         masterVolume: 0.7,
+        musicVolume: 0.7,
+        sfxVolume: 0.8,
         difficulty: 'standard',
         enemyPressure: 'normal',
       },

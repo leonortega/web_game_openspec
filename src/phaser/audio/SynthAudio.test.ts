@@ -7,6 +7,7 @@ import {
   MENU_SUSTAINED_MUSIC,
   getStageSustainedMusic,
 } from '../../audio/musicAssets';
+import { getAllMappedSfxAssets } from '../../audio/sfxAssets';
 import { stageDefinitions } from '../../game/content/stages';
 import {
   SynthAudio,
@@ -146,21 +147,25 @@ describe('SynthAudio', () => {
       },
     } as unknown as Phaser.Scene;
 
-    const audio = new SynthAudio(scene, () => 0.5);
+    const audio = new SynthAudio(scene, () => 0.5, () => 0.5);
 
     await audio.unlock();
     audio.playCue(AUDIO_CUES.jump);
 
     expect(AudioContextCtor).toHaveBeenCalledTimes(1);
     expect(fakeContext.resume).toHaveBeenCalledTimes(1);
-    expect(fakeContext.createGain).toHaveBeenCalledTimes(2);
-    expect(fakeContext.createOscillator).toHaveBeenCalledTimes(2);
+    expect(fakeContext.createGain).toHaveBeenCalledTimes(0);
+    expect(fakeContext.createOscillator).toHaveBeenCalledTimes(0);
+    expect(scene.sound.add).toHaveBeenCalledWith('sfx-jump');
   });
 
-  it('maps differentiated cue families through synthesized playback', () => {
+  it('maps differentiated cue families through sampled playback', async () => {
     const fakeContext = new FakeAudioContext();
     vi.stubGlobal('AudioContext', vi.fn(() => fakeContext as unknown as AudioContext));
-    const audio = new SynthAudio(createScene(), () => 0.8);
+    const scene = createScene();
+    const audio = new SynthAudio(scene, () => 0.8, () => 0.8);
+
+    await audio.unlock();
 
     audio.playCue(AUDIO_CUES.menuNavigate);
     audio.playCue(AUDIO_CUES.collect);
@@ -174,19 +179,22 @@ describe('SynthAudio', () => {
       new Set(['menu-ui', 'reward', 'danger', 'completion']),
     );
     expect(new Set(debugEvents.map((event) => event.signature)).size).toBe(5);
-    expect(fakeContext.createOscillator).toHaveBeenCalledTimes(12);
-    expect(fakeContext.createGain).toHaveBeenCalledTimes(12);
+    expect(fakeContext.createOscillator).toHaveBeenCalledTimes(0);
+    expect(fakeContext.createGain).toHaveBeenCalledTimes(0);
+    expect(scene.__sounds).toHaveLength(5);
+    expect(debugEvents.every((event) => event.playback === 'sample')).toBe(true);
     expect(debugEvents.find((event) => event.cue === AUDIO_CUES.capsuleTeleport)?.signature).toBe(
-      'capsule dematerialization sweep',
+      'sampled capsule portal sweep',
     );
   });
 
-  it('keeps stomp, projectile, hurt, and death cues distinct on the shared synth path', () => {
+  it('keeps thruster, projectile, hurt, and death cues distinct on the sampled path', () => {
     const fakeContext = new FakeAudioContext();
     vi.stubGlobal('AudioContext', vi.fn(() => fakeContext as unknown as AudioContext));
-    const audio = new SynthAudio(createScene(), () => 1);
+    fakeContext.state = 'running';
+    const audio = new SynthAudio(createScene(), () => 1, () => 1);
 
-    audio.playCue(AUDIO_CUES.stomp);
+    audio.playCue(AUDIO_CUES.thrusterImpact);
     audio.playCue(AUDIO_CUES.shootHit);
     audio.playCue(AUDIO_CUES.hurt);
     audio.playCue(AUDIO_CUES.death);
@@ -196,7 +204,7 @@ describe('SynthAudio', () => {
     );
 
     expect(cueEvents.map((event) => event.cue)).toEqual([
-      AUDIO_CUES.stomp,
+      AUDIO_CUES.thrusterImpact,
       AUDIO_CUES.shootHit,
       AUDIO_CUES.hurt,
       AUDIO_CUES.death,
@@ -204,12 +212,14 @@ describe('SynthAudio', () => {
     expect(new Set(cueEvents.map((event) => event.signature)).size).toBe(4);
     expect(cueEvents.find((event) => event.cue === AUDIO_CUES.death)?.family).toBe('death');
     expect(cueEvents.find((event) => event.cue === AUDIO_CUES.hurt)?.family).toBe('danger');
+    expect(cueEvents.every((event) => event.playback === 'sample')).toBe(true);
   });
 
-  it('keeps moving-platform cue silent while still logging debug event', () => {
+  it('keeps mapped cues non-blocking while locked or muted', () => {
     const fakeContext = new FakeAudioContext();
     vi.stubGlobal('AudioContext', vi.fn(() => fakeContext as unknown as AudioContext));
-    const audio = new SynthAudio(createScene(), () => 1);
+    const scene = createScene();
+    const audio = new SynthAudio(scene, () => 0, () => 0);
 
     audio.playCue(AUDIO_CUES.movingPlatform);
 
@@ -218,17 +228,24 @@ describe('SynthAudio', () => {
     );
 
     expect(cueEvents.map((event) => event.cue)).toEqual([AUDIO_CUES.movingPlatform]);
+    expect(cueEvents[0].playback).toBe('sample');
     expect(fakeContext.createOscillator).toHaveBeenCalledTimes(0);
     expect(fakeContext.createGain).toHaveBeenCalledTimes(0);
+    expect(scene.__sounds).toHaveLength(0);
   });
 
-  it('keeps a checked-in CC0 manifest for menu and per-stage sustained tracks', () => {
+  it('keeps checked-in provenance manifests for menu, per-stage music, and sampled cues', () => {
     expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST).toHaveLength(4);
-    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.license === 'CC0')).toBe(true);
-    expect(MENU_SUSTAINED_MUSIC.title).toBe('Another space background track');
-    expect(getStageSustainedMusic('forest-ruins')?.title).toBe('Magic Space');
-    expect(getStageSustainedMusic('amber-cavern')?.title).toBe('I swear I saw it - background track');
-    expect(getStageSustainedMusic('sky-sanctum')?.title).toBe('Party Sector');
+    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.license === 'CC-BY-4.0')).toBe(true);
+    expect(MENU_SUSTAINED_MUSIC.title).toBe('Call For Love');
+    expect(getStageSustainedMusic('forest-ruins')?.title).toBe('Hour For Two');
+    expect(getStageSustainedMusic('amber-cavern')?.title).toBe('Give Her Shadow');
+    expect(getStageSustainedMusic('sky-sanctum')?.title).toBe('Get Out');
+    expect(getAllMappedSfxAssets()).toHaveLength(Object.keys(AUDIO_CUES).length);
+    expect(getAllMappedSfxAssets().every((entry) => entry.license === 'CC0')).toBe(true);
+    expect(getAllMappedSfxAssets().every((entry) => entry.localAssetPath.startsWith('/audio/sfx/juhani-junkala-512/'))).toBe(true);
+    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.localAssetPath.startsWith('/audio/music/chillmindscapes-pack-4/'))).toBe(true);
+    expect([...ACTIVE_SUSTAINED_MUSIC_MANIFEST, ...getAllMappedSfxAssets()].every((entry) => !entry.localAssetPath.includes('source-packs'))).toBe(true);
   });
 
   it('limits authored synth themes to transition stingers instead of sustained loop ownership', () => {
@@ -248,10 +265,10 @@ describe('SynthAudio', () => {
     const gameplayScene = createScene();
     const introScene = createScene();
     const completeScene = createScene();
-    const menuAudio = new SynthAudio(menuScene, () => 1);
-    const gameplayAudio = new SynthAudio(gameplayScene, () => 1);
-    const introAudio = new SynthAudio(introScene, () => 1);
-    const completeAudio = new SynthAudio(completeScene, () => 1);
+    const menuAudio = new SynthAudio(menuScene, () => 1, () => 1);
+    const gameplayAudio = new SynthAudio(gameplayScene, () => 1, () => 1);
+    const introAudio = new SynthAudio(introScene, () => 1, () => 1);
+    const completeAudio = new SynthAudio(completeScene, () => 1, () => 1);
 
     menuAudio.startMenuMusic();
     gameplayAudio.startStageMusic(stageDefinitions[0]);
@@ -275,8 +292,8 @@ describe('SynthAudio', () => {
 
     const introScene = createScene();
     const finalScene = createScene();
-    const introAudio = new SynthAudio(introScene, () => 1);
-    const finalAudio = new SynthAudio(finalScene, () => 1);
+    const introAudio = new SynthAudio(introScene, () => 1, () => 1);
+    const finalAudio = new SynthAudio(finalScene, () => 1, () => 1);
 
     introAudio.playStageIntro(stageDefinitions[2]);
     finalAudio.playStageClear(stageDefinitions[2], true);

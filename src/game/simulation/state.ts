@@ -29,6 +29,8 @@ export type EnemyPressureSetting = 'low' | 'normal' | 'high';
 
 export type RunSettings = {
   masterVolume: number;
+  musicVolume: number;
+  sfxVolume: number;
   difficulty: DifficultySetting;
   enemyPressure: EnemyPressureSetting;
 };
@@ -206,7 +208,7 @@ export type HazardState = {
   rect: Rect;
 };
 
-export type EnemyDefeatCause = 'stomp' | 'plasma-blast';
+export type EnemyDefeatCause = 'stomp' | 'thruster-impact' | 'plasma-blast';
 
 export type EnemyState = {
   id: string;
@@ -295,6 +297,9 @@ export type PlayerState = {
   dashTimerMs: number;
   dashCooldownMs: number;
   shootCooldownMs: number;
+  thrusterPulseCooldownMs: number;
+  thrusterPulseFuel: number;
+  thrusterImpactWindowMs: number;
   airJumpsRemaining: number;
   presentationPower: PowerType | null;
   supportPlatformId: string | null;
@@ -515,6 +520,8 @@ export const createDefaultPowerTimers = (): PowerTimers => ({
 
 export const createDefaultRunSettings = (): RunSettings => ({
   masterVolume: 0.7,
+  musicVolume: 0.7,
+  sfxVolume: 0.8,
   difficulty: 'standard',
   enemyPressure: 'normal',
 });
@@ -717,4 +724,6 @@ export const getPrimaryPowerVariant = (
 };
 
 export const formatRunSettings = (settings: RunSettings): string =>
-  `${DIFFICULTY_LABELS[settings.difficulty]} | ${ENEMY_PRESSURE_LABELS[settings.enemyPressure]} Enemies | Vol ${Math.round(settings.masterVolume * 100)}%`;
+  `${DIFFICULTY_LABELS[settings.difficulty]} | ${ENEMY_PRESSURE_LABELS[settings.enemyPressure]} Enemies | Vol M${Math.round(
+    settings.musicVolume * 100,
+  )}%/S${Math.round(settings.sfxVolume * 100)}%`;

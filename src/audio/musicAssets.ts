@@ -1,6 +1,6 @@
 import musicAssetManifest from './musicAssetManifest.json';
 
-type MusicLicense = 'CC0' | 'Public Domain';
+type MusicLicense = 'CC0' | 'CC-BY-4.0' | 'Public Domain';
 
 export type ActiveSustainedMusicManifestEntry = {
   assetKey: string;
@@ -11,7 +11,10 @@ export type ActiveSustainedMusicManifestEntry = {
   license: MusicLicense;
   sourceUrl: string;
   originalFileName: string;
+  originalSourcePackRelativePath?: string;
   localAssetPath: string;
+  webFormat: string;
+  intendedMapping: string;
   volume: number;
 };
 

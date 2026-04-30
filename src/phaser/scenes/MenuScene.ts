@@ -18,12 +18,12 @@ import {
 type MenuMode = 'main';
 type MenuView = 'root' | 'options' | 'help';
 type RootOptionId = 'primary' | 'options' | 'help';
-type OptionsOptionId = 'difficulty' | 'enemies' | 'volume';
+type OptionsOptionId = 'difficulty' | 'enemies' | 'musicVolume' | 'sfxVolume';
 
 const difficultyValues = ['casual', 'standard', 'expert'] as const;
 const enemyValues = ['low', 'normal', 'high'] as const;
 const rootOptions: RootOptionId[] = ['primary', 'options', 'help'];
-const optionEntries: OptionsOptionId[] = ['difficulty', 'enemies', 'volume'];
+const optionEntries: OptionsOptionId[] = ['difficulty', 'enemies', 'musicVolume', 'sfxVolume'];
 
 const HELP_LINES = [
   'Controls: Move with Arrow keys or A / D. Jump with Up, W, or Space. Trigger Booster Dash with Shift and fire Plasma Blaster shots with F when that system is active.',
@@ -93,7 +93,11 @@ export class MenuScene extends Phaser.Scene {
 
   create(): void {
     const bridge = this.registry.get('bridge') as SceneBridge;
-    this.audio = new SynthAudio(this, () => bridge.getSession().getState().progress.runSettings.masterVolume);
+    this.audio = new SynthAudio(
+      this,
+      () => bridge.getSession().getState().progress.runSettings.musicVolume,
+      () => bridge.getSession().getState().progress.runSettings.sfxVolume,
+    );
     const retro = createRetroMenuPalette();
     this.view = 'root';
     this.rootSelectedIndex = 0;
@@ -115,7 +119,6 @@ export class MenuScene extends Phaser.Scene {
     };
     this.input.keyboard?.once('keydown', unlockSceneAudio);
     this.input.once('pointerdown', unlockSceneAudio);
-
     const updateRootSelection = (nextIndex: number, playAudio = true): void => {
       const wrapped = wrapIndex(nextIndex, rootOptions.length);
       const changed = this.rootSelectedIndex !== wrapped;
@@ -410,6 +413,22 @@ export class MenuScene extends Phaser.Scene {
         return;
       }
 
+      if (option === 'musicVolume') {
+        const nextValue = clamp(state.progress.runSettings.musicVolume + direction * 0.1, 0, 1);
+        bridge.updateRunSettings({ musicVolume: nextValue });
+        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
+        render();
+        return;
+      }
+
+      if (option === 'sfxVolume') {
+        const nextValue = clamp(state.progress.runSettings.sfxVolume + direction * 0.1, 0, 1);
+        bridge.updateRunSettings({ sfxVolume: nextValue });
+        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
+        render();
+        return;
+      }
+
       bridge.updateRunSettings({
         masterVolume: clamp(state.progress.runSettings.masterVolume + direction * 0.1, 0, 1),
       });
@@ -442,7 +461,8 @@ export class MenuScene extends Phaser.Scene {
       const optionLabels: Record<OptionsOptionId, string> = {
         difficulty: `Difficulty  ${DIFFICULTY_LABELS[state.progress.runSettings.difficulty]}`,
         enemies: `Enemies  ${ENEMY_PRESSURE_LABELS[state.progress.runSettings.enemyPressure]}`,
-        volume: `Volume  ${Math.round(state.progress.runSettings.masterVolume * 100)}%`,
+        musicVolume: `Music  ${Math.round(state.progress.runSettings.musicVolume * 100)}%`,
+        sfxVolume: `SFX  ${Math.round(state.progress.runSettings.sfxVolume * 100)}%`,
       };
 
       eyebrowText.setText('Orbital Survey');
@@ -659,7 +679,8 @@ export class MenuScene extends Phaser.Scene {
               'Options',
               `Difficulty  ${DIFFICULTY_LABELS[settings.difficulty]}`,
               `Enemies  ${ENEMY_PRESSURE_LABELS[settings.enemyPressure]}`,
-              `Volume  ${Math.round(settings.masterVolume * 100)}%`,
+              `Music  ${Math.round(settings.musicVolume * 100)}%`,
+              `SFX  ${Math.round(settings.sfxVolume * 100)}%`,
             ]
           : ['Help', ...HELP_LINES];
 

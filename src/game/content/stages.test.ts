@@ -381,16 +381,18 @@ describe('enemy placement validation', () => {
 });
 
 describe('stage audio composition validation', () => {
-  it('maps the current menu and playable stages to the approved CC0 sustained tracks', () => {
-    expect(MENU_SUSTAINED_MUSIC.title).toBe('Another space background track');
-    expect(getStageSustainedMusic('forest-ruins')?.title).toBe('Magic Space');
-    expect(getStageSustainedMusic('amber-cavern')?.title).toBe('I swear I saw it - background track');
-    expect(getStageSustainedMusic('sky-sanctum')?.title).toBe('Party Sector');
-    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.license === 'CC0')).toBe(true);
+  it('maps the current menu and playable stages to distinct ChillMindscapes sustained tracks', () => {
+    expect(MENU_SUSTAINED_MUSIC.title).toBe('Call For Love');
+    expect(getStageSustainedMusic('forest-ruins')?.title).toBe('Hour For Two');
+    expect(getStageSustainedMusic('amber-cavern')?.title).toBe('Give Her Shadow');
+    expect(getStageSustainedMusic('sky-sanctum')?.title).toBe('Get Out');
+    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.license === 'CC-BY-4.0')).toBe(true);
+    expect(new Set(ACTIVE_SUSTAINED_MUSIC_MANIFEST.map((entry) => entry.localAssetPath)).size).toBe(4);
+    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.localAssetPath.startsWith('/audio/music/chillmindscapes-pack-4/'))).toBe(true);
     expect(BACKUP_SUSTAINED_MUSIC_MANIFEST.map((entry) => entry.title)).toEqual([
-      'Galactic Temple',
-      'Space Music: Out There',
-      'Tragic ambient main menu',
+      'She Will Try',
+      'Easy Dreams',
+      'A Day',
     ]);
   });
 

@@ -823,7 +823,37 @@ describe('GameSession regression coverage', () => {
     );
   });
 
-  it('resolves stomp defeats immediately without delaying enemy removal', () => {
+  it('resolves thruster-impact defeats immediately without delaying enemy removal', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+    const enemy = state.stageRuntime.enemies.find((entry: any) => entry.kind === 'hopper');
+    if (!enemy) {
+      throw new Error('Expected a hopper fixture.');
+    }
+
+    state.stageRuntime.enemies = [enemy];
+    state.stageRuntime.hazards = [];
+    state.player.x = enemy.x;
+    state.player.y = enemy.y - state.player.height - 2;
+    state.player.vx = 0;
+    state.player.vy = 320;
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+
+    session.update(16, { ...defaultInputState(), thrusterPressed: true });
+
+    expect(enemy.alive).toBe(false);
+    expect(enemy.defeatCause).toBe('thruster-impact');
+    expect(state.player.dead).toBe(false);
+    expect(state.stageMessage).toBe('Restore survey beacon');
+    const cues = session.consumeCues();
+    expect(cues).toContain(AUDIO_CUES.thrusterPulse);
+    expect(cues).toContain(AUDIO_CUES.thrusterImpact);
+    expect(cues).not.toContain(AUDIO_CUES.shootHit);
+    expect(cues).not.toContain(AUDIO_CUES.death);
+  });
+
+  it('does not defeat enemies from above without an active thruster pulse', () => {
     const session = new GameSession();
     const state = getMutableState(session);
     const enemy = state.stageRuntime.enemies.find((entry: any) => entry.kind === 'hopper');
@@ -842,14 +872,39 @@ describe('GameSession regression coverage', () => {
 
     session.update(16, defaultInputState());
 
-    expect(enemy.alive).toBe(false);
-    expect(enemy.defeatCause).toBe('stomp');
-    expect(state.player.dead).toBe(false);
-    expect(state.stageMessage).toBe('Restore survey beacon');
-    const cues = session.consumeCues();
-    expect(cues).toContain(AUDIO_CUES.stomp);
-    expect(cues).not.toContain(AUDIO_CUES.shootHit);
-    expect(cues).not.toContain(AUDIO_CUES.death);
+    expect(enemy.alive).toBe(true);
+    expect(state.player.health).toBeLessThan(state.player.maxHealth);
+  });
+
+  it('enforces airborne thruster fuel and cooldown, then refreshes fuel on grounded recovery', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+    state.player.onGround = false;
+    state.player.supportPlatformId = null;
+    state.player.y = 100;
+    state.player.vy = 0;
+
+    session.update(16, { ...defaultInputState(), thrusterPressed: true });
+    expect(state.player.thrusterPulseFuel).toBe(1);
+
+    session.update(16, { ...defaultInputState(), thrusterPressed: true });
+    expect(state.player.thrusterPulseFuel).toBe(1);
+
+    session.update(280, defaultInputState());
+    session.update(16, { ...defaultInputState(), thrusterPressed: true });
+    expect(state.player.thrusterPulseFuel).toBe(0);
+
+    session.update(280, defaultInputState());
+    session.update(16, { ...defaultInputState(), thrusterPressed: true });
+    expect(state.player.thrusterPulseFuel).toBe(0);
+
+    state.player.onGround = true;
+    state.player.vy = 0;
+    session.update(16, defaultInputState());
+    expect(state.player.thrusterPulseFuel).toBe(2);
   });
 
   it('marks player projectile defeats as plasma blaster kills without delaying enemy removal', () => {
@@ -883,7 +938,7 @@ describe('GameSession regression coverage', () => {
     expect(state.stageMessage).toBe('Restore survey beacon');
     const cues = session.consumeCues();
     expect(cues).toContain(AUDIO_CUES.shootHit);
-    expect(cues).not.toContain(AUDIO_CUES.stomp);
+    expect(cues).not.toContain(AUDIO_CUES.thrusterImpact);
     expect(cues).not.toContain(AUDIO_CUES.death);
   });
 

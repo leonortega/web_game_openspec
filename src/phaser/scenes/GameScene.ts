@@ -517,7 +517,11 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.bridge = this.registry.get('bridge') as SceneBridge;
-    this.audio = new SynthAudio(this, () => this.bridge.getSession().getState().progress.runSettings.masterVolume);
+    this.audio = new SynthAudio(
+      this,
+      () => this.bridge.getSession().getState().progress.runSettings.musicVolume,
+      () => this.bridge.getSession().getState().progress.runSettings.sfxVolume,
+    );
     this.completeTransitionEvent = undefined;
     ensureBootTexturesRegistered(this);
     setupGameSceneHud(this.getHudSetupContext());
@@ -1510,9 +1514,10 @@ export class GameScene extends Phaser.Scene {
           this.triggerPlayerDefeatFeedback(event.x, event.y);
           break;
         case 'enemy-defeat': {
-          const preset = event.cause === 'stomp' ? 'enemy-defeat-stomp' : 'enemy-defeat-plasma';
+          const closeRangeImpact = event.cause !== 'plasma-blast';
+          const preset = closeRangeImpact ? 'enemy-defeat-stomp' : 'enemy-defeat-plasma';
           const tint =
-            event.cause === 'stomp'
+            closeRangeImpact
               ? event.enemyKind === 'hopper'
                 ? this.retroPalette.safe
                 : this.retroPalette.warm
@@ -1520,10 +1525,10 @@ export class GameScene extends Phaser.Scene {
                 ? this.retroPalette.bright
                 : this.retroPalette.cool;
             spawnRetroParticleBurst(this, event.x, event.y, tint, preset);
-            spawnRetroDefeatFlash(this, event.x, event.y, tint, event.cause === 'stomp' ? 'stomp' : 'plasma-blast');
+            spawnRetroDefeatFlash(this, event.x, event.y, tint, closeRangeImpact ? 'stomp' : 'plasma-blast');
             this.triggerEnemyDefeatFeedback(event.id, event.cause);
           this.recordFeedback('enemyDefeat');
-          this.recordFeedback(event.cause === 'stomp' ? 'enemyDefeatStomp' : 'enemyDefeatPlasma');
+          this.recordFeedback(closeRangeImpact ? 'enemyDefeatStomp' : 'enemyDefeatPlasma');
           break;
         }
       }

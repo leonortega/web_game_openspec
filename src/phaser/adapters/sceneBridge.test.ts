@@ -19,6 +19,7 @@ describe('SceneBridge pause flow regression coverage', () => {
     bridge.setRight(true);
     bridge.setJumpHeld(true);
     bridge.pressJump();
+    bridge.pressThruster();
     bridge.pressDash();
     bridge.pressShoot();
 
@@ -29,6 +30,7 @@ describe('SceneBridge pause flow regression coverage', () => {
       right: false,
       jumpHeld: false,
       jumpPressed: false,
+      thrusterPressed: false,
       dashPressed: false,
       shootPressed: false,
     });
@@ -97,6 +99,7 @@ describe('SceneBridge pause flow regression coverage', () => {
     bridge.setRight(true);
     bridge.setJumpHeld(true);
     bridge.pressJump();
+    bridge.pressThruster();
     bridge.pressDash();
     bridge.pressShoot();
 
@@ -107,6 +110,7 @@ describe('SceneBridge pause flow regression coverage', () => {
       right: false,
       jumpHeld: false,
       jumpPressed: false,
+      thrusterPressed: false,
       dashPressed: false,
       shootPressed: false,
     });

@@ -14,6 +14,7 @@ import {
   getStageSustainedMusic,
   type ActiveSustainedMusicManifestEntry,
 } from '../../audio/musicAssets';
+import { getSfxAsset } from '../../audio/sfxAssets';
 import { getAllAuthoredThemes, getStageMusicTheme } from '../../audio/musicThemes';
 import type { StageDefinition } from '../../game/content/stages';
 
@@ -43,6 +44,7 @@ const CUE_PROFILES: Record<AudioCue, CueProfile> = {
   [AUDIO_CUES.rewardReveal]: { family: 'reward', signature: 'reward block reveal pop', tones: [{ frequency: 523.25, durationMs: 60, type: 'square', volume: 0.022 }, { frequency: 659.25, durationMs: 80, type: 'square', volume: 0.018, offsetMs: 28 }, { frequency: 880, durationMs: 110, type: 'triangle', volume: 0.016, offsetMs: 58 }] },
   [AUDIO_CUES.heal]: { family: 'reward', signature: 'restoration chord rise', tones: [{ frequency: 523.25, durationMs: 150, type: 'triangle', volume: 0.022 }, { frequency: 659.25, durationMs: 170, type: 'triangle', volume: 0.02, offsetMs: 44 }, { frequency: 783.99, durationMs: 220, type: 'sine', volume: 0.018, offsetMs: 92 }] },
   [AUDIO_CUES.danger]: { family: 'danger', signature: 'warning pulse alarm', tones: [{ frequency: 220, durationMs: 80, type: 'square', volume: 0.024 }, { frequency: 196, durationMs: 80, type: 'square', volume: 0.024, offsetMs: 92 }] },
+  [AUDIO_CUES.chargerWindup]: { family: 'danger', signature: 'charger windup', tones: [{ frequency: 196, durationMs: 48, type: 'square', volume: 0.028 }] },
   [AUDIO_CUES.hurt]: {
     family: 'danger',
     signature: 'jagged suit impact rasp',
@@ -68,6 +70,22 @@ const CUE_PROFILES: Record<AudioCue, CueProfile> = {
     tones: [
       { frequency: 185, durationMs: 56, type: 'square', volume: 0.03 },
       { frequency: 123.47, durationMs: 92, type: 'triangle', volume: 0.022, offsetMs: 10 },
+    ],
+  },
+  [AUDIO_CUES.thrusterPulse]: {
+    family: 'combat',
+    signature: 'downward thruster ignition burst',
+    tones: [
+      { frequency: 246.94, durationMs: 62, type: 'sawtooth', volume: 0.03 },
+      { frequency: 196, durationMs: 88, type: 'triangle', volume: 0.022, offsetMs: 12 },
+    ],
+  },
+  [AUDIO_CUES.thrusterImpact]: {
+    family: 'combat',
+    signature: 'propulsion impact crush',
+    tones: [
+      { frequency: 164.81, durationMs: 72, type: 'square', volume: 0.03 },
+      { frequency: 110, durationMs: 102, type: 'triangle', volume: 0.024, offsetMs: 10 },
     ],
   },
   [AUDIO_CUES.shoot]: { family: 'combat', signature: 'plasma shot pulse', tones: [{ frequency: 587.33, durationMs: 70, type: 'square', volume: 0.028 }] },
@@ -109,7 +127,16 @@ const CUE_PROFILES: Record<AudioCue, CueProfile> = {
 };
 
 type AudioDebugEvent =
-  | { type: 'cue'; cue: AudioCue; family: string; signature: string; at: number }
+  | {
+      type: 'cue';
+      cue: AudioCue;
+      family: string;
+      signature: string;
+      playback: 'sample' | 'synth';
+      assetKey?: string;
+      assetPath?: string;
+      at: number;
+    }
   | {
       type: 'music';
       owner: SustainedAudioOwner;
@@ -188,6 +215,7 @@ type PlaybackRequest = ThemePlaybackRequest | AssetPlaybackRequest;
 const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
 
 const BACKGROUND_MUSIC_ENABLED = true;
+const MUSIC_BOOST = 2;
 
 const getDebugState = (): AudioDebugState => {
   const audioGlobal = globalThis as AudioContextLike;
@@ -294,7 +322,8 @@ export class SynthAudio {
 
   constructor(
     private readonly scene: Phaser.Scene,
-    private readonly getMasterVolume: () => number,
+    private readonly getMusicVolume: () => number,
+    private readonly getSfxVolume: () => number,
   ) {}
 
   async unlock(): Promise<boolean> {
@@ -351,6 +380,7 @@ export class SynthAudio {
   playStageIntro(stage: StageAudioSource | string): void {
     const source = resolveStageAudioSource(stage);
     const profile = resolveMusicProfile(source);
+    // Transition stingers remain synthesized so short scene timing accents stay isolated from sustained asset ownership.
     this.requestThemeMusic({ kind: 'theme', owner: 'transition', profile, phrase: 'stage-intro', stageId: source.id });
   }
 
@@ -376,12 +406,44 @@ export class SynthAudio {
   }
 
   playCue(cue: AudioCue): void {
+    const asset = getSfxAsset(cue);
+    if (asset) {
+      pushDebugEvent({
+        type: 'cue',
+        cue,
+        family: asset.family,
+        signature: asset.signature,
+        playback: 'sample',
+        assetKey: asset.assetKey,
+        assetPath: asset.localAssetPath,
+        at: Date.now(),
+      });
+      this.playSampledCue(asset);
+      return;
+    }
+
     const profile = CUE_PROFILES[cue];
-    pushDebugEvent({ type: 'cue', cue, family: profile.family, signature: profile.signature, at: Date.now() });
+    pushDebugEvent({ type: 'cue', cue, family: profile.family, signature: profile.signature, playback: 'synth', at: Date.now() });
 
     for (const tone of profile.tones) {
-      this.playTone(tone.frequency, tone.durationMs, tone.type, tone.volume, tone.offsetMs);
+      this.playToneForSfx(tone.frequency, tone.durationMs, tone.type, tone.volume, tone.offsetMs);
     }
+  }
+
+  private playSampledCue(asset: NonNullable<ReturnType<typeof getSfxAsset>>): void {
+    if (!this.isPlaybackUnlocked() || this.isSoundManagerLocked()) {
+      return;
+    }
+
+    const sfxMasterVolume = clamp(this.getSfxVolume(), 0, 1);
+    if (sfxMasterVolume <= 0) {
+      return;
+    }
+
+    try {
+      const sound = this.scene.sound.add(asset.assetKey);
+      sound.play({ volume: clamp(asset.volume * sfxMasterVolume, 0, 1) });
+    } catch {}
   }
 
   private requestThemeMusic(request: ThemePlaybackRequest): void {
@@ -445,15 +507,15 @@ export class SynthAudio {
 
   private startAssetMusic(request: AssetPlaybackRequest, requestKey: string): void {
     const { owner, asset, phrase, stageId } = request;
-    const masterVolume = clamp(this.getMasterVolume(), 0, 1);
-    if (masterVolume <= 0) {
+    const musicMasterVolume = clamp(this.getMusicVolume(), 0, 1);
+    if (musicMasterVolume <= 0) {
       this.pendingPlaybackRequest = request;
       return;
     }
 
     try {
       const sound = this.scene.sound.add(asset.assetKey) as Phaser.Sound.BaseSound & { isPlaying?: boolean };
-      const playConfig = { loop: true, volume: clamp(asset.volume * masterVolume, 0, 1) };
+      const playConfig = { loop: true, volume: clamp(asset.volume * musicMasterVolume * MUSIC_BOOST, 0, 1) };
       const playLoop = (): void => {
         if (sharedActiveMusic?.instanceId !== this.instanceId || sharedActiveMusic.requestKey !== requestKey) {
           return;
@@ -611,12 +673,14 @@ export class SynthAudio {
     const startOffsetMs = (voice.startOffsetSteps ?? 0) * voice.stepMs;
     return voice.notes.map((note, index) =>
       this.scene.time.delayedCall(baseOffsetMs + startOffsetMs + voice.stepMs * index, () => {
-        playStep(this.playTone.bind(this), note, voice.durationMs, voice.type, voice.volume);
+        playStep(this.playToneForMusic.bind(this), note, voice.durationMs, voice.type, voice.volume);
       }),
     );
   }
 
-  private playTone(
+  
+
+  private playToneForMusic(
     frequency: number,
     durationMs: number,
     type: OscillatorType,
@@ -628,7 +692,40 @@ export class SynthAudio {
       if (!context) {
         return;
       }
-      const masterVolume = clamp(this.getMasterVolume(), 0, 1);
+      const masterVolume = clamp(this.getMusicVolume(), 0, 1);
+      if (masterVolume <= 0) {
+        return;
+      }
+
+      const startAt = context.currentTime + offsetMs / 1000;
+      const gain = context.createGain();
+      const oscillator = context.createOscillator();
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, startAt);
+      gain.gain.setValueAtTime(0.0001, startAt);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume * masterVolume * MUSIC_BOOST), startAt + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + durationMs / 1000);
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(startAt);
+      oscillator.stop(startAt + durationMs / 1000 + 0.02);
+    } catch {}
+  }
+
+  private playToneForSfx(
+    frequency: number,
+    durationMs: number,
+    type: OscillatorType,
+    volume: number,
+    offsetMs = 0,
+  ): void {
+    try {
+      const context = this.getContext();
+      if (!context) {
+        return;
+      }
+      const masterVolume = clamp(this.getSfxVolume(), 0, 1);
       if (masterVolume <= 0) {
         return;
       }

@@ -38,7 +38,11 @@ export class StageIntroScene extends Phaser.Scene {
     const activeCheckpointCount = state.stageRuntime.checkpoints.filter((checkpoint) => checkpoint.activated).length;
     const checkpointSummary = `Survey beacons online: ${activeCheckpointCount}/${state.stageRuntime.checkpoints.length}`;
     const retro = createRetroPresentationPalette(state.stage.palette);
-    this.audio = new SynthAudio(this, () => bridge.getSession().getState().progress.runSettings.masterVolume);
+    this.audio = new SynthAudio(
+      this,
+      () => bridge.getSession().getState().progress.runSettings.musicVolume,
+      () => bridge.getSession().getState().progress.runSettings.sfxVolume,
+    );
 
     drawRetroBackdrop(this, 0, 0, width, height, retro, 'transition');
     this.add

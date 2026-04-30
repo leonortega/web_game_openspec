@@ -1,77 +1,89 @@
 {
   "active": [
     {
-      "assetKey": "music-menu-observing-the-star",
+      "assetKey": "music-menu-call-for-love",
       "surface": "menu",
-      "title": "Another space background track",
-      "creator": "yd",
-      "license": "CC0",
-      "sourceUrl": "https://opengameart.org/content/another-space-background-track",
-      "originalFileName": "ObservingTheStar.zip",
-      "localAssetPath": "/audio/music/menu-observing-the-star.ogg",
-      "volume": 0.34
-    },
-    {
-      "assetKey": "music-stage-forest-magic-space",
-      "surface": "stage",
-      "stageId": "forest-ruins",
-      "title": "Magic Space",
-      "creator": "CodeManu",
-      "license": "CC0",
-      "sourceUrl": "https://opengameart.org/content/magic-space",
-      "originalFileName": "magic space.mp3",
-      "localAssetPath": "/audio/music/forest-magic-space.mp3",
+      "title": "Call For Love",
+      "creator": "ChillMindscapes",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "https://chillmindscapes.itch.io/free-chiptune-music-pack-4-chillmindscapes",
+      "originalFileName": "70 Call For Love - Orchestrated.WAV",
+      "originalSourcePackRelativePath": "70 Call For Love - Orchestrated.WAV",
+      "localAssetPath": "/audio/music/chillmindscapes-pack-4/menu-call-for-love.wav",
+      "webFormat": "wav",
+      "intendedMapping": "menu",
       "volume": 0.3
     },
     {
-      "assetKey": "music-stage-amber-i-swear-i-saw-it",
+      "assetKey": "music-stage-forest-goodbye-tales-68",
       "surface": "stage",
-      "stageId": "amber-cavern",
-      "title": "I swear I saw it - background track",
-      "creator": "yd",
-      "license": "CC0",
-      "sourceUrl": "https://opengameart.org/content/i-swear-i-saw-it-background-track",
-      "originalFileName": "IswearIsawit.ogg",
-      "localAssetPath": "/audio/music/amber-i-swear-i-saw-it.ogg",
-      "volume": 0.32
+      "stageId": "forest-ruins",
+      "title": "Goodbye Tales",
+      "creator": "ChillMindscapes",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "https://chillmindscapes.itch.io/free-chiptune-music-pack-4-chillmindscapes",
+      "originalFileName": "68 Goodbye Tales - Orchestrated.WAV",
+      "originalSourcePackRelativePath": "68 Goodbye Tales - Orchestrated.WAV",
+      "localAssetPath": "/audio/music/chillmindscapes-free-chiptune-music-pack-4/68 Goodbye Tales - Orchestrated.WAV",
+      "webFormat": "wav",
+      "intendedMapping": "forest-ruins gameplay",
+      "volume": 0.3
     },
     {
-      "assetKey": "music-stage-sky-party-sector",
+      "assetKey": "music-stage-amber-give-her-shadow",
+      "surface": "stage",
+      "stageId": "amber-cavern",
+      "title": "Give Her Shadow",
+      "creator": "ChillMindscapes",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "https://chillmindscapes.itch.io/free-chiptune-music-pack-4-chillmindscapes",
+      "originalFileName": "66 Give Her Shadow - Orchestrated.WAV",
+      "originalSourcePackRelativePath": "66 Give Her Shadow - Orchestrated.WAV",
+      "localAssetPath": "/audio/music/chillmindscapes-pack-4/amber-give-her-shadow.wav",
+      "webFormat": "wav",
+      "intendedMapping": "amber-cavern gameplay",
+      "volume": 0.26
+    },
+    {
+      "assetKey": "music-stage-sky-get-out",
       "surface": "stage",
       "stageId": "sky-sanctum",
-      "title": "Party Sector",
-      "creator": "Joth",
-      "license": "CC0",
-      "sourceUrl": "https://opengameart.org/content/party-sector",
-      "originalFileName": "Party Sector.mp3",
-      "localAssetPath": "/audio/music/sky-party-sector.mp3",
+      "title": "Get Out",
+      "creator": "ChillMindscapes",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "https://chillmindscapes.itch.io/free-chiptune-music-pack-4-chillmindscapes",
+      "originalFileName": "72 Get Out - Orchestrated.WAV",
+      "originalSourcePackRelativePath": "72 Get Out - Orchestrated.WAV",
+      "localAssetPath": "/audio/music/chillmindscapes-pack-4/sky-get-out.wav",
+      "webFormat": "wav",
+      "intendedMapping": "sky-sanctum gameplay",
       "volume": 0.28
     }
   ],
   "backups": [
     {
-      "title": "Galactic Temple",
-      "creator": "yd",
-      "license": "CC0",
-      "sourceUrl": "https://opengameart.org/content/galactic-temple",
-      "originalFileName": "GalacticTemple.zip",
-      "notes": "Ambient fallback if menu or amber-cavern needs a calmer space texture."
+      "title": "She Will Try",
+      "creator": "ChillMindscapes",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "https://chillmindscapes.itch.io/free-chiptune-music-pack-4-chillmindscapes",
+      "originalFileName": "59 She Will Try - Orchestrated.WAV",
+      "notes": "Backup from the same downloaded pack if a calmer sustained surface is needed."
     },
     {
-      "title": "Space Music: Out There",
-      "creator": "yd",
-      "license": "CC0",
-      "sourceUrl": "https://opengameart.org/content/space-music-out-there",
-      "originalFileName": "OutThere.ogg",
-      "notes": "Long-form background fallback for open-space surfaces if the late-stage mapping changes."
+      "title": "Easy Dreams",
+      "creator": "ChillMindscapes",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "https://chillmindscapes.itch.io/free-chiptune-music-pack-4-chillmindscapes",
+      "originalFileName": "60 Easy Dreams - Orchestrated.WAV",
+      "notes": "Backup from the same downloaded pack if a lighter sustained surface is needed."
     },
     {
-      "title": "Tragic ambient main menu",
-      "creator": "brandon75689",
-      "license": "CC0",
-      "sourceUrl": "https://opengameart.org/content/tragic-ambient-main-menu",
-      "originalFileName": "ambientmain_0.ogg",
-      "notes": "Darker menu-only backup if the title surface needs a more ominous space read."
+      "title": "A Day",
+      "creator": "ChillMindscapes",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "https://chillmindscapes.itch.io/free-chiptune-music-pack-4-chillmindscapes",
+      "originalFileName": "65 A Day - Orchestrated.WAV",
+      "notes": "Backup from the same downloaded pack if a broader sustained surface is needed."
     }
   ]
 }

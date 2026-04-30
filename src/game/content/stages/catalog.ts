@@ -87,9 +87,9 @@ const baseStageDefinitions: StageDefinition[] = [
     startCabin: startCabin(105, 614, 1),
     platforms: [
       ground(0, 620, 420),
-      ground(510, 575, 170),
-      ground(760, 525, 180),
-      ground(1020, 470, 190),
+      ground(510, 615, 170),
+      ground(760, 565, 180),
+      ground(1020, 510, 190),
       ground(1290, 540, 220),
       moving(1610, 600, 240, 32, 'x', 120, 80),
       ground(1920, 540, 180),
@@ -154,7 +154,7 @@ const baseStageDefinitions: StageDefinition[] = [
       {
         id: 'walker-1',
         kind: 'walker',
-        position: { x: 1030, y: 440 },
+        position: { x: 1030, y: 480 },
         patrol: { left: 1020, right: 1210, speed: 90 },
       },
       {

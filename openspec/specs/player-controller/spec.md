@@ -4,11 +4,16 @@
 TBD - created by archiving change mvp-platform-game. Update Purpose after archive.
 ## Requirements
 ### Requirement: Player can move and jump precisely
-The game SHALL provide a player-controlled character that can run left and right, jump, and adjust position in the air with responsive platformer controls. The controller MUST include a forgiving jump window after leaving a platform and a buffered jump input shortly before landing. While the player is still supported by a falling platform's top surface, that support MUST remain valid for normal movement and jump initiation, including falling platforms that are in contact-aware collapse timing states before or after arm. Falling-platform arming and collapse timing MUST use deterministic contact-pattern thresholds (`stayArmThresholdMs = 120`, `hopGapThresholdMs = 50`) without invalidating grounded jump eligibility during active support contact.
+The game SHALL provide a player-controlled character that can run left and right, jump, and adjust position in the air with responsive platformer controls. The controller MUST include a forgiving jump window after leaving a platform and a buffered jump input shortly before landing. While the player is still supported by a falling platform's top surface, that support MUST remain valid for normal movement and jump initiation, including falling platforms that are in contact-aware collapse timing states before or after arm. Falling-platform arming and collapse timing MUST use deterministic contact-pattern thresholds (`stayArmThresholdMs = 120`, `hopGapThresholdMs = 50`) without invalidating grounded jump eligibility during active support contact. Jump readability MAY use a short bounded jump-pose hold window that keeps jump intent visible immediately after jump initiation, including brief airborne transitions after takeoff, as long as that hold remains presentation-level and does not alter jump physics, coyote timing, buffered-jump timing, dash priority, or support-contact truth.
 
 #### Scenario: Jumping during contact-aware falling-platform timing
 - **WHEN** the player is in valid top-surface support contact with a falling platform while that platform is accumulating pre-arm stay time or consuming armed collapse time
 - **THEN** jump initiation remains valid under normal controller jump rules
+
+#### Scenario: Holding jump-readability pose after takeoff
+- **WHEN** the player initiates a jump from valid support
+- **THEN** a short bounded jump-pose hold may remain visible immediately after takeoff to preserve readability
+- **AND** controller physics and input windows remain unchanged
 
 
 
@@ -74,16 +79,25 @@ The game SHALL track player health or hit state, apply damage from enemies and h
 - **THEN** the player returns with a complete intact avatar in the correct base or active-power visual variant
 - **AND** no defeat-only visual mutations remain on the respawned player
 
-### Requirement: Player can defeat eligible enemies by stomping
-The game SHALL allow the player to defeat stompable enemy types by landing on them from above while falling.
+### Requirement: Player can defeat eligible enemies with boot-thruster propulsion impact
+The game SHALL allow the player to defeat eligible non-turret enemies from above only through an active airborne boot-thruster pulse impact rather than passive stomp contact. The player MUST trigger a downward thruster pulse while airborne to open a short impact window. Thruster pulse usage MUST consume bounded airborne fuel and MUST respect a per-pulse cooldown. Airborne thruster fuel MUST refresh on grounded recovery. Falling onto an enemy from above without an active thruster-impact window MUST NOT defeat that enemy.
 
-#### Scenario: Successful stomp
-- **WHEN** the player lands on a stompable enemy from above
-- **THEN** the enemy is defeated and the player remains in active play
+#### Scenario: Successful thruster-impact defeat
+- **WHEN** the player is airborne, triggers a downward thruster pulse, and collides from above with an eligible enemy during the active impact window
+- **THEN** that enemy is defeated
+- **AND** the player remains in active play with a bounded rebound outcome
 
-#### Scenario: Side collision with stompable enemy
-- **WHEN** the player collides with the same enemy from the side or below
-- **THEN** the player takes damage instead of defeating the enemy
+#### Scenario: Falling contact without active thruster pulse
+- **WHEN** the player collides from above with an eligible enemy without an active thruster-impact window
+- **THEN** the enemy is not defeated by that contact
+
+#### Scenario: Exhausted fuel or active cooldown
+- **WHEN** the player attempts to trigger another airborne thruster pulse with no remaining pulse fuel or while cooldown is still active
+- **THEN** no new pulse is triggered until fuel and cooldown rules permit it
+
+#### Scenario: Grounded fuel refresh
+- **WHEN** the player returns to grounded support after airborne traversal
+- **THEN** the thruster pulse fuel pool refreshes for the next airborne sequence
 
 ### Requirement: Player abilities can expand the core moveset through progression
 The game SHALL allow the player's base controller to be extended by interactive block rewards such as double jump, shooter, invincibility, and dash. Added powers MUST remain responsive and use consistent activation rules.

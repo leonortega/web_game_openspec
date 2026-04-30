@@ -27,6 +27,10 @@ export class SceneBridge {
     this.input.jumpPressed = true;
   }
 
+  pressThruster(): void {
+    this.input.thrusterPressed = true;
+  }
+
   pressDash(): void {
     this.input.dashPressed = true;
   }
@@ -45,6 +49,7 @@ export class SceneBridge {
     }
     this.session.update(deltaMs, this.input);
     this.input.jumpPressed = false;
+    this.input.thrusterPressed = false;
     this.input.dashPressed = false;
     this.input.shootPressed = false;
   }
@@ -145,6 +150,7 @@ export class SceneBridge {
     this.input.right = false;
     this.input.jumpHeld = false;
     this.input.jumpPressed = false;
+    this.input.thrusterPressed = false;
     this.input.dashPressed = false;
     this.input.shootPressed = false;
   }

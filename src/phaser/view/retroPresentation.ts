@@ -534,7 +534,7 @@ export const detectRetroFeedbackEvents = (
       events.push({
         kind: 'enemy-defeat',
         id: enemy.id,
-        cause: enemy.defeatCause ?? 'stomp',
+        cause: enemy.defeatCause ?? 'thruster-impact',
         enemyKind: enemy.kind,
         x: prior.x + prior.width / 2,
         y: prior.y + prior.height / 2,

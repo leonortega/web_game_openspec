@@ -1,7 +1,11 @@
 import { stageDefinitions, type StageDefinition } from '../content/stages';
 import { gravityCapsuleShellWallThickness } from '../content/stages/builders';
 import {
+  findCheckpointSupport,
+  findExitSupport,
+  findHazardSupport,
   findGroundedEnemySupport,
+  findSupportBelowSpan,
   resolveGroundedEnemyRect,
   resolveCheckpointRect,
   resolveCheckpointRespawnPoint,
@@ -75,11 +79,16 @@ const COYOTE_TIME_MS = 120;
 const JUMP_BUFFER_MS = 140;
 const INVULNERABLE_MS = 1000;
 const RESPAWN_DELAY_MS = 900;
-const STOMP_BOUNCE = 360;
+const THRUSTER_IMPACT_REBOUND = 260;
 const DASH_SPEED = 520;
 const DASH_DURATION_MS = 120;
 const DASH_COOLDOWN_MS = 700;
 const SHOOT_COOLDOWN_MS = 260;
+const THRUSTER_PULSE_COOLDOWN_MS = 260;
+const THRUSTER_PULSE_MAX_FUEL = 2;
+const THRUSTER_PULSE_DOWN_SPEED = 760;
+const THRUSTER_IMPACT_WINDOW_MS = 180;
+const THRUSTER_IMPACT_MIN_SPEED = 140;
 const PLAYER_PROJECTILE_SPEED = 520;
 const POWER_INVINCIBLE_MS = 10_000;
 const REWARD_REVEAL_MS = 1000;
@@ -96,12 +105,20 @@ const HOP_HORIZONTAL_SPEED_LIMIT = 420;
 const HOP_IMPULSE_LIMIT = 980;
 const FALL_STAY_ARM_THRESHOLD_MS = 120;
 const FALL_HOP_GAP_THRESHOLD_MS = 50;
+const EMPTY_PLATFORM_MOVING_RANGE = 72;
+const EMPTY_PLATFORM_MOVING_SPEED = 72;
+const EMPTY_PLATFORM_SPRING_BOOST = 860;
+const EMPTY_PLATFORM_SPRING_COOLDOWN_MS = 350;
+const EMPTY_PLATFORM_FALL_TRIGGER_DELAY_MS = 650;
+const INCLUDE_OVERLAPPING_AUTHORED_OCCUPANTS = true;
 const PLAYER_PRESENTATION_ORDER: PowerType[] = ['invincible', 'shooter', 'doubleJump', 'dash'];
 const DEFAULT_TURRET_PROJECTILE_SPEED = 260;
 const GRAVITY_FIELD_SCALE: Record<GravityFieldKind, number> = {
   'anti-grav-stream': -0.38,
   'gravity-inversion-column': -1,
 };
+
+const EMPTY_PLATFORM_RUNTIME_KIND_ORDER: Array<'moving' | 'falling' | 'spring'> = ['moving', 'falling', 'spring'];
 
 const DIFFICULTY_CONFIG: Record<
   DifficultySetting,
@@ -175,6 +192,168 @@ const createStageObjectiveState = (
         completed,
       }
     : null;
+
+const collectOccupiedSupportPlatformIds = (stage: StageDefinition): Set<string> => {
+  const occupied = new Set<string>();
+
+  const rectIntersects = (a: Rect, b: Rect): boolean =>
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y;
+
+  const markSupportForRect = (rect: Rect): void => {
+    const support = findSupportBelowSpan(stage.platforms, rect.x, rect.width, rect.y + rect.height);
+    if (support) {
+      occupied.add(support.id);
+    }
+  };
+
+  const markAnyOverlappingSupports = (rect: Rect): void => {
+    if (!INCLUDE_OVERLAPPING_AUTHORED_OCCUPANTS) {
+      return;
+    }
+
+    for (const platform of stage.platforms) {
+      if (rectIntersects(rect, platform)) {
+        occupied.add(platform.id);
+      }
+    }
+  };
+
+  const markAuthoredRectOccupant = (rect: Rect): void => {
+    markSupportForRect(rect);
+    markAnyOverlappingSupports(rect);
+  };
+
+  for (const enemy of stage.enemies) {
+    const support = findGroundedEnemySupport(stage, enemy);
+    if (support) {
+      occupied.add(support.id);
+    }
+  }
+
+  for (const hazard of stage.hazards) {
+    const support = findHazardSupport(stage, hazard.rect);
+    if (support) {
+      occupied.add(support.id);
+    }
+    markAnyOverlappingSupports(hazard.rect);
+  }
+
+  for (const checkpoint of stage.checkpoints) {
+    const support = findCheckpointSupport(stage, checkpoint.rect);
+    if (support) {
+      occupied.add(support.id);
+    }
+    markAnyOverlappingSupports(checkpoint.rect);
+  }
+
+  const exitSupport = findExitSupport(stage, stage.exit);
+  if (exitSupport) {
+    occupied.add(exitSupport.id);
+  }
+  markAnyOverlappingSupports(stage.exit);
+
+  for (const block of stage.rewardBlocks) {
+    markAuthoredRectOccupant(block);
+  }
+
+  for (const node of stage.activationNodes) {
+    markAuthoredRectOccupant(node);
+  }
+
+  for (const revealVolume of stage.revealVolumes) {
+    markAuthoredRectOccupant(revealVolume);
+  }
+
+  for (const scannerVolume of stage.scannerVolumes) {
+    markAuthoredRectOccupant(scannerVolume);
+  }
+
+  for (const capsule of stage.gravityCapsules) {
+    markAuthoredRectOccupant(capsule.button);
+    markAuthoredRectOccupant(capsule.entryDoor);
+    markAuthoredRectOccupant(capsule.exitDoor);
+    markAuthoredRectOccupant(capsule.entryRoute);
+    markAuthoredRectOccupant(capsule.buttonRoute);
+    markAuthoredRectOccupant(capsule.exitRoute);
+  }
+
+  return occupied;
+};
+
+const chooseEmptyPlatformRuntimeKind = (platformId: string): 'moving' | 'falling' | 'spring' => {
+  let checksum = 0;
+  for (const char of platformId) {
+    checksum += char.charCodeAt(0);
+  }
+  return EMPTY_PLATFORM_RUNTIME_KIND_ORDER[checksum % EMPTY_PLATFORM_RUNTIME_KIND_ORDER.length];
+};
+
+type RuntimePlatformAuthoring = {
+  kind: PlatformState['kind'];
+  move?: StageDefinition['platforms'][number]['move'];
+  fall?: StageDefinition['platforms'][number]['fall'];
+  spring?: StageDefinition['platforms'][number]['spring'];
+};
+
+const resolveRuntimePlatformAuthoring = (
+  platform: StageDefinition['platforms'][number],
+  occupiedBySupportedContent: boolean,
+): RuntimePlatformAuthoring => {
+  const plainStaticPlatform =
+    platform.kind === 'static' &&
+    !platform.surfaceMechanic &&
+    !platform.reveal &&
+    !platform.temporaryBridge &&
+    !platform.magnetic;
+
+  if (!plainStaticPlatform || occupiedBySupportedContent) {
+    return {
+      kind: platform.kind,
+      move: platform.move,
+      fall: platform.fall,
+      spring: platform.spring,
+    };
+  }
+
+  switch (chooseEmptyPlatformRuntimeKind(platform.id)) {
+    case 'moving':
+      return {
+        kind: 'moving',
+        move: {
+          axis: 'x',
+          range: Math.min(EMPTY_PLATFORM_MOVING_RANGE, Math.max(24, Math.floor(platform.width * 0.5))),
+          speed: EMPTY_PLATFORM_MOVING_SPEED,
+        },
+        fall: undefined,
+        spring: undefined,
+      };
+    case 'falling':
+      return {
+        kind: 'falling',
+        move: undefined,
+        fall: {
+          triggerDelayMs: EMPTY_PLATFORM_FALL_TRIGGER_DELAY_MS,
+          stayArmThresholdMs: FALL_STAY_ARM_THRESHOLD_MS,
+          hopGapThresholdMs: FALL_HOP_GAP_THRESHOLD_MS,
+        },
+        spring: undefined,
+      };
+    case 'spring':
+    default:
+      return {
+        kind: 'spring',
+        move: undefined,
+        fall: undefined,
+        spring: {
+          boost: EMPTY_PLATFORM_SPRING_BOOST,
+          cooldownMs: EMPTY_PLATFORM_SPRING_COOLDOWN_MS,
+        },
+      };
+  }
+};
 
 const EXIT_FINISH_HIDE_PROGRESS = 0.3;
 
@@ -798,13 +977,27 @@ export class GameSession {
   }
 
   updateRunSettings(next: Partial<RunSettings>): void {
+    const current = this.snapshot.progress.runSettings;
+    const musicVolume =
+      next.musicVolume == null
+        ? next.masterVolume == null
+          ? current.musicVolume ?? current.masterVolume
+          : clamp(next.masterVolume, 0, 1)
+        : clamp(next.musicVolume, 0, 1);
+    const sfxVolume =
+      next.sfxVolume == null
+        ? next.masterVolume == null
+          ? current.sfxVolume ?? current.masterVolume
+          : clamp(next.masterVolume, 0, 1)
+        : clamp(next.sfxVolume, 0, 1);
+    const masterVolume = next.masterVolume == null ? current.masterVolume : clamp(next.masterVolume, 0, 1);
+
     this.snapshot.progress.runSettings = {
-      ...this.snapshot.progress.runSettings,
+      ...current,
       ...next,
-      masterVolume:
-        next.masterVolume == null
-          ? this.snapshot.progress.runSettings.masterVolume
-          : clamp(next.masterVolume, 0, 1),
+      musicVolume,
+      sfxVolume,
+      masterVolume,
     };
   }
 
@@ -896,6 +1089,8 @@ export class GameSession {
     player.dashCooldownMs = Math.max(0, player.dashCooldownMs - deltaMs);
     player.dashTimerMs = Math.max(0, player.dashTimerMs - deltaMs);
     player.shootCooldownMs = Math.max(0, player.shootCooldownMs - deltaMs);
+    player.thrusterPulseCooldownMs = Math.max(0, player.thrusterPulseCooldownMs - deltaMs);
+    player.thrusterImpactWindowMs = Math.max(0, player.thrusterImpactWindowMs - deltaMs);
 
     const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (direction !== 0) {
@@ -947,6 +1142,7 @@ export class GameSession {
       if (player.onGround) {
         player.coyoteMs = COYOTE_TIME_MS;
         player.airJumpsRemaining = this.snapshot.progress.activePowers.doubleJump ? 1 : 0;
+        player.thrusterPulseFuel = THRUSTER_PULSE_MAX_FUEL;
       } else if (ceilingSupport) {
         player.coyoteMs = COYOTE_TIME_MS;
       } else {
@@ -979,6 +1175,21 @@ export class GameSession {
           player.jumpBufferMs = 0;
           this.emitCue(AUDIO_CUES.doubleJump);
         }
+      }
+
+      if (
+        input.thrusterPressed &&
+        !player.onGround &&
+        player.thrusterPulseCooldownMs <= 0 &&
+        player.thrusterPulseFuel > 0
+      ) {
+        player.thrusterPulseFuel -= 1;
+        player.thrusterPulseCooldownMs = THRUSTER_PULSE_COOLDOWN_MS;
+        player.thrusterImpactWindowMs = THRUSTER_IMPACT_WINDOW_MS;
+        player.vy = Math.max(player.vy, THRUSTER_PULSE_DOWN_SPEED);
+        player.supportPlatformId = null;
+        player.phaseThroughSupportPlatformId = null;
+        this.emitCue(AUDIO_CUES.thrusterPulse);
       }
 
       this.updatePlayerGravityState();
@@ -1732,7 +1943,7 @@ export class GameSession {
             enemy.charger.state = 'windup';
             enemy.charger.timerMs = enemy.charger.windupMs;
             enemy.vx = 0;
-            emitVisibleCue(AUDIO_CUES.danger);
+            emitVisibleCue(AUDIO_CUES.chargerWindup);
           }
         } else if (enemy.charger.state === 'windup') {
           enemy.charger.timerMs -= deltaMs;
@@ -2011,10 +2222,14 @@ export class GameSession {
         continue;
       }
 
-      const stompWindow = player.vy > 100 && player.y + player.height <= enemy.y + 14;
-      if (stompWindow && enemy.kind !== 'turret') {
-        this.defeatEnemy(enemy, 'stomp', AUDIO_CUES.stomp);
-        player.vy = -STOMP_BOUNCE;
+      const thrusterImpactWindow =
+        player.thrusterImpactWindowMs > 0 &&
+        player.vy > THRUSTER_IMPACT_MIN_SPEED &&
+        player.y + player.height <= enemy.y + 14;
+      if (thrusterImpactWindow && enemy.kind !== 'turret') {
+        this.defeatEnemy(enemy, 'thruster-impact', AUDIO_CUES.thrusterImpact);
+        player.vy = -THRUSTER_IMPACT_REBOUND;
+        player.thrusterImpactWindowMs = 0;
         player.onGround = false;
         player.supportPlatformId = null;
       } else {
@@ -2579,6 +2794,9 @@ export class GameSession {
       dashTimerMs: 0,
       dashCooldownMs: 0,
       shootCooldownMs: 0,
+      thrusterPulseCooldownMs: 0,
+      thrusterPulseFuel: THRUSTER_PULSE_MAX_FUEL,
+      thrusterImpactWindowMs: 0,
       airJumpsRemaining: progress.activePowers.doubleJump ? 1 : 0,
       presentationPower: null,
       supportPlatformId: null,
@@ -2594,53 +2812,57 @@ export class GameSession {
       dead: false,
     };
 
-    const platforms = stage.platforms.map<PlatformState>((platform) => ({
-      id: platform.id,
-      kind: platform.kind,
-      surfaceMechanic: platform.surfaceMechanic ? { kind: platform.surfaceMechanic.kind } : undefined,
-      brittle:
-        platform.surfaceMechanic?.kind === 'brittleCrystal'
+    const occupiedSupportPlatformIds = collectOccupiedSupportPlatformIds(stage);
+    const platforms = stage.platforms.map<PlatformState>((platform) => {
+      const runtimeAuthoring = resolveRuntimePlatformAuthoring(platform, occupiedSupportPlatformIds.has(platform.id));
+      return {
+        id: platform.id,
+        kind: runtimeAuthoring.kind,
+        surfaceMechanic: platform.surfaceMechanic ? { kind: platform.surfaceMechanic.kind } : undefined,
+        brittle:
+          platform.surfaceMechanic?.kind === 'brittleCrystal'
+            ? {
+                phase: 'intact',
+                warningMs: BRITTLE_WARNING_MS,
+                unsupportedGapMs: 0,
+                readyBreakDelayMs: BRITTLE_READY_BREAK_DELAY_MS,
+                readyElapsedMs: 0,
+                readyRemainingMs: BRITTLE_READY_BREAK_DELAY_MS,
+              }
+            : undefined,
+        x: platform.x,
+        y: platform.y,
+        width: platform.width,
+        height: platform.height,
+        startX: platform.x,
+        startY: platform.y,
+        vx: 0,
+        vy: 0,
+        move: runtimeAuthoring.move ? { ...runtimeAuthoring.move, direction: -1 } : undefined,
+        fall: runtimeAuthoring.fall
           ? {
-              phase: 'intact',
-              warningMs: BRITTLE_WARNING_MS,
+              triggerDelayMs: runtimeAuthoring.fall.triggerDelayMs,
+              stayArmThresholdMs: runtimeAuthoring.fall.stayArmThresholdMs ?? FALL_STAY_ARM_THRESHOLD_MS,
+              hopGapThresholdMs: runtimeAuthoring.fall.hopGapThresholdMs ?? FALL_HOP_GAP_THRESHOLD_MS,
+              timerMs: runtimeAuthoring.fall.triggerDelayMs,
+              triggered: false,
+              falling: false,
+              accumulatedSupportMs: 0,
               unsupportedGapMs: 0,
-              readyBreakDelayMs: BRITTLE_READY_BREAK_DELAY_MS,
-              readyElapsedMs: 0,
-              readyRemainingMs: BRITTLE_READY_BREAK_DELAY_MS,
             }
           : undefined,
-      x: platform.x,
-      y: platform.y,
-      width: platform.width,
-      height: platform.height,
-      startX: platform.x,
-      startY: platform.y,
-      vx: 0,
-      vy: 0,
-      move: platform.move ? { ...platform.move, direction: -1 } : undefined,
-      fall: platform.fall
-        ? {
-            triggerDelayMs: platform.fall.triggerDelayMs,
-            stayArmThresholdMs: platform.fall.stayArmThresholdMs ?? FALL_STAY_ARM_THRESHOLD_MS,
-            hopGapThresholdMs: platform.fall.hopGapThresholdMs ?? FALL_HOP_GAP_THRESHOLD_MS,
-            timerMs: platform.fall.triggerDelayMs,
-            triggered: false,
-            falling: false,
-            accumulatedSupportMs: 0,
-            unsupportedGapMs: 0,
-          }
-        : undefined,
-      spring: platform.spring
-        ? {
-            boost: platform.spring.boost,
-            cooldownMs: platform.spring.cooldownMs,
-            timerMs: 0,
-          }
-        : undefined,
-      reveal: platform.reveal ? { ...platform.reveal } : undefined,
-      temporaryBridge: platform.temporaryBridge ? { ...platform.temporaryBridge } : undefined,
-      magnetic: platform.magnetic ? { ...platform.magnetic, powered: false } : undefined,
-    }));
+        spring: runtimeAuthoring.spring
+          ? {
+              boost: runtimeAuthoring.spring.boost,
+              cooldownMs: runtimeAuthoring.spring.cooldownMs,
+              timerMs: 0,
+            }
+          : undefined,
+        reveal: platform.reveal ? { ...platform.reveal } : undefined,
+        temporaryBridge: platform.temporaryBridge ? { ...platform.temporaryBridge } : undefined,
+        magnetic: platform.magnetic ? { ...platform.magnetic, powered: false } : undefined,
+      };
+    });
 
     const activeRevealIds = normalizeRevealedPlatformIds(revealedPlatformIds);
       const temporaryBridges = platforms
