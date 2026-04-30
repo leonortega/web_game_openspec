@@ -193,3 +193,18 @@ The game SHALL keep synthesized audio only for menu interaction cues, gameplay f
 - **THEN** it confirms that sustained music remains asset-backed and non-overlapping across scene changes
 - **AND** it separately confirms that synthesized cues and transition stingers still trigger on their expected surfaces
 
+### Requirement: Music volume setting is exposed as a multiplier for sustained music
+The game SHALL interpret the `musicVolume` run-setting (numeric 0..1) as an authoring-friendly multiplier when applied to sustained music playback so that the effective multiplier used by the audio path is `multiplier = musicVolume * 10`. The options UI SHALL display both the percent and computed multiplier (for example: `Music 70% (x7.0)`) so authors can reason about relative asset loudness. Short synthesized cues and sampled SFX SHALL continue to use a linear 0..1 attenuation via `sfxVolume` and MUST NOT be affected by the music multiplier.
+
+#### Scenario: Viewing the music setting in options
+- **WHEN** the player opens `Options` and views the `Music` slider
+- **THEN** the UI displays both the percent and the computed multiplier (for example: `Music 50% (x5.0)`)
+
+#### Scenario: Applying the multiplier during playback
+- **WHEN** sustained music assets or synthesized theme tones play during a scene
+- **THEN** the audio playback code applies `gain = baseGain * clamp(musicVolume * 10, 0, 1)` or an equivalent clamped multiplier so author-adjusted loudness remains predictable and non-destructive
+
+#### Notes
+- Existing saved `musicVolume` values remain compatible (e.g., 0.7 → x7 multiplier).
+- Implementations SHOULD cap applied gain to 1.0 to avoid excessive amplification beyond the audio system's normalized range.
+

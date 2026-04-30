@@ -461,7 +461,9 @@ export class MenuScene extends Phaser.Scene {
       const optionLabels: Record<OptionsOptionId, string> = {
         difficulty: `Difficulty  ${DIFFICULTY_LABELS[state.progress.runSettings.difficulty]}`,
         enemies: `Enemies  ${ENEMY_PRESSURE_LABELS[state.progress.runSettings.enemyPressure]}`,
-        musicVolume: `Music  ${Math.round(state.progress.runSettings.musicVolume * 100)}%`,
+        musicVolume: `Music  ${Math.round(state.progress.runSettings.musicVolume * 100)}% (x${(
+          state.progress.runSettings.musicVolume * 10
+        ).toFixed(1)})`,
         sfxVolume: `SFX  ${Math.round(state.progress.runSettings.sfxVolume * 100)}%`,
       };
 
@@ -679,7 +681,7 @@ export class MenuScene extends Phaser.Scene {
               'Options',
               `Difficulty  ${DIFFICULTY_LABELS[settings.difficulty]}`,
               `Enemies  ${ENEMY_PRESSURE_LABELS[settings.enemyPressure]}`,
-              `Music  ${Math.round(settings.musicVolume * 100)}%`,
+              `Music  ${Math.round(settings.musicVolume * 100)}% (x${(settings.musicVolume * 10).toFixed(1)})`,
               `SFX  ${Math.round(settings.sfxVolume * 100)}%`,
             ]
           : ['Help', ...HELP_LINES];

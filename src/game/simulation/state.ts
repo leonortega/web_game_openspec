@@ -726,4 +726,4 @@ export const getPrimaryPowerVariant = (
 export const formatRunSettings = (settings: RunSettings): string =>
   `${DIFFICULTY_LABELS[settings.difficulty]} | ${ENEMY_PRESSURE_LABELS[settings.enemyPressure]} Enemies | Vol M${Math.round(
     settings.musicVolume * 100,
-  )}%/S${Math.round(settings.sfxVolume * 100)}%`;
+  )}% (x${(settings.musicVolume * 10).toFixed(1)})/S${Math.round(settings.sfxVolume * 100)}%`;

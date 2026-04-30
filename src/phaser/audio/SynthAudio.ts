@@ -215,7 +215,9 @@ type PlaybackRequest = ThemePlaybackRequest | AssetPlaybackRequest;
 const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
 
 const BACKGROUND_MUSIC_ENABLED = true;
-const MUSIC_BOOST = 2;
+// Interpret `musicVolume` run setting (0..1) as a multiplier fraction.
+// User-facing percent maps to multiplier by `musicVolume * MUSIC_MULTIPLIER_SCALE`.
+const MUSIC_MULTIPLIER_SCALE = 10;
 
 const getDebugState = (): AudioDebugState => {
   const audioGlobal = globalThis as AudioContextLike;
@@ -507,15 +509,17 @@ export class SynthAudio {
 
   private startAssetMusic(request: AssetPlaybackRequest, requestKey: string): void {
     const { owner, asset, phrase, stageId } = request;
-    const musicMasterVolume = clamp(this.getMusicVolume(), 0, 1);
-    if (musicMasterVolume <= 0) {
+    const musicSetting = clamp(this.getMusicVolume(), 0, 1);
+    if (musicSetting <= 0) {
       this.pendingPlaybackRequest = request;
       return;
     }
 
+    const musicMultiplier = musicSetting * MUSIC_MULTIPLIER_SCALE;
+
     try {
       const sound = this.scene.sound.add(asset.assetKey) as Phaser.Sound.BaseSound & { isPlaying?: boolean };
-      const playConfig = { loop: true, volume: clamp(asset.volume * musicMasterVolume * MUSIC_BOOST, 0, 1) };
+      const playConfig = { loop: true, volume: clamp(asset.volume * musicMultiplier, 0, 1) };
       const playLoop = (): void => {
         if (sharedActiveMusic?.instanceId !== this.instanceId || sharedActiveMusic.requestKey !== requestKey) {
           return;
@@ -692,18 +696,18 @@ export class SynthAudio {
       if (!context) {
         return;
       }
-      const masterVolume = clamp(this.getMusicVolume(), 0, 1);
-      if (masterVolume <= 0) {
+      const musicSetting = clamp(this.getMusicVolume(), 0, 1);
+      if (musicSetting <= 0) {
         return;
       }
-
+      const multiplier = musicSetting * MUSIC_MULTIPLIER_SCALE;
       const startAt = context.currentTime + offsetMs / 1000;
       const gain = context.createGain();
       const oscillator = context.createOscillator();
       oscillator.type = type;
       oscillator.frequency.setValueAtTime(frequency, startAt);
       gain.gain.setValueAtTime(0.0001, startAt);
-      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume * masterVolume * MUSIC_BOOST), startAt + 0.01);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume * multiplier), startAt + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.0001, startAt + durationMs / 1000);
 
       oscillator.connect(gain);
