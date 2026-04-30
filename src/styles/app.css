@@ -1,7 +1,7 @@
 :root {
   --app-shell-gap: 0px;
   --game-shell-max-width: 100vw;
-  font-family: "Courier New", monospace;
+  font-family: "Press Start 2P", monospace;
   color: #f7f3d6;
   background:
     linear-gradient(180deg, rgba(224, 91, 61, 0.12) 0 6%, transparent 6% 100%),
@@ -71,7 +71,7 @@ body {
   flex-direction: column;
   justify-content: flex-start;
   padding: 16px;
-  font-family: "Courier New", monospace;
+  font-family: "Press Start 2P", monospace;
 }
 
 .hud-layer-tight {

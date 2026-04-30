@@ -320,7 +320,88 @@ function createPixelTexture(
   context.imageSmoothingEnabled = false;
   draw(context);
 
+  // If a global GPU postFX quantize is active, skip canvas-side quantization
+  // to avoid double-quantizing/dithering. Otherwise perform a CPU-side
+  // 5-6-5 quantization with Floyd–Steinberg dithering for non-WebGL fallbacks
+  // or when the global postFX is not present.
+  const globalQuantizeEnabled = Boolean((scene as any)?.registry?.get?.('globalQuantizeEnabled'));
+  if (!globalQuantizeEnabled) {
+    try {
+      quantizeCanvasTo565(context, width, height);
+    } catch (err) {
+      // If quantization fails for any reason, fall back to original canvas.
+      // (Don't block game boot for non-critical visual processing.)
+      // eslint-disable-next-line no-console
+      console.warn('16-bit quantization failed for', key, err);
+    }
+  }
+
   scene.textures.addCanvas(key, canvas);
+}
+
+function quantizeCanvasTo565(context: CanvasRenderingContext2D, width: number, height: number): void {
+  const imageData = context.getImageData(0, 0, width, height);
+  const src = imageData.data;
+  const len = src.length;
+
+  // Use a float buffer for error diffusion calculations
+  const buf = new Float32Array(len);
+  for (let i = 0; i < len; i++) {
+    buf[i] = src[i];
+  }
+
+  const w = width;
+  const h = height;
+
+  const clamp = (v: number) => (v < 0 ? 0 : v > 255 ? 255 : v);
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const idx = (y * w + x) * 4;
+
+      const oldR = buf[idx];
+      const oldG = buf[idx + 1];
+      const oldB = buf[idx + 2];
+
+      const newR = Math.round((oldR * 31) / 255) * (255 / 31);
+      const newG = Math.round((oldG * 63) / 255) * (255 / 63);
+      const newB = Math.round((oldB * 31) / 255) * (255 / 31);
+
+      buf[idx] = newR;
+      buf[idx + 1] = newG;
+      buf[idx + 2] = newB;
+
+      const errR = oldR - newR;
+      const errG = oldG - newG;
+      const errB = oldB - newB;
+
+      // Floyd–Steinberg distribution
+      // Right: x+1, y       => 7/16
+      // Bottom-left: x-1,y+1 => 3/16
+      // Bottom: x,y+1        => 5/16
+      // Bottom-right: x+1,y+1=> 1/16
+
+      distributeError(buf, w, h, x + 1, y, errR * 7 / 16, errG * 7 / 16, errB * 7 / 16);
+      distributeError(buf, w, h, x - 1, y + 1, errR * 3 / 16, errG * 3 / 16, errB * 3 / 16);
+      distributeError(buf, w, h, x, y + 1, errR * 5 / 16, errG * 5 / 16, errB * 5 / 16);
+      distributeError(buf, w, h, x + 1, y + 1, errR * 1 / 16, errG * 1 / 16, errB * 1 / 16);
+    }
+  }
+
+  // Write back clamped values into imageData.data
+  for (let i = 0; i < len; i++) {
+    src[i] = clamp(Math.round(buf[i]));
+  }
+
+  context.putImageData(imageData, 0, 0);
+}
+
+function distributeError(buf: Float32Array, w: number, h: number, x: number, y: number, errR: number, errG: number, errB: number): void {
+  if (x < 0 || x >= w || y < 0 || y >= h) return;
+  const idx = (y * w + x) * 4;
+  buf[idx] = buf[idx] + errR;
+  buf[idx + 1] = buf[idx + 1] + errG;
+  buf[idx + 2] = buf[idx + 2] + errB;
 }
 
 function outlinedRect(
