@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { annotateRetroWorldLocalRegion, type RetroWorldLocalEffectRegion, type RetroWorldLocalEffectRegionConfig } from '../retroPostFx';
 
 export default class EnhancedRenderPlugin extends Phaser.Plugins.ScenePlugin {
   constructor(scene: Phaser.Scene, pluginManager: Phaser.Plugins.PluginManager) {
@@ -13,6 +14,10 @@ export default class EnhancedRenderPlugin extends Phaser.Plugins.ScenePlugin {
 
   private install(): void {
     const sceneAny = this.scene as any;
+
+    if (!sceneAny.enhanced) {
+      sceneAny.enhanced = this;
+    }
 
     // gpuSprite helper (uses native if available, otherwise falls back to regular sprite)
     if (!sceneAny.add.gpuSprite) {
@@ -63,6 +68,27 @@ export default class EnhancedRenderPlugin extends Phaser.Plugins.ScenePlugin {
         if (typeof sceneAny.filters.unified[n] !== 'function') {
           sceneAny.filters.unified[n] = makeProxy(n);
         }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    try {
+      if (typeof sceneAny.enhanced.createWorldLocalRetroRegion !== 'function') {
+        sceneAny.enhanced.createWorldLocalRetroRegion = (config: RetroWorldLocalEffectRegionConfig): RetroWorldLocalEffectRegion => {
+          const region = annotateRetroWorldLocalRegion(
+            sceneAny.add
+              .rectangle(config.x, config.y, config.width, config.height, config.color, config.alpha)
+              .setOrigin(0.5)
+              .setDepth(config.depth ?? 2)
+              .setVisible(config.visible ?? true),
+            config.kind,
+          );
+          if (typeof region.setScrollFactor === 'function') {
+            region.setScrollFactor(config.scrollFactor ?? 1);
+          }
+          return region;
+        };
       }
     } catch (e) {
       // ignore

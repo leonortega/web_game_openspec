@@ -1,6 +1,7 @@
 :root {
   --app-shell-gap: 0px;
   --game-shell-max-width: 100vw;
+  --hud-font-base: clamp(6px, 0.85vw, 9px);
   font-family: "Press Start 2P", monospace;
   color: #f7f3d6;
   background:
@@ -71,6 +72,7 @@ body {
   flex-direction: column;
   justify-content: flex-start;
   padding: 16px;
+  font-size: var(--hud-font-base);
   font-family: "Press Start 2P", monospace;
 }
 
@@ -111,7 +113,7 @@ body {
 
 .hud-label {
   display: block;
-  font-size: 0.72rem;
+  font-size: 0.72em;
   text-transform: uppercase;
   letter-spacing: 0.18em;
   color: #aab197;
@@ -120,7 +122,7 @@ body {
 .hud-value {
   display: block;
   margin-top: 6px;
-  font-size: 1rem;
+  font-size: 1em;
   font-weight: 700;
   letter-spacing: 0.1em;
   line-height: 1.2;
@@ -133,8 +135,8 @@ body {
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
-  color: rgba(247, 243, 214, 0.82);
-  font-size: 0.72rem;
+  color: rgba(245, 207, 100, 0.94);
+  font-size: 0.72em;
   letter-spacing: 0.08em;
   text-shadow: 2px 2px 0 rgba(17, 20, 27, 0.9);
 }
@@ -149,12 +151,12 @@ body {
 .hud-meta-label {
   text-transform: uppercase;
   letter-spacing: 0.18em;
-  color: #b7bfaa;
+  color: #f0d36f;
 }
 
 .hud-meta-value {
   font-weight: 700;
-  color: #f7f3d6;
+  color: #f5cf64;
 }
 
 .message-panel {
@@ -167,7 +169,7 @@ body {
   border: 2px solid #11141b;
   background: #f0b84b;
   color: #11141b;
-  font-size: 0.82rem;
+  font-size: 0.82em;
   font-weight: 700;
   letter-spacing: 0.1em;
   line-height: 1.35;
@@ -195,6 +197,7 @@ body {
 
   .hud-layer {
     padding: 10px;
+    font-size: clamp(5px, 1.45vw, 8px);
   }
 
   .hud-bar {
@@ -211,13 +214,13 @@ body {
   }
 
   .hud-value {
-    font-size: 0.92rem;
+    font-size: 0.92em;
   }
 
   .hud-meta {
     right: 10px;
     bottom: 76px;
-    font-size: 0.6rem;
+    font-size: 0.6em;
   }
 
   .hud-meta-line {
@@ -231,7 +234,7 @@ body {
     bottom: max(calc(env(safe-area-inset-bottom, 0px) + 12px), 12px);
     max-width: min(184px, calc(100% - 136px));
     padding: 8px 12px;
-    font-size: 0.76rem;
+    font-size: 0.76em;
     letter-spacing: 0.08em;
   }
 }

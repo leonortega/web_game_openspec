@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('phaser', () => ({}));
+vi.mock('phaser', () => ({
+  Math: {
+    Clamp: (value: number, min: number, max: number) => Math.min(Math.max(value, min), max),
+  },
+}));
 
 import { syncEnemy } from './enemyRendering';
 
@@ -30,6 +34,7 @@ describe('syncEnemy', () => {
       enemyContactStrips: new Map(),
       enemyAccentSprites: new Map(),
       enemyDefeatVisibleUntilMs: new Map(),
+      enemyHitFlashUntilMs: new Map(),
       retroPalette: {
         alert: 0xff0000,
         cool: 0x00aaff,
@@ -100,6 +105,7 @@ describe('syncEnemy', () => {
       enemyContactStrips: new Map(),
       enemyAccentSprites: new Map(),
       enemyDefeatVisibleUntilMs: new Map(),
+      enemyHitFlashUntilMs: new Map(),
       retroPalette: {
         alert: 0xff0000,
         cool: 0x00aaff,
@@ -143,5 +149,72 @@ describe('syncEnemy', () => {
     const [, renderY] = lastCall;
 
     expect(renderY).toBeCloseTo(480 + 30 - 28 * 1.12 - 2, 5);
+  });
+
+  it('drops expired enemy hit flashes and keeps palette-ramp accents local to turret variants', () => {
+    const sprite = {
+      setVisible: vi.fn().mockReturnThis(),
+      setPosition: vi.fn().mockReturnThis(),
+      setFlipX: vi.fn().mockReturnThis(),
+      setScale: vi.fn().mockReturnThis(),
+      setAlpha: vi.fn().mockReturnThis(),
+      setAngle: vi.fn().mockReturnThis(),
+      setDepth: vi.fn().mockReturnThis(),
+      setTint: vi.fn().mockReturnThis(),
+    };
+    const accentA = {
+      setVisible: vi.fn().mockReturnThis(),
+      setPosition: vi.fn().mockReturnThis(),
+      setSize: vi.fn().mockReturnThis(),
+      setFillStyle: vi.fn().mockReturnThis(),
+    };
+    const accentB = {
+      setVisible: vi.fn().mockReturnThis(),
+      setPosition: vi.fn().mockReturnThis(),
+      setSize: vi.fn().mockReturnThis(),
+      setFillStyle: vi.fn().mockReturnThis(),
+    };
+
+    const scene = {
+      enemySprites: new Map([['turret-1', sprite]]),
+      enemyContactStrips: new Map(),
+      enemyAccentSprites: new Map([['turret-1', [accentA, accentB]]]),
+      enemyDefeatVisibleUntilMs: new Map(),
+      enemyHitFlashUntilMs: new Map([['turret-1', 20]]),
+      retroPalette: {
+        alert: 0xff0000,
+        cool: 0x00aaff,
+        safe: 0x00ff00,
+        warm: 0xffaa00,
+        bright: 0xffffff,
+        border: 0xf7f3d6,
+        ink: 0x101010,
+      },
+      time: {
+        now: 40,
+      },
+    } as any;
+
+    syncEnemy(scene, {
+      id: 'turret-1',
+      alive: true,
+      defeatCause: null,
+      x: 300,
+      y: 160,
+      width: 24,
+      height: 30,
+      direction: 1,
+      supportY: 160,
+      kind: 'turret',
+      variant: 'ionPulse',
+      vx: 0,
+      vy: 0,
+      turret: { intervalMs: 980, timerMs: 0, telegraphMs: 0, telegraphDurationMs: 980, burstGapMs: 0, burstGapDurationMs: 0, pendingShots: 0 },
+    } as any);
+
+    expect(scene.enemyHitFlashUntilMs.has('turret-1')).toBe(false);
+    expect(accentA.setVisible).toHaveBeenCalledWith(true);
+    expect(accentB.setVisible).toHaveBeenCalledWith(true);
+    expect(sprite.setTint).toHaveBeenCalled();
   });
 });

@@ -12,6 +12,7 @@ export const buildGameConfig = (parent: HTMLElement): Phaser.Types.Core.GameConf
   pixelArt: true,
   antialias: false,
   antialiasGL: false,
+  mipmapFilter: 'NEAREST',
   // Register scene-scoped plugin that provides GPU sprite helper, unified filter facade, and lighting shim.
   plugins: {
     scene: [

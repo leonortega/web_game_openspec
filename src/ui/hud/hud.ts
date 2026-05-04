@@ -6,7 +6,7 @@ type HudBindings = {
   coinsValue: HTMLSpanElement;
   healthValue: HTMLSpanElement;
   powerValue: HTMLSpanElement;
-  runValue: HTMLSpanElement;
+  difficultyValue: HTMLSpanElement;
   segmentValue: HTMLSpanElement;
   message: HTMLDivElement;
 };
@@ -18,7 +18,7 @@ export type HudViewModel = {
   coins: string;
   health: number;
   powerLabel: string;
-  runLabel: string;
+  difficultyLabel: string;
   segmentLabel: string;
   message: string;
 };
@@ -49,8 +49,8 @@ export const createHud = (mount: HTMLElement): HudBindings => {
     </div>
     <div class="hud-meta">
       <div class="hud-meta-line">
-        <span class="hud-meta-label">Run</span>
-        <span class="hud-meta-value" data-role="run"></span>
+        <span class="hud-meta-label">Difficulty</span>
+        <span class="hud-meta-value" data-role="difficulty"></span>
       </div>
       <div class="hud-meta-line">
         <span class="hud-meta-label">Segment</span>
@@ -68,7 +68,7 @@ export const createHud = (mount: HTMLElement): HudBindings => {
     coinsValue: root.querySelector('[data-role="coins"]') as HTMLSpanElement,
     healthValue: root.querySelector('[data-role="health"]') as HTMLSpanElement,
     powerValue: root.querySelector('[data-role="power"]') as HTMLSpanElement,
-    runValue: root.querySelector('[data-role="run"]') as HTMLSpanElement,
+    difficultyValue: root.querySelector('[data-role="difficulty"]') as HTMLSpanElement,
     segmentValue: root.querySelector('[data-role="segment"]') as HTMLSpanElement,
     message: root.querySelector('[data-role="message"]') as HTMLDivElement,
   };
@@ -79,7 +79,7 @@ export const updateHud = (hud: HudBindings, model: HudViewModel): void => {
   hud.coinsValue.textContent = model.coins;
   hud.healthValue.textContent = model.health.toString().padStart(2, '0');
   hud.powerValue.textContent = model.powerLabel;
-  hud.runValue.textContent = model.runLabel;
+  hud.difficultyValue.textContent = model.difficultyLabel;
   hud.segmentValue.textContent = model.segmentLabel;
   hud.message.textContent = model.message;
   hud.message.setAttribute('aria-hidden', model.message ? 'false' : 'true');

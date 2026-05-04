@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { SceneBridge } from './adapters/sceneBridge';
 import { buildGameConfig } from './gameConfig';
+import { applyConfiguredRetroPostFxToCamera, setCrtFilterEnabled } from './retroPostFx';
 
 export const createGameApp = (mountNode: HTMLElement | null): Phaser.Game => {
   if (!mountNode) {
@@ -24,38 +25,43 @@ export const createGameApp = (mountNode: HTMLElement | null): Phaser.Game => {
   const game = new Phaser.Game(buildGameConfig(shell));
 
   game.registry.set('bridge', bridge);
+  setCrtFilterEnabled(game, true);
   if (isDebug) {
     (window as Window & { __CRYSTAL_RUN_GAME__?: Phaser.Game }).__CRYSTAL_RUN_GAME__ = game;
   }
-  // Enable global quantize postFX for this game instance.
-  enableGlobalQuantizePostFX(game);
+  // Enable global retro postFX for this game instance.
+  enableGlobalRetroPostFX(game);
   return game;
 };
 
-// Attach a global quantize + dither postFX to every scene's main camera.
-// Uses Phaser's built-in Quantize filter (R,G,B steps + dither).
-function enableGlobalQuantizePostFX(game: Phaser.Game): void {
-  const attachQuantizeToScene = (scene: Phaser.Scene) => {
+// Attach global retro postFX to every scene's main camera.
+// Prefers Rex addCRT when present; falls back to built-in barrel + quantize.
+function enableGlobalRetroPostFX(game: Phaser.Game): void {
+  const bindSceneRetroAttach = (scene: Phaser.Scene): void => {
+    scene.events.once(Phaser.Scenes.Events.READY, () => {
+      attachRetroToScene(scene);
+    });
+    scene.events.once(Phaser.Scenes.Events.PRE_RENDER, () => {
+      attachRetroToScene(scene);
+    });
+  };
+
+  const attachRetroToScene = (scene: Phaser.Scene, retries = 2) => {
     try {
       const mainCam = (scene as any).cameras?.main;
-      if (
-        mainCam &&
-        mainCam.filters &&
-        mainCam.filters.external &&
-        typeof mainCam.filters.external.addQuantize === 'function'
-      ) {
-        // R5-G6-B5 -> steps ~ [32, 64, 32]. Alpha steps set to 1.
-        mainCam.filters.external.addQuantize({ steps: [32, 64, 32, 1], dither: true, mode: 0 });
-        // Mark registry so canvas-side textures avoid double-quantizing.
-        try {
-          (game.registry as any).set('globalQuantizeEnabled', true);
-        } catch (e) {
-          // ignore
+      const externalFilters = (mainCam as any)?.filters?.external;
+
+      if (!mainCam || !externalFilters) {
+        if (retries > 0) {
+          requestAnimationFrame(() => attachRetroToScene(scene, retries - 1));
         }
+        return;
       }
+
+      applyConfiguredRetroPostFxToCamera(game, mainCam);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn('Quantize postFX attach failed for scene', (scene as any)?.sys?.settings?.key, err);
+      console.warn('Retro postFX attach failed for scene', (scene as any)?.sys?.settings?.key, err);
     }
   };
 
@@ -66,29 +72,34 @@ function enableGlobalQuantizePostFX(game: Phaser.Game): void {
     for (const k in keys) {
       const s = keys[k];
       if (s) {
-        attachQuantizeToScene(s as Phaser.Scene);
+        bindSceneRetroAttach(s as Phaser.Scene);
+        attachRetroToScene(s as Phaser.Scene);
       }
     }
 
     // Also attach when scenes start in future
     if (sceneManager.events && typeof sceneManager.events.on === 'function') {
       sceneManager.events.on(Phaser.Scenes.Events.START, (scene: Phaser.Scene) => {
-        attachQuantizeToScene(scene);
+        bindSceneRetroAttach(scene);
+        scene.events.once(Phaser.Scenes.Events.CREATE, () => {
+          attachRetroToScene(scene);
+        });
+        attachRetroToScene(scene);
       });
     }
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.warn('Failed to enable global quantize postFX', err);
+    console.warn('Failed to enable global retro postFX', err);
   }
 }
 
-// Enable global quantize postFX when module is loaded.
+// Enable global retro postFX when module is loaded.
 // The game instance is created via createGameApp; we locate it on window after boot.
 try {
   // If a game already exists on window (debug), enable immediately.
   const maybeGame = (window as any).__CRYSTAL_RUN_GAME__ as Phaser.Game | undefined;
   if (maybeGame) {
-    enableGlobalQuantizePostFX(maybeGame);
+    enableGlobalRetroPostFX(maybeGame);
   }
 } catch (e) {
   // ignore

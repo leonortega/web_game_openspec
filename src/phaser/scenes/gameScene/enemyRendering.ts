@@ -11,7 +11,10 @@ import { createOptimizedSprite } from '../../plugins/enhancedRenderUtils';
 import { TURRET_VARIANT_CONFIG, type EnemyState, type HazardState, type ProjectileState } from '../../../game/simulation/state';
 import {
   getRetroDefeatTweenPreset,
+  getRetroEnemyPaletteRamp,
   getRetroEnemyPose,
+  getRetroHitFlashBlend,
+  mixColor,
   type RetroPresentationPalette,
 } from '../../view/retroPresentation';
 
@@ -31,6 +34,7 @@ export type GameSceneEnemyRenderingContext = Phaser.Scene & {
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   projectileSprites: Map<string, Phaser.GameObjects.Sprite>;
   enemyDefeatVisibleUntilMs: Map<string, number>;
+  enemyHitFlashUntilMs: Map<string, number>;
 };
 
 export const getSpikeHazardToothRects = (
@@ -93,6 +97,10 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
   }
   const defeatHoldUntilMs = scene.enemyDefeatVisibleUntilMs.get(enemy.id) ?? Number.NEGATIVE_INFINITY;
   const defeatHoldActive = !enemy.alive && scene.time.now < defeatHoldUntilMs;
+  const hitFlashBlend = getRetroHitFlashBlend(scene.time.now, scene.enemyHitFlashUntilMs.get(enemy.id) ?? Number.NEGATIVE_INFINITY, 'enemy-hit');
+  if (hitFlashBlend === 0) {
+    scene.enemyHitFlashUntilMs.delete(enemy.id);
+  }
   sprite.setVisible(enemy.alive || defeatHoldActive);
   if (enemy.alive) {
     const motion = getRetroEnemyPose(enemy, scene.time.now);
@@ -109,6 +117,7 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
     sprite.setAngle(0);
     sprite.setDepth(0);
     const turretVariant = enemy.variant ? TURRET_VARIANT_CONFIG[enemy.variant] : null;
+    const ramp = getRetroEnemyPaletteRamp(enemy, scene.retroPalette);
     let tint =
       enemy.kind === 'charger'
         ? scene.retroPalette.alert
@@ -125,6 +134,13 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
     if (enemy.kind === 'turret' && turretVariant && enemy.turret?.telegraphMs) {
       tint = turretVariant.telegraphColor;
     }
+    if (ramp) {
+      tint = ramp.baseTint;
+    }
+    if (hitFlashBlend > 0) {
+      tint = mixColor(tint, scene.retroPalette.bright, hitFlashBlend);
+      sprite.setAlpha(Math.max(motion.alpha, 0.88));
+    }
     sprite.setTint(tint);
     for (const accent of accents) {
       accent.setVisible(false);
@@ -138,6 +154,17 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
         .setPosition(enemy.x + 10, enemy.y + 16 + motion.accentOffsetY)
         .setFillStyle(scene.retroPalette.bright, 0.16 + motion.accentAlpha * 0.5)
         .setVisible(true);
+    } else if (ramp && accents.length === 2) {
+      accents[0]
+        .setPosition(enemy.x + 4, renderY + 5)
+        .setSize(Math.max(10, enemy.width - 8), 4)
+        .setFillStyle(ramp.highlightTint, Math.min(0.92, ramp.stripeAlpha + hitFlashBlend * 0.22))
+        .setVisible(true);
+      accents[1]
+        .setPosition(enemy.x + 6, renderY + enemy.height - 9)
+        .setSize(Math.max(8, enemy.width - 12), 3)
+        .setFillStyle(ramp.shadowTint, Math.min(0.9, 0.34 + hitFlashBlend * 0.2))
+        .setVisible(true);
     }
     syncEnemyContactStrip(scene, enemy);
     return;
@@ -147,7 +174,8 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
     const defeatPreset = getRetroDefeatTweenPreset(enemy.defeatCause === 'plasma-blast' ? 'plasma-blast' : 'stomp');
     sprite.setDepth(defeatPreset.depth);
     sprite.setAlpha(1);
-    sprite.setTint(enemy.defeatCause === 'plasma-blast' ? scene.retroPalette.bright : scene.retroPalette.alert);
+    const defeatTint = enemy.defeatCause === 'plasma-blast' ? scene.retroPalette.bright : scene.retroPalette.alert;
+    sprite.setTint(hitFlashBlend > 0 ? mixColor(defeatTint, scene.retroPalette.border, hitFlashBlend) : defeatTint);
     for (const accent of accents) {
       accent.setVisible(false);
     }
@@ -155,6 +183,7 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
   }
 
   scene.enemyDefeatVisibleUntilMs.delete(enemy.id);
+  scene.enemyHitFlashUntilMs.delete(enemy.id);
 
   for (const accent of accents) {
     accent.setVisible(false);

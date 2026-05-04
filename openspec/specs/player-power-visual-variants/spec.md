@@ -38,30 +38,14 @@ The game SHALL present the default player as an original astronaut-themed base v
 - **AND** it does not directly reproduce the reference image
 
 ### Requirement: Player presentation uses bounded retro animation states
-The game SHALL present the base astronaut variant and each supported power variant through a bounded set of readable retro animation states rather than a mostly static pose. At minimum, the player presentation MUST expose visually distinct grounded, moving, airborne, and defeat-to-respawn state changes, and power acquisition MAY add a brief matching accent pulse or burst so long as the active power variant remains readable at gameplay scale. These animation states MUST use low-frame pose swaps, restrained tween accents, or both rather than smooth modern smear motion, and they MUST NOT change player mechanics, timing, or collision. Any temporary defeat breakup or pose distortion applied to the astronaut during the death presentation MUST be fully cleared before the respawned player returns to active play.
+The game SHALL present the base astronaut variant and each supported power variant through a bounded set of readable retro animation states rather than a mostly static pose. At minimum, the player presentation MUST expose visually distinct grounded, moving, airborne, hit-react, and defeat-to-respawn state changes, and power acquisition MAY add a brief matching accent pulse or burst so long as the active power variant remains readable at gameplay scale. Supported player hit-react presentation MAY include one short object-local flash or Beam-assisted accent, but that accent MUST remain brief, MUST preserve the readability of the current base or powered astronaut variant underneath it, and MUST NOT change player mechanics, timing, or collision. These animation states MUST use low-frame pose swaps, restrained tween accents, or both rather than smooth modern smear motion. Any temporary defeat breakup, flash, or pose distortion applied to the astronaut during hit-react or death presentation MUST be fully cleared before the respawned or recovered player returns to active play.
 
-#### Scenario: Reading the active player state while moving
-- **WHEN** the player runs, idles, jumps, or falls during active play
-- **THEN** the avatar changes pose or bounded accent state enough to communicate the current movement state
-- **AND** that motion remains readable within the limited retro palette and gameplay scale
+#### Scenario: Reading a powered player through a hit flash
+- **WHEN** the player takes a hit while a supported power variant is active
+- **THEN** the short local hit flash still allows the current power variant to remain identifiable at gameplay scale
+- **AND** the flash clears without leaving residual transforms or color treatment behind
 
-#### Scenario: Gaining a supported power with readable feedback
-- **WHEN** the player gains a supported power
-- **THEN** the avatar switches to the matching power variant and may play a brief matching gain accent
-- **AND** the gain feedback does not obscure the power variant's ongoing readability once the moment passes
-
-#### Scenario: Comparing animated power variants
-- **WHEN** the player compares supported powers across separate runs
-- **THEN** each supported power remains visually distinct through its bounded pose set, silhouette treatment, accent placement, or gain feedback language
-- **AND** those distinctions do not depend only on a subtle hue shift
-
-#### Scenario: Clearing or losing a power
-- **WHEN** the player's active power is cleared or consumed
-- **THEN** the player returns to the base astronaut presentation and its matching bounded animation states
-- **AND** the transition back does not change control timing or hit behavior
-
-#### Scenario: Restoring the astronaut after defeat
-- **WHEN** the player respawns after the defeat animation has temporarily broken apart or distorted the avatar
+#### Scenario: Restoring the astronaut after hit-react or defeat
+- **WHEN** the player recovers from a survivable hit or respawns after defeat
 - **THEN** the astronaut returns in a complete default or active-power presentation state
-- **AND** no temporary defeat-only offsets, missing parts, or residual transforms remain visible
-
+- **AND** no temporary hit-only or defeat-only visual mutations remain visible

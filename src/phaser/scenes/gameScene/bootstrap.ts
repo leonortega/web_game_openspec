@@ -14,6 +14,7 @@ import { EXIT_CAPSULE_ART_BOUNDS, EXIT_CAPSULE_TEXTURE_KEYS } from '../../view/c
 import { configureCamera } from '../../view/camera/configureCamera';
 import { drawRetroBackdrop, RETRO_FONT_FAMILY, type RetroPresentationPalette } from '../../view/retroPresentation';
 import { createOptimizedSprite } from '../../plugins/enhancedRenderUtils';
+import { createWorldLocalRetroRegion } from '../../retroPostFx';
 
 export type GameSceneHudSetupContext = Phaser.Scene & {
   hud: ReturnType<typeof createHud>;
@@ -162,9 +163,20 @@ export type GameSceneBaseDisplayContext = Phaser.Scene & {
 };
 
 export function setupGameSceneHud(scene: GameSceneHudSetupContext): void {
+  const applyResponsiveHudScale = ({ width }: { width: number }): void => {
+    const baseFontPx = Phaser.Math.Clamp((width / 960) * 8, 5, 10);
+    scene.hud.root.style.setProperty('--hud-font-base', `${baseFontPx.toFixed(2)}px`);
+  };
+
   const mount = scene.game.canvas.parentElement as HTMLElement;
   scene.hud.root.remove();
   scene.hud = createHud(mount);
+
+  applyResponsiveHudScale({ width: scene.scale.displaySize.width || scene.scale.width });
+  scene.scale.on(Phaser.Scale.Events.RESIZE, applyResponsiveHudScale);
+  scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+    scene.scale.off(Phaser.Scale.Events.RESIZE, applyResponsiveHudScale);
+  });
 }
 
 export function setupGameSceneInput(scene: GameSceneInputContext): void {
@@ -249,6 +261,11 @@ export function cleanupGameScene(scene: GameSceneCleanupContext): void {
     // ignore
   }
   try {
+    (scene as any).tileGPUMap?.destroy?.();
+  } catch (e) {
+    // ignore
+  }
+  try {
     (scene as any).collectibleGPULayer?.destroy?.();
   } catch (e) {
     // ignore
@@ -325,7 +342,7 @@ export function createBaseDisplayObjects(scene: GameSceneBaseDisplayContext, sta
 
   // Create a lightweight GPU-backed background tile layer when available.
   try {
-    // Ensure a tiny white pixel texture exists for scalable quads.
+    // Ensure tiny white textures exist for GPU layer fallbacks and tilemap GPU layer.
     if (!scene.textures.exists('gpuPixel')) {
       try {
         const dt = scene.textures.addDynamicTexture('gpuPixel', 2, 2) as any;
@@ -337,15 +354,57 @@ export function createBaseDisplayObjects(scene: GameSceneBaseDisplayContext, sta
         // ignore
       }
     }
+    if (!scene.textures.exists('gpuTile16')) {
+      try {
+        const dt = scene.textures.addDynamicTexture('gpuTile16', 16, 16) as any;
+        if (dt) {
+          dt.fill(0xffffff);
+          dt.render();
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
 
-    if ((scene as any).add && typeof (scene as any).add.spriteGPULayer === 'function') {
-      const tileSize = 16;
-      const cols = Math.ceil(stage.world.width / tileSize);
-      const rows = Math.ceil(stage.world.height / tileSize);
+    const tileSize = 16;
+    const cols = Math.ceil(stage.world.width / tileSize);
+    const rows = Math.ceil(stage.world.height / tileSize);
+
+    let gpuTileLayer: any = null;
+
+    // Preferred path: true TilemapGPULayer (createLayer(..., gpu=true)).
+    try {
+      if (scene.make?.tilemap) {
+        const tileData = Array.from({ length: rows }, () => Array(cols).fill(0));
+        const tilemap = scene.make.tilemap({
+          tileWidth: tileSize,
+          tileHeight: tileSize,
+          width: cols,
+          height: rows,
+          data: tileData,
+        });
+
+        const tileset = tilemap.addTilesetImage('gpuTile16', 'gpuTile16', tileSize, tileSize, 0, 0);
+        if (tileset) {
+          const tilemapLayer = tilemap.createLayer(0, tileset, 0, 0, true) as any;
+          if (tilemapLayer) {
+            tilemapLayer.setDepth(0.15);
+            tilemapLayer.setAlpha(0.06);
+            tilemapLayer.setTint(scene.retroPalette.panelAlt);
+            gpuTileLayer = tilemapLayer;
+            (scene as any).tileGPUMap = tilemap;
+          }
+        }
+      }
+    } catch (e) {
+      // fall through to spriteGPULayer fallback
+    }
+
+    // Fallback path when TilemapGPULayer is unavailable.
+    if (!gpuTileLayer && (scene as any).add && typeof (scene as any).add.spriteGPULayer === 'function') {
       const count = Math.min(8192, cols * rows);
       const tileLayer = (scene as any).add.spriteGPULayer('gpuPixel', count) as any;
       tileLayer.setDepth(0.15);
-      // populate a sparse grid of faint tiles for visual texture
       let added = 0;
       for (let y = 0; y < stage.world.height && added < count; y += tileSize) {
         for (let x = 0; x < stage.world.width && added < count; x += tileSize) {
@@ -360,7 +419,11 @@ export function createBaseDisplayObjects(scene: GameSceneBaseDisplayContext, sta
           added += 1;
         }
       }
-      (scene as any).tileGPULayer = tileLayer;
+      gpuTileLayer = tileLayer;
+    }
+
+    if (gpuTileLayer) {
+      (scene as any).tileGPULayer = gpuTileLayer;
     }
   } catch (e) {
     // ignore if GPULayer or dynamic textures not supported
@@ -643,7 +706,16 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
       .setOrigin(0.5)
       .setDepth(3);
     const details = Array.from({ length: 3 }, () =>
-      scene.add.rectangle(terrainVariantPlatform.x, terrainVariantPlatform.y, 8, 8, scene.retroPalette.bright, 0.5).setOrigin(0.5).setDepth(3.2),
+      createWorldLocalRetroRegion(scene, {
+        kind: 'distortion',
+        x: terrainVariantPlatform.x,
+        y: terrainVariantPlatform.y,
+        width: 8,
+        height: 8,
+        color: scene.retroPalette.bright,
+        alpha: 0.5,
+        depth: 3.2,
+      }).setOrigin(0.5),
     );
     sprite.setStrokeStyle(2, scene.retroPalette.border, terrainVariantPlatform.surfaceMechanic?.kind === 'stickySludge' ? 0.24 : 0.38);
     scene.terrainVariantSprites.set(terrainVariantPlatform.id, sprite);
@@ -751,8 +823,14 @@ function createEnemyRenderables(scene: GameSceneBaseDisplayContext, state: Reado
     scene.enemySprites.set(enemy.id, sprite);
     if (enemy.kind === 'flyer') {
       const accents = [
-        scene.add.rectangle(enemy.x + 14, enemy.y + 7, 6, 2, scene.retroPalette.cool, 0).setOrigin(0, 0).setDepth(10),
-        scene.add.rectangle(enemy.x + 10, enemy.y + 16, 14, 2, scene.retroPalette.bright, 0).setOrigin(0, 0).setDepth(10),
+        createWorldLocalRetroRegion(scene, { kind: 'palette-ramp', x: enemy.x + 14, y: enemy.y + 7, width: 6, height: 2, color: scene.retroPalette.cool, alpha: 0, depth: 10 }).setOrigin(0, 0),
+        createWorldLocalRetroRegion(scene, { kind: 'palette-ramp', x: enemy.x + 10, y: enemy.y + 16, width: 14, height: 2, color: scene.retroPalette.bright, alpha: 0, depth: 10 }).setOrigin(0, 0),
+      ];
+      scene.enemyAccentSprites.set(enemy.id, accents);
+    } else if (enemy.kind === 'turret' && enemy.variant) {
+      const accents = [
+        createWorldLocalRetroRegion(scene, { kind: 'palette-ramp', x: enemy.x + 4, y: enemy.y + 6, width: Math.max(10, enemy.width - 8), height: 4, color: scene.retroPalette.border, alpha: 0, depth: 10 }).setOrigin(0, 0),
+        createWorldLocalRetroRegion(scene, { kind: 'palette-ramp', x: enemy.x + 6, y: enemy.y + 14, width: Math.max(8, enemy.width - 12), height: 3, color: scene.retroPalette.cool, alpha: 0, depth: 10 }).setOrigin(0, 0),
       ];
       scene.enemyAccentSprites.set(enemy.id, accents);
     }

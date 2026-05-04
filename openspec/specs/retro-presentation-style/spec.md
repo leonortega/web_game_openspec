@@ -42,7 +42,7 @@ The game SHALL present active gameplay using a denser readable 8-bit console-ins
 - **AND** it does not become a distracting strobe or a required gameplay-state indicator
 
 ### Requirement: Optional analog-display effects remain secondary to readability
-Any optional scanline, CRT, flicker, or similar analog-display treatment used by this change SHALL remain subtle, SHALL never be required to communicate gameplay state, and SHALL preserve readability of the HUD, player state, hazards, and transition text. Any optional backdrop-only separation effect used to keep scenery distinct from the playable route MUST remain secondary to the authored stage palette, MUST NOT make the backdrop brighter or more attention-grabbing than the foreground, and MUST preserve the readability of HUD and transition overlays that sit above the stage view. Planetary or extraterrestrial backdrop motifs MUST also stay low-density enough that readable paths, hazard telegraphs, and power silhouettes remain more visually dominant than the scenery.
+Any optional scanline, CRT, flicker, or similar analog-display treatment used by this change SHALL remain subtle, SHALL never be required to communicate gameplay state, and SHALL preserve readability of the HUD, player state, hazards, and transition text. Any optional backdrop-only separation effect used to keep scenery distinct from the playable route MUST remain secondary to the authored stage palette, MUST NOT make the backdrop brighter or more attention-grabbing than the foreground, and MUST preserve the readability of HUD and transition overlays that sit above the stage view. Any bounded Beam, distortion, or similar postfx region added by this change MUST stay within world-local presentation space and MUST NOT warp the gameplay HUD band, transient message lane, or other overlay text. Planetary or extraterrestrial backdrop motifs MUST also stay low-density enough that readable paths, hazard telegraphs, and power silhouettes remain more visually dominant than the scenery.
 
 #### Scenario: Enabling an optional analog-style treatment
 - **WHEN** the game renders with an optional scanline, CRT, or flicker-inspired treatment
@@ -54,10 +54,10 @@ Any optional scanline, CRT, flicker, or similar analog-display treatment used by
 - **THEN** the effect does not become the primary focal point of the scene
 - **AND** player powers, hazards, HUD text, and transition text remain readable over the updated background
 
-#### Scenario: Reading a route over planetary scenery
-- **WHEN** extraterrestrial backdrop motifs such as planets, rings, or crater horizons appear behind the route
-- **THEN** platforms, hazards, pickups, and the player silhouette remain easier to read than the scenery
-- **AND** the backdrop does not introduce foreground-color clashes that obscure active play
+#### Scenario: Excluding the HUD from local distortion
+- **WHEN** world-local Beam or distortion accents are active in the stage view
+- **THEN** the top HUD band, transient message lane, and other overlay text remain unwarped and readable
+- **AND** only the intended world-local presentation region carries the effect
 
 ### Requirement: Short-lived effects remain secondary to route readability
 The game SHALL use low-frame animation, short tweens, and bounded particles as supporting retro presentation accents rather than as dominant spectacle. Event-driven effects for player actions, checkpoints, research samples, power gain, exit completion, enemy telegraphs, enemy defeat, and player defeat MUST stay short-lived, palette-bounded, and spatially local so they reinforce the playable state without hiding hazards, terrain edges, HUD text, or transition copy. Supported exit-completion feedback MUST render as a short capsule-entry teleport or dematerialization effect that stays local to the endpoint, keeps the multipart player readable through the start of the finish beat, and fully resolves before the normal completion-scene handoff. Supported defeat bursts for stomp enemy defeats, Plasma Blaster projectile enemy defeats, and player defeat MUST render above the ordinary gameplay object stack so they remain clearly visible during live play, and their bounded particle count, spread, contrast, or lifetime MUST be strong enough to stay readable against busy stage art without changing defeat timing or respawn cadence. Supported defeat presentation MUST also keep the defeated victim visible at its last world position for a brief local hold of no more than 120 ms so a defeat flash or tween can read before that victim hides. The accompanying victim tween, flash, and explosion treatment MUST remain local and MUST fully resolve within 320 ms of the defeat trigger. Player defeat feedback MUST read as a brief blow-apart burst plus victim-side defeat tween that hands off cleanly into respawn, and enemy defeat feedback MUST read as a short disappearing-particle burst plus victim-side defeat tween that resolves locally around the defeated enemy. Stomp enemy defeats, Plasma Blaster projectile enemy defeats, and player defeat MUST each use a distinct bounded visual treatment so the event class stays readable at a glance while preserving the same shared retro motion language. This shared motion language MUST continue to read as sprite-first retro presentation rather than modern smooth effects work.
@@ -193,3 +193,26 @@ The game SHALL present authored `brittleCrystal` and `stickySludge` platform var
 #### Scenario: Comparing terrain visuals with authored data
 - **WHEN** brittle or sticky platform variants are rendered in a migrated stage
 - **THEN** their visible coverage matches the authored platform variant footprint rather than a legacy overlay rectangle or a separate terrain-surface render object
+
+### Requirement: Bounded Beam and post-processing accents stay local and presentation-only
+The game MAY use Phaser 4 Beam, shader, or post-processing accents to support enemy palette-ramp variants, object-local hit flashes, and localized water or heat shimmer as classic 16-bit presentation tricks. Any such effect MUST remain palette-bounded, spatially local, and visually secondary to silhouettes, hazards, terrain edges, and route telegraphs. These effects MUST layer on top of the existing sprite-first presentation rather than replace core sprite art with a shader-first rendering style, MUST route through bounded world-space or object-local regions rather than a whole-camera warp, and MUST fully preserve existing gameplay timing and simulation behavior. Localized water or heat shimmer in this contract MUST remain presentation-only, MUST stay attached to safe scenery or non-mechanical surfaces, and MUST NOT invent new hazard or traversal rules.
+
+#### Scenario: Reading a palette-ramp enemy variant
+- **WHEN** the player views supported enemy color variants during active play
+- **THEN** those variants read as bounded retro palette swaps or ramp changes rather than as plain tint-only recolors
+- **AND** the enemy silhouette and telegraph remain clearer than the effect treatment itself
+
+#### Scenario: Reading a local hit flash during combat
+- **WHEN** the player or a supported enemy takes a hit that triggers local flash feedback
+- **THEN** the flash remains attached to that object and resolves quickly enough that nearby route-critical information stays readable
+- **AND** the effect does not expand into a camera-wide or HUD-wide flash
+
+#### Scenario: Reading decorative water or heat shimmer
+- **WHEN** an authored safe scenery patch or non-mechanical surface uses localized water or heat distortion
+- **THEN** the shimmer remains tightly local to that patch and visually secondary to playable terrain and hazards
+- **AND** the player does not need the shimmer to infer a new mechanic or route rule
+
+#### Scenario: Comparing retro accents to modern spectacle
+- **WHEN** the updated Beam or shader accents are evaluated during gameplay
+- **THEN** they still read as restrained retro presentation support
+- **AND** they do not rely on dominant blur, bloom, or full-scene distortion

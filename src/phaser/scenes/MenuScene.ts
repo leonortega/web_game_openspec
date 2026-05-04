@@ -10,6 +10,11 @@ import { SceneBridge } from '../adapters/sceneBridge';
 import { SynthAudio } from '../audio/SynthAudio';
 import { playMenuInteractionCue, runUnlockedAudioAction } from '../audio/sceneAudio';
 import {
+  applyConfiguredRetroPostFxToCamera,
+  getCrtFilterEnabled,
+  toggleCrtFilterForCamera,
+} from '../retroPostFx';
+import {
   RETRO_FONT_FAMILY,
   createRetroMenuPalette,
   drawRetroBackdrop,
@@ -18,12 +23,12 @@ import {
 type MenuMode = 'main';
 type MenuView = 'root' | 'options' | 'help';
 type RootOptionId = 'primary' | 'options' | 'help';
-type OptionsOptionId = 'difficulty' | 'enemies' | 'musicVolume' | 'sfxVolume';
+type OptionsOptionId = 'difficulty' | 'enemies' | 'musicVolume' | 'sfxVolume' | 'crtFilter';
 
 const difficultyValues = ['casual', 'standard', 'expert'] as const;
 const enemyValues = ['low', 'normal', 'high'] as const;
 const rootOptions: RootOptionId[] = ['primary', 'options', 'help'];
-const optionEntries: OptionsOptionId[] = ['difficulty', 'enemies', 'musicVolume', 'sfxVolume'];
+const optionEntries: OptionsOptionId[] = ['difficulty', 'enemies', 'musicVolume', 'sfxVolume', 'crtFilter'];
 
 const HELP_LINES = [
   'Controls: Move with Arrow keys or A / D. Jump with Up, W, or Space. Trigger Booster Dash with Shift and fire Plasma Blaster shots with F when that system is active.',
@@ -98,6 +103,7 @@ export class MenuScene extends Phaser.Scene {
       () => bridge.getSession().getState().progress.runSettings.musicVolume,
       () => bridge.getSession().getState().progress.runSettings.sfxVolume,
     );
+    applyConfiguredRetroPostFxToCamera(this.game, this.cameras.main);
     const retro = createRetroMenuPalette();
     this.view = 'root';
     this.rootSelectedIndex = 0;
@@ -374,6 +380,7 @@ export class MenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
+
     const startRun = (stageIndex = bridge.getSession().getState().stageIndex): void => {
       void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
       bridge.startStage(stageIndex);
@@ -429,6 +436,13 @@ export class MenuScene extends Phaser.Scene {
         return;
       }
 
+      if (option === 'crtFilter') {
+        toggleCrtFilterForCamera(this.game, this.cameras.main);
+        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
+        render();
+        return;
+      }
+
       bridge.updateRunSettings({
         masterVolume: clamp(state.progress.runSettings.masterVolume + direction * 0.1, 0, 1),
       });
@@ -465,6 +479,7 @@ export class MenuScene extends Phaser.Scene {
           state.progress.runSettings.musicVolume * 10
         ).toFixed(1)})`,
         sfxVolume: `SFX  ${Math.round(state.progress.runSettings.sfxVolume * 100)}%`,
+        crtFilter: `CRT Filter  ${getCrtFilterEnabled(this.game, true) ? 'On' : 'Off'}`,
       };
 
       eyebrowText.setText('Orbital Survey');
@@ -541,6 +556,7 @@ export class MenuScene extends Phaser.Scene {
           ? 'Enter selects. Arrow keys move through the menu.'
           : 'ESC returns to the previous menu layer.',
       );
+
     };
 
     const keyboard = this.input.keyboard;
@@ -683,6 +699,7 @@ export class MenuScene extends Phaser.Scene {
               `Enemies  ${ENEMY_PRESSURE_LABELS[settings.enemyPressure]}`,
               `Music  ${Math.round(settings.musicVolume * 100)}% (x${(settings.musicVolume * 10).toFixed(1)})`,
               `SFX  ${Math.round(settings.sfxVolume * 100)}%`,
+              `CRT Filter  ${getCrtFilterEnabled(this.game, true) ? 'On' : 'Off'}`,
             ]
           : ['Help', ...HELP_LINES];
 

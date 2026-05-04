@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import type { EnemyDefeatCause, EnemyState, PowerType } from '../../game/simulation/state';
+import { TURRET_VARIANT_CONFIG, type EnemyDefeatCause, type EnemyState, type PlatformState, type PowerType } from '../../game/simulation/state';
 
 type StagePalette = {
   accent: number;
@@ -42,6 +42,13 @@ export const mixColor = (left: number, right: number, amount: number): number =>
     b: leftRgb.b + (rightRgb.b - leftRgb.b) * ratio,
   });
 };
+
+export const RETRO_WORLD_LOCAL_EFFECT_ROUTING = {
+  scope: 'world-local',
+  usesExistingPostFxPipeline: true,
+  hudExcluded: true,
+  overlayExcluded: true,
+} as const;
 
 const colorDistance = (left: number, right: number): number => {
   const leftRgb = toRgb(left);
@@ -92,6 +99,37 @@ export type RetroPresentationPalette = {
   text: string;
   dimText: string;
   shadow: string;
+};
+
+export type RetroEnemyPaletteRamp = {
+  baseTint: number;
+  shadowTint: number;
+  highlightTint: number;
+  stripeTint: number;
+  alpha: number;
+  stripeAlpha: number;
+};
+
+export type RetroHitFlashPresetName = 'player-hit' | 'enemy-hit';
+
+type RetroHitFlashPreset = {
+  durationMs: number;
+  blend: number;
+  auraAlpha: number;
+};
+
+export type RetroSurfaceDistortionProfile = {
+  kind: 'water-shimmer';
+  routing: typeof RETRO_WORLD_LOCAL_EFFECT_ROUTING;
+  bandOffsets: number[];
+  bandWidths: number[];
+  bandAlphas: number[];
+  colors: [number, number, number];
+};
+
+const RETRO_HIT_FLASH_PRESETS: Record<RetroHitFlashPresetName, RetroHitFlashPreset> = {
+  'player-hit': { durationMs: 84, blend: 0.34, auraAlpha: 0.44 },
+  'enemy-hit': { durationMs: 72, blend: 0.28, auraAlpha: 0.3 },
 };
 
 export type RetroBackdropMotifPalette = {
@@ -214,6 +252,70 @@ export const snapRetroValue = (value: number, step = 2): number => {
   }
 
   return Math.round(value / step) * step;
+};
+
+export const getRetroEnemyPaletteRamp = (
+  enemy: Pick<EnemyState, 'kind' | 'variant' | 'turret'>,
+  palette: Pick<RetroPresentationPalette, 'bright' | 'warm' | 'cool' | 'ink'>,
+): RetroEnemyPaletteRamp | null => {
+  if (enemy.kind !== 'turret' || !enemy.variant) {
+    return null;
+  }
+
+  const variant = TURRET_VARIANT_CONFIG[enemy.variant];
+  const telegraphActive = Boolean(enemy.turret?.telegraphMs);
+  const baseTint = telegraphActive ? variant.telegraphColor : variant.baseColor;
+
+  return {
+    baseTint,
+    shadowTint: mixColor(baseTint, palette.ink, 0.44),
+    highlightTint: mixColor(baseTint, palette.bright, telegraphActive ? 0.38 : 0.24),
+    stripeTint: enemy.variant === 'ionPulse' ? mixColor(baseTint, palette.cool, 0.34) : mixColor(baseTint, palette.warm, 0.28),
+    alpha: telegraphActive ? 0.98 : 0.92,
+    stripeAlpha: telegraphActive ? 0.8 : 0.62,
+  };
+};
+
+export const getRetroHitFlashPreset = (preset: RetroHitFlashPresetName): RetroHitFlashPreset =>
+  RETRO_HIT_FLASH_PRESETS[preset];
+
+export const getRetroHitFlashBlend = (
+  timeMs: number,
+  untilMs: number,
+  preset: RetroHitFlashPresetName,
+): number => {
+  if (!Number.isFinite(untilMs) || timeMs >= untilMs) {
+    return 0;
+  }
+
+  const config = RETRO_HIT_FLASH_PRESETS[preset];
+  return Phaser.Math.Clamp((untilMs - timeMs) / config.durationMs, 0, 1) * config.blend;
+};
+
+export const getRetroSurfaceDistortionProfile = (
+  platform: Pick<PlatformState, 'surfaceMechanic' | 'width'>,
+  palette: Pick<RetroPresentationPalette, 'warm' | 'alert' | 'bright'>,
+  timeMs: number,
+  anchorX: number,
+): RetroSurfaceDistortionProfile | null => {
+  if (platform.surfaceMechanic?.kind !== 'stickySludge') {
+    return null;
+  }
+
+  const motionSeed = (timeMs + anchorX) / 140;
+  const widthFactor = Math.max(platform.width, 1);
+  return {
+    kind: 'water-shimmer',
+    routing: RETRO_WORLD_LOCAL_EFFECT_ROUTING,
+    bandOffsets: [
+      Math.sin(motionSeed) * Math.max(4, widthFactor * 0.04),
+      Math.sin(motionSeed + 0.9) * Math.max(3, widthFactor * 0.035),
+      Math.sin(motionSeed + 1.8) * Math.max(4, widthFactor * 0.04),
+    ],
+    bandWidths: [0.84, 0.62, 0.74],
+    bandAlphas: [0.42, 0.3, 0.42],
+    colors: [palette.alert, palette.warm, palette.bright],
+  };
 };
 
 export type RetroPlayerPose = {
@@ -447,7 +549,7 @@ export type RetroFeedbackSnapshot = {
   rewardReveals: Array<{ id: string; kind: 'coins' | 'power'; x: number; y: number; power?: PowerType }>;
   allCoinsRecovered: boolean;
   presentationPower: PowerType | null;
-  player: { dead: boolean; x: number; y: number; width: number; height: number };
+  player: { dead: boolean; x: number; y: number; width: number; height: number; health: number; invulnerableMs: number };
   enemies: Array<{
     id: string;
     alive: boolean;
@@ -466,6 +568,7 @@ export type RetroFeedbackEvent =
   | { kind: 'reward'; id: string; x: number; y: number }
   | { kind: 'power'; power: PowerType; x: number; y: number }
   | { kind: 'heal'; x: number; y: number }
+  | { kind: 'player-hit'; x: number; y: number }
   | { kind: 'player-defeat'; x: number; y: number }
   | { kind: 'enemy-defeat'; id: string; cause: EnemyDefeatCause; enemyKind: EnemyState['kind']; x: number; y: number };
 
@@ -518,6 +621,22 @@ export const detectRetroFeedbackEvents = (
     if (!existingPowerEvent) {
       events.push({ kind: 'power', power: current.presentationPower, x: 0, y: 0 });
     }
+  }
+
+  const playerRecoveredFromHitWindow =
+    !previous.player.dead &&
+    !current.player.dead &&
+    current.player.invulnerableMs > 0 &&
+    (current.player.health < previous.player.health ||
+      current.presentationPower !== previous.presentationPower ||
+      current.player.invulnerableMs > previous.player.invulnerableMs + 120);
+
+  if (playerRecoveredFromHitWindow) {
+    events.push({
+      kind: 'player-hit',
+      x: current.player.x + current.player.width / 2,
+      y: current.player.y + current.player.height / 2,
+    });
   }
 
   if (!previous.player.dead && current.player.dead) {
@@ -810,6 +929,92 @@ export const spawnRetroParticleBurst = (
   return emitter;
 };
 
+const pulseBeamBlinkOnStar = (
+  scene: Phaser.Scene,
+  star: Phaser.GameObjects.Rectangle,
+  color: number,
+  size: number,
+  variant: 'gameplay' | 'transition',
+): void => {
+  if (!star.active) {
+    return;
+  }
+
+  const target = star as any;
+  if (typeof target.enableFilters === 'function') {
+    target.enableFilters();
+  }
+
+  const filterList = target?.filters?.internal ?? target?.filters?.external;
+  if (!filterList) {
+    return;
+  }
+
+  if (typeof filterList.clear === 'function') {
+    filterList.clear();
+  }
+
+  const glowOuter = 2.6 + size * 1.3;
+  const glowStrength = 0.26 + size * 0.14;
+  const bloomStrength = 0.12 + size * 0.06;
+  const bloomBlur = variant === 'gameplay' ? 0.78 : 0.66;
+  filterList.addGlow?.(color, glowOuter, glowStrength, 1, false);
+  filterList.addBloom?.(color, bloomStrength, 1, bloomBlur, 1, 2, 2);
+
+  const pulseDuration = variant === 'gameplay' ? 160 : 130;
+  scene.time.delayedCall(pulseDuration, () => {
+    if (!star.active) {
+      return;
+    }
+
+    const cleanupTarget = star as any;
+    const cleanupList = cleanupTarget?.filters?.internal ?? cleanupTarget?.filters?.external;
+    if (typeof cleanupList?.clear === 'function') {
+      cleanupList.clear();
+    }
+  });
+};
+
+type RetroBackdropRuntime = {
+  timers: Phaser.Time.TimerEvent[];
+  tweens: Phaser.Tweens.Tween[];
+};
+
+const createRetroBackdropRuntime = (scene: Phaser.Scene): RetroBackdropRuntime => {
+  const runtime: RetroBackdropRuntime = { timers: [], tweens: [] };
+  (scene as any).__retroBackdropRuntime = runtime;
+  return runtime;
+};
+
+const cleanupRetroBackdropArtifacts = (scene: Phaser.Scene): void => {
+  const runtime = (scene as any).__retroBackdropRuntime as RetroBackdropRuntime | undefined;
+  if (runtime) {
+    for (const timer of runtime.timers) {
+      timer.remove(false);
+    }
+    for (const tween of runtime.tweens) {
+      tween.remove();
+    }
+    delete (scene as any).__retroBackdropRuntime;
+  }
+
+  for (const child of [...scene.children.list]) {
+    const gameObject = child as Phaser.GameObjects.GameObject & {
+      name?: string;
+      depth?: number;
+      destroy: () => void;
+    };
+    const name = gameObject.name ?? '';
+    const depth = gameObject.depth ?? 0;
+    const isNamedBackdropObject = name.startsWith('__retro-backdrop-');
+    const isBackdropGraphics = child instanceof Phaser.GameObjects.Graphics && depth >= -30 && depth <= -24;
+
+    if (isNamedBackdropObject || isBackdropGraphics) {
+      gameObject.destroy();
+    }
+  }
+};
+
 export const drawRetroBackdrop = (
   scene: Phaser.Scene,
   x: number,
@@ -819,16 +1024,19 @@ export const drawRetroBackdrop = (
   palette: RetroPresentationPalette,
   variant: 'gameplay' | 'transition' = 'gameplay',
 ): Phaser.GameObjects.Graphics => {
-  const baseLayer = scene.add.graphics().setDepth(-30);
-  const celestialLayer = scene.add.graphics().setDepth(-29);
-  const planetFarLayer = scene.add.graphics().setDepth(-28);
-  const planetMidLayer = scene.add.graphics().setDepth(-27);
-  const planetNearLayer = scene.add.graphics().setDepth(-26);
-  const skylineLayer = scene.add.graphics().setDepth(-25);
-  const foregroundLayer = scene.add.graphics().setDepth(-24);
+  cleanupRetroBackdropArtifacts(scene);
+  const runtime = createRetroBackdropRuntime(scene);
+
+  const baseLayer = scene.add.graphics().setDepth(-30).setName('__retro-backdrop-base');
+  const celestialLayer = scene.add.graphics().setDepth(-29).setName('__retro-backdrop-celestial');
+  const planetFarLayer = scene.add.graphics().setDepth(-28).setName('__retro-backdrop-planet-far');
+  const planetMidLayer = scene.add.graphics().setDepth(-27).setName('__retro-backdrop-planet-mid');
+  const planetNearLayer = scene.add.graphics().setDepth(-26).setName('__retro-backdrop-planet-near');
+  const skylineLayer = scene.add.graphics().setDepth(-25).setName('__retro-backdrop-skyline');
+  const foregroundLayer = scene.add.graphics().setDepth(-24).setName('__retro-backdrop-foreground');
 
   if (variant === 'gameplay') {
-    celestialLayer.setScrollFactor(0.22, 0.22);
+    celestialLayer.setScrollFactor(0, 0);
     planetFarLayer.setScrollFactor(0.08, 0.08);
     planetMidLayer.setScrollFactor(0.16, 0.16);
     planetNearLayer.setScrollFactor(0.3, 0.3);
@@ -844,8 +1052,9 @@ export const drawRetroBackdrop = (
   const celestialCount = Math.max(2, Math.ceil(width / celestialSpacing));
   const planetRadius = variant === 'gameplay' ? Math.max(28, Math.floor(height * 0.11)) : Math.max(22, Math.floor(height * 0.1));
   const starCount = Math.max(14, celestialCount * (variant === 'gameplay' ? 7 : 5));
-  const craterCount = variant === 'gameplay' ? 7 : 5;
+  const craterCount = variant === 'gameplay' ? 0 : 5;
   const ridgeSegments = variant === 'gameplay' ? 8 : 6;
+  const starPulseTargets: Phaser.GameObjects.Rectangle[] = [];
 
   baseLayer.fillStyle(palette.background, 1);
   baseLayer.fillRect(x, y, width, height);
@@ -867,15 +1076,72 @@ export const drawRetroBackdrop = (
 
   for (let index = 0; index < starCount; index += 1) {
     const offsetSeed = (paletteSeed + index * 97) >>> 0;
-    const starX = x + 18 + (offsetSeed % Math.max(width - 36, 1));
-    const starY = y + 18 + (((offsetSeed >> 3) * 29) % Math.max(Math.floor(height * 0.34), 28));
-    const starSize = index % 4 === 0 ? 3 : 2;
-    celestialLayer.fillStyle(index % 3 === 0 ? motifPalette.starWarm : motifPalette.starCool, index % 5 === 0 ? 0.94 : 0.82);
+    const starDomainMinX = variant === 'gameplay' ? 14 : x + 18;
+    const starDomainWidth = variant === 'gameplay' ? Math.max(32, scene.scale.width - 28) : Math.max(width - 36, 1);
+    const starX = starDomainMinX + (offsetSeed % starDomainWidth);
+    const starDomainMinY = variant === 'gameplay' ? 12 : y + 14;
+    const starBandHeight = variant === 'gameplay'
+      ? Math.max(56, Math.floor(scene.scale.height * 0.44))
+      : Math.max(36, skylineY - y - 24);
+    const starY = starDomainMinY + (((offsetSeed >> 3) * 29) % starBandHeight);
+    const starSize = 2 + (offsetSeed & 0x03);
+    const starColor = index % 3 === 0 ? motifPalette.starWarm : motifPalette.starCool;
+    const starAlpha = 0.68 + ((offsetSeed >> 6) & 0x03) * 0.08;
+    celestialLayer.fillStyle(starColor, starAlpha);
     celestialLayer.fillRect(starX, starY, starSize, starSize);
-    if (index % 4 === 0) {
+    if (starSize >= 4) {
       celestialLayer.fillRect(starX - 2, starY + 1, starSize + 4, 1);
       celestialLayer.fillRect(starX + 1, starY - 2, 1, starSize + 4);
     }
+
+    const star = scene.add
+      .rectangle(starX + starSize / 2, starY + starSize / 2, starSize, starSize, starColor, starAlpha)
+      .setName('__retro-backdrop-star')
+      .setDepth(-28.5);
+    star.setBlendMode(Phaser.BlendModes.ADD);
+    if (variant === 'gameplay') {
+      star.setScrollFactor(0, 0);
+    }
+    starPulseTargets.push(star);
+
+    const blinkDuration = variant === 'gameplay'
+      ? 940 + ((offsetSeed >> 2) % 1500)
+      : 760 + ((offsetSeed >> 2) % 980);
+    const blinkDelay = (offsetSeed >> 4) % 720;
+    const blinkTween = scene.tweens.add({
+      targets: star,
+      alpha: { from: Math.max(0.18, starAlpha * 0.34), to: starAlpha },
+      duration: blinkDuration,
+      yoyo: true,
+      repeat: -1,
+      delay: blinkDelay,
+      ease: 'Sine.InOut',
+    });
+    runtime.tweens.push(blinkTween);
+  }
+
+  if (starPulseTargets.length > 0) {
+    let pulseIndex = paletteSeed % starPulseTargets.length;
+    const pulseTicker = scene.time.addEvent({
+      delay: variant === 'gameplay' ? 210 : 260,
+      loop: true,
+      callback: () => {
+        if (starPulseTargets.length === 0) {
+          return;
+        }
+
+        const star = starPulseTargets[pulseIndex % starPulseTargets.length];
+        const color = pulseIndex % 2 === 0 ? motifPalette.starWarm : motifPalette.starCool;
+        const size = Math.max(1, Math.round(star.width));
+        pulseBeamBlinkOnStar(scene, star, color, size, variant);
+        pulseIndex += 1 + ((paletteSeed >> (pulseIndex % 11)) & 0x01);
+      },
+    });
+    runtime.timers.push(pulseTicker);
+
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      pulseTicker.remove(false);
+    });
   }
 
   for (let index = 0; index < celestialCount; index += 1) {
@@ -891,21 +1157,21 @@ export const drawRetroBackdrop = (
     const moonX = bodyX - Math.floor(bodyRadius * (1.15 + (index % 3) * 0.12));
     const moonY = bodyY + Math.floor(bodyRadius * (0.22 - (index % 2) * 0.12));
 
-    planetLayer.fillStyle(motifPalette.planetShade, 0.42);
+    planetLayer.fillStyle(motifPalette.planetShade, 1);
     planetLayer.fillCircle(bodyX + 8, bodyY + 7, bodyRadius);
-    planetLayer.fillStyle(motifPalette.planetFill, 0.58);
+    planetLayer.fillStyle(motifPalette.planetFill, 1);
     planetLayer.fillCircle(bodyX, bodyY, bodyRadius);
-    planetLayer.fillStyle(motifPalette.craterDark, 0.34);
+    planetLayer.fillStyle(motifPalette.craterDark, 0.9);
     planetLayer.fillCircle(bodyX - Math.floor(bodyRadius * 0.24), bodyY + Math.floor(bodyRadius * 0.18), Math.max(6, Math.floor(bodyRadius * 0.22)));
     planetLayer.fillCircle(bodyX + Math.floor(bodyRadius * 0.22), bodyY - Math.floor(bodyRadius * 0.14), Math.max(4, Math.floor(bodyRadius * 0.16)));
     if (index % 2 === 0) {
-      planetLayer.lineStyle(4, motifPalette.ring, 0.46);
+      planetLayer.lineStyle(4, motifPalette.ring, 1);
       planetLayer.strokeEllipse(bodyX - 2, bodyY + 3, bodyRadius * 2.8, Math.max(20, bodyRadius * 0.82));
     }
 
-    planetLayer.fillStyle(motifPalette.planetFill, variant === 'gameplay' ? 0.34 : 0.28);
+    planetLayer.fillStyle(motifPalette.planetFill, 0.94);
     planetLayer.fillCircle(moonX, moonY, moonRadius);
-    planetLayer.fillStyle(motifPalette.craterLight, 0.24);
+    planetLayer.fillStyle(motifPalette.craterLight, 0.86);
     planetLayer.fillCircle(moonX + Math.floor(moonRadius * 0.14), moonY + Math.floor(moonRadius * 0.18), Math.max(4, Math.floor(moonRadius * 0.2)));
   }
 
@@ -925,8 +1191,10 @@ export const drawRetroBackdrop = (
     const ridgeColor = index % 2 === 0 ? motifPalette.craterDark : motifPalette.craterLight;
     skylineLayer.fillStyle(ridgeColor, index % 2 === 0 ? 0.72 : 0.48);
     skylineLayer.fillRect(ridgeX, ridgeTop, Math.min(ridgeWidth + 2, x + width - ridgeX), ridgeHeight + 10);
-    skylineLayer.fillStyle(palette.ink, 0.18);
-    skylineLayer.fillEllipse(ridgeX + Math.floor(ridgeWidth * 0.46), ridgeTop + Math.max(6, Math.floor(ridgeHeight * 0.34)), Math.max(18, Math.floor(ridgeWidth * 0.5)), Math.max(10, Math.floor(ridgeHeight * 0.22)));
+    if (variant !== 'gameplay') {
+      skylineLayer.fillStyle(palette.ink, 0.18);
+      skylineLayer.fillEllipse(ridgeX + Math.floor(ridgeWidth * 0.46), ridgeTop + Math.max(6, Math.floor(ridgeHeight * 0.34)), Math.max(18, Math.floor(ridgeWidth * 0.5)), Math.max(10, Math.floor(ridgeHeight * 0.22)));
+    }
   }
 
   foregroundLayer.fillStyle(palette.groundBand, 1);

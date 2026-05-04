@@ -2,7 +2,7 @@ import { stageDefinitions } from '../../game/content/stages';
 import { defaultInputState, type InputState } from '../../game/input/actions';
 import { GameSession } from '../../game/simulation/GameSession';
 import type { AudioCue } from '../../audio/audioContract';
-import { formatActivePowerSummary, formatHudCollectibleSummary, formatRunSettings } from '../../game/simulation/state';
+import { DIFFICULTY_LABELS, formatActivePowerSummary, formatHudCollectibleSummary } from '../../game/simulation/state';
 import { updateHud, type HudViewModel } from '../../ui/hud/hud';
 
 export class SceneBridge {
@@ -127,7 +127,7 @@ export class SceneBridge {
       ),
       health: state.player.health,
       powerLabel: formatActivePowerSummary(state.progress.activePowers, state.progress.powerTimers),
-      runLabel: formatRunSettings(state.progress.runSettings),
+      difficultyLabel: DIFFICULTY_LABELS[state.progress.runSettings.difficulty],
       segmentLabel: currentSegment?.title ?? 'Stage',
       message: state.stageMessage,
     };

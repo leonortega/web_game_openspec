@@ -10,14 +10,18 @@ import {
   ENEMY_DEFEAT_VISIBLE_HOLD_MS,
   PLAYER_DEFEAT_VISIBLE_HOLD_MS,
   RETRO_DEFEAT_PRESENTATION_MAX_MS,
+  RETRO_WORLD_LOCAL_EFFECT_ROUTING,
   createRetroBackdropMotifPalette,
   createRetroMenuPalette,
   createRetroPresentationPalette,
   detectRetroFeedbackEvents,
   getRetroDefeatTweenPreset,
+  getRetroEnemyPaletteRamp,
+  getRetroHitFlashBlend,
   getRetroParticlePreset,
   getRetroEnemyPose,
   getRetroPlayerPose,
+  getRetroSurfaceDistortionProfile,
   resetRetroPresentationTargets,
   spawnRetroParticleBurst,
 } from './retroPresentation';
@@ -299,7 +303,7 @@ describe('createRetroPresentationPalette', () => {
       rewardReveals: [],
       allCoinsRecovered: false,
       presentationPower: null,
-      player: { dead: false, x: 80, y: 120, width: 24, height: 40 },
+      player: { dead: false, x: 80, y: 120, width: 24, height: 40, health: 3, invulnerableMs: 0 },
       enemies: [
         { id: 'enemy-a', alive: true, defeatCause: null, x: 320, y: 160, width: 24, height: 30, kind: 'hopper' as const },
         { id: 'enemy-b', alive: true, defeatCause: null, x: 420, y: 160, width: 24, height: 30, kind: 'walker' as const },
@@ -311,7 +315,7 @@ describe('createRetroPresentationPalette', () => {
       rewardReveals: [{ id: 'reward-a', kind: 'power' as const, power: 'dash' as const, x: 260, y: 160 }],
       allCoinsRecovered: true,
       presentationPower: 'dash' as const,
-      player: { dead: true, x: 80, y: 120, width: 24, height: 40 },
+      player: { dead: true, x: 80, y: 120, width: 24, height: 40, health: 2, invulnerableMs: 480 },
       enemies: [
         {
           id: 'enemy-a',
@@ -347,6 +351,70 @@ describe('createRetroPresentationPalette', () => {
     ]);
 
     expect(detectRetroFeedbackEvents(current, current)).toEqual([]);
+  });
+
+  it('detects survivable player hits from local invulnerability windows', () => {
+    const previous = {
+      checkpoints: [],
+      collectibles: [],
+      rewardReveals: [],
+      allCoinsRecovered: false,
+      presentationPower: 'dash' as const,
+      player: { dead: false, x: 40, y: 60, width: 24, height: 40, health: 3, invulnerableMs: 0 },
+      enemies: [],
+    };
+    const current = {
+      ...previous,
+      player: { dead: false, x: 40, y: 60, width: 24, height: 40, health: 2, invulnerableMs: 520 },
+    };
+
+    expect(detectRetroFeedbackEvents(previous, current)).toContainEqual({ kind: 'player-hit', x: 52, y: 80 });
+  });
+
+  it('derives turret palette ramps as bounded swaps instead of a single tint value', () => {
+    const retro = createRetroPresentationPalette({
+      skyTop: 0x2b5f86,
+      skyBottom: 0x09111f,
+      accent: 0x9ee8ff,
+      ground: 0x7daccb,
+    });
+
+    const ramp = getRetroEnemyPaletteRamp(
+      {
+        kind: 'turret',
+        variant: 'ionPulse',
+        turret: { intervalMs: 0, timerMs: 0, telegraphMs: 0, telegraphDurationMs: 980, burstGapMs: 0, burstGapDurationMs: 0, pendingShots: 0 },
+      },
+      retro,
+    );
+
+    expect(ramp).not.toBeNull();
+    expect(ramp?.highlightTint).not.toBe(ramp?.baseTint);
+    expect(ramp?.shadowTint).not.toBe(ramp?.baseTint);
+    expect(ramp?.stripeAlpha).toBeGreaterThan(0.5);
+  });
+
+  it('keeps player and enemy hit flash blends brief and bounded', () => {
+    expect(getRetroHitFlashBlend(100, 100, 'player-hit')).toBe(0);
+    expect(getRetroHitFlashBlend(100, 184, 'player-hit')).toBeGreaterThan(getRetroHitFlashBlend(160, 184, 'player-hit'));
+    expect(getRetroHitFlashBlend(100, 172, 'enemy-hit')).toBeLessThan(0.29);
+  });
+
+  it('limits decorative shimmer to sticky-surface world-local routing and keeps HUD excluded', () => {
+    const retro = createRetroPresentationPalette({
+      skyTop: 0x2b5f86,
+      skyBottom: 0x09111f,
+      accent: 0x9ee8ff,
+      ground: 0x7daccb,
+    });
+
+    const sticky = getRetroSurfaceDistortionProfile({ surfaceMechanic: { kind: 'stickySludge' }, width: 96 }, retro, 240, 120);
+    const brittle = getRetroSurfaceDistortionProfile({ surfaceMechanic: { kind: 'brittleCrystal' }, width: 96 }, retro, 240, 120);
+
+    expect(sticky?.routing).toEqual(RETRO_WORLD_LOCAL_EFFECT_ROUTING);
+    expect(sticky?.bandOffsets).toHaveLength(3);
+    expect(sticky?.bandAlphas.every((alpha) => alpha < 0.5)).toBe(true);
+    expect(brittle).toBeNull();
   });
 
   it('keeps supported defeat bursts above the gameplay stack while preserving distinct bounded presets', () => {
