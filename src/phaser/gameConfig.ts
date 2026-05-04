@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import EnhancedRenderPlugin from './plugins/EnhancedRenderPlugin';
 
 import { GAME_SCENES } from './scenes';
 
@@ -11,6 +12,12 @@ export const buildGameConfig = (parent: HTMLElement): Phaser.Types.Core.GameConf
   pixelArt: true,
   antialias: false,
   antialiasGL: false,
+  // Register scene-scoped plugin that provides GPU sprite helper, unified filter facade, and lighting shim.
+  plugins: {
+    scene: [
+      { key: 'EnhancedRender', plugin: EnhancedRenderPlugin, mapping: 'enhanced' as unknown as string },
+    ],
+  },
   scene: GAME_SCENES,
   physics: {
     default: 'arcade',

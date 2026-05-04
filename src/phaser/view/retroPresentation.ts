@@ -31,7 +31,7 @@ const toRgb = (color: number): Rgb => ({
 
 const toColor = ({ r, g, b }: Rgb): number => (clampChannel(r) << 16) | (clampChannel(g) << 8) | clampChannel(b);
 
-const mixColor = (left: number, right: number, amount: number): number => {
+export const mixColor = (left: number, right: number, amount: number): number => {
   const ratio = Phaser.Math.Clamp(amount, 0, 1);
   const leftRgb = toRgb(left);
   const rightRgb = toRgb(right);
@@ -819,7 +819,23 @@ export const drawRetroBackdrop = (
   palette: RetroPresentationPalette,
   variant: 'gameplay' | 'transition' = 'gameplay',
 ): Phaser.GameObjects.Graphics => {
-  const backdrop = scene.add.graphics().setDepth(0);
+  const baseLayer = scene.add.graphics().setDepth(-30);
+  const celestialLayer = scene.add.graphics().setDepth(-29);
+  const planetFarLayer = scene.add.graphics().setDepth(-28);
+  const planetMidLayer = scene.add.graphics().setDepth(-27);
+  const planetNearLayer = scene.add.graphics().setDepth(-26);
+  const skylineLayer = scene.add.graphics().setDepth(-25);
+  const foregroundLayer = scene.add.graphics().setDepth(-24);
+
+  if (variant === 'gameplay') {
+    celestialLayer.setScrollFactor(0.22, 0.22);
+    planetFarLayer.setScrollFactor(0.08, 0.08);
+    planetMidLayer.setScrollFactor(0.16, 0.16);
+    planetNearLayer.setScrollFactor(0.3, 0.3);
+    skylineLayer.setScrollFactor(0.44, 0.44);
+    foregroundLayer.setScrollFactor(0.72, 0.72);
+  }
+
   const horizonY = y + Math.floor(height * (variant === 'gameplay' ? 0.7 : 0.64));
   const skylineY = y + Math.floor(height * (variant === 'gameplay' ? 0.5 : 0.46));
   const motifPalette = createRetroBackdropMotifPalette(palette);
@@ -831,13 +847,13 @@ export const drawRetroBackdrop = (
   const craterCount = variant === 'gameplay' ? 7 : 5;
   const ridgeSegments = variant === 'gameplay' ? 8 : 6;
 
-  backdrop.fillStyle(palette.background, 1);
-  backdrop.fillRect(x, y, width, height);
+  baseLayer.fillStyle(palette.background, 1);
+  baseLayer.fillRect(x, y, width, height);
 
-  backdrop.fillStyle(palette.ink, 1);
-  backdrop.fillRect(x, y, width, Math.max(18, Math.floor(height * 0.08)));
+  baseLayer.fillStyle(palette.ink, 1);
+  baseLayer.fillRect(x, y, width, Math.max(18, Math.floor(height * 0.08)));
 
-  backdrop.fillStyle(palette.backdropGlow, variant === 'gameplay' ? 0.12 : 0.14);
+  baseLayer.fillStyle(palette.backdropGlow, variant === 'gameplay' ? 0.12 : 0.14);
   const glowStartY = y + Math.floor(height * (variant === 'gameplay' ? 0.16 : 0.13));
   const glowSpacing = variant === 'gameplay' ? 38 : 28;
   const glowLines = variant === 'gameplay' ? 3 : 4;
@@ -846,7 +862,7 @@ export const drawRetroBackdrop = (
     if (glowY >= skylineY - 12) {
       break;
     }
-    backdrop.fillRect(x, glowY, width, 3);
+    baseLayer.fillRect(x, glowY, width, 3);
   }
 
   for (let index = 0; index < starCount; index += 1) {
@@ -854,15 +870,17 @@ export const drawRetroBackdrop = (
     const starX = x + 18 + (offsetSeed % Math.max(width - 36, 1));
     const starY = y + 18 + (((offsetSeed >> 3) * 29) % Math.max(Math.floor(height * 0.34), 28));
     const starSize = index % 4 === 0 ? 3 : 2;
-    backdrop.fillStyle(index % 3 === 0 ? motifPalette.starWarm : motifPalette.starCool, index % 5 === 0 ? 0.94 : 0.82);
-    backdrop.fillRect(starX, starY, starSize, starSize);
+    celestialLayer.fillStyle(index % 3 === 0 ? motifPalette.starWarm : motifPalette.starCool, index % 5 === 0 ? 0.94 : 0.82);
+    celestialLayer.fillRect(starX, starY, starSize, starSize);
     if (index % 4 === 0) {
-      backdrop.fillRect(starX - 2, starY + 1, starSize + 4, 1);
-      backdrop.fillRect(starX + 1, starY - 2, 1, starSize + 4);
+      celestialLayer.fillRect(starX - 2, starY + 1, starSize + 4, 1);
+      celestialLayer.fillRect(starX + 1, starY - 2, 1, starSize + 4);
     }
   }
 
   for (let index = 0; index < celestialCount; index += 1) {
+    const planetLayer =
+      index % 3 === 0 ? planetFarLayer : index % 3 === 1 ? planetMidLayer : planetNearLayer;
     const sectionLeft = x + Math.floor((index / celestialCount) * width);
     const sectionWidth = Math.ceil(width / celestialCount);
     const sectionSeed = (paletteSeed + index * 173) >>> 0;
@@ -873,31 +891,31 @@ export const drawRetroBackdrop = (
     const moonX = bodyX - Math.floor(bodyRadius * (1.15 + (index % 3) * 0.12));
     const moonY = bodyY + Math.floor(bodyRadius * (0.22 - (index % 2) * 0.12));
 
-    backdrop.fillStyle(motifPalette.planetShade, 0.42);
-    backdrop.fillCircle(bodyX + 8, bodyY + 7, bodyRadius);
-    backdrop.fillStyle(motifPalette.planetFill, 0.58);
-    backdrop.fillCircle(bodyX, bodyY, bodyRadius);
-    backdrop.fillStyle(motifPalette.craterDark, 0.34);
-    backdrop.fillCircle(bodyX - Math.floor(bodyRadius * 0.24), bodyY + Math.floor(bodyRadius * 0.18), Math.max(6, Math.floor(bodyRadius * 0.22)));
-    backdrop.fillCircle(bodyX + Math.floor(bodyRadius * 0.22), bodyY - Math.floor(bodyRadius * 0.14), Math.max(4, Math.floor(bodyRadius * 0.16)));
+    planetLayer.fillStyle(motifPalette.planetShade, 0.42);
+    planetLayer.fillCircle(bodyX + 8, bodyY + 7, bodyRadius);
+    planetLayer.fillStyle(motifPalette.planetFill, 0.58);
+    planetLayer.fillCircle(bodyX, bodyY, bodyRadius);
+    planetLayer.fillStyle(motifPalette.craterDark, 0.34);
+    planetLayer.fillCircle(bodyX - Math.floor(bodyRadius * 0.24), bodyY + Math.floor(bodyRadius * 0.18), Math.max(6, Math.floor(bodyRadius * 0.22)));
+    planetLayer.fillCircle(bodyX + Math.floor(bodyRadius * 0.22), bodyY - Math.floor(bodyRadius * 0.14), Math.max(4, Math.floor(bodyRadius * 0.16)));
     if (index % 2 === 0) {
-      backdrop.lineStyle(4, motifPalette.ring, 0.46);
-      backdrop.strokeEllipse(bodyX - 2, bodyY + 3, bodyRadius * 2.8, Math.max(20, bodyRadius * 0.82));
+      planetLayer.lineStyle(4, motifPalette.ring, 0.46);
+      planetLayer.strokeEllipse(bodyX - 2, bodyY + 3, bodyRadius * 2.8, Math.max(20, bodyRadius * 0.82));
     }
 
-    backdrop.fillStyle(motifPalette.planetFill, variant === 'gameplay' ? 0.34 : 0.28);
-    backdrop.fillCircle(moonX, moonY, moonRadius);
-    backdrop.fillStyle(motifPalette.craterLight, 0.24);
-    backdrop.fillCircle(moonX + Math.floor(moonRadius * 0.14), moonY + Math.floor(moonRadius * 0.18), Math.max(4, Math.floor(moonRadius * 0.2)));
+    planetLayer.fillStyle(motifPalette.planetFill, variant === 'gameplay' ? 0.34 : 0.28);
+    planetLayer.fillCircle(moonX, moonY, moonRadius);
+    planetLayer.fillStyle(motifPalette.craterLight, 0.24);
+    planetLayer.fillCircle(moonX + Math.floor(moonRadius * 0.14), moonY + Math.floor(moonRadius * 0.18), Math.max(4, Math.floor(moonRadius * 0.2)));
   }
 
-  backdrop.fillStyle(palette.skyline, 1);
-  backdrop.fillRect(x, skylineY, width, Math.max(36, horizonY - skylineY));
+  skylineLayer.fillStyle(palette.skyline, 1);
+  skylineLayer.fillRect(x, skylineY, width, Math.max(36, horizonY - skylineY));
 
-  backdrop.fillStyle(motifPalette.horizonGlow, 0.16);
-  backdrop.fillRect(x, skylineY - 8, width, 4);
-  backdrop.fillStyle(palette.backdropAccent, 0.08);
-  backdrop.fillRect(x, skylineY + 6, width, 6);
+  skylineLayer.fillStyle(motifPalette.horizonGlow, 0.16);
+  skylineLayer.fillRect(x, skylineY - 8, width, 4);
+  skylineLayer.fillStyle(palette.backdropAccent, 0.08);
+  skylineLayer.fillRect(x, skylineY + 6, width, 6);
 
   const ridgeWidth = Math.ceil(width / ridgeSegments);
   for (let index = 0; index < ridgeSegments; index += 1) {
@@ -905,48 +923,48 @@ export const drawRetroBackdrop = (
     const ridgeHeight = 18 + ((paletteSeed >> (index % 8)) & 0x07) * 5 + (index % 2 === 0 ? 8 : 0);
     const ridgeTop = horizonY - ridgeHeight;
     const ridgeColor = index % 2 === 0 ? motifPalette.craterDark : motifPalette.craterLight;
-    backdrop.fillStyle(ridgeColor, index % 2 === 0 ? 0.72 : 0.48);
-    backdrop.fillRect(ridgeX, ridgeTop, Math.min(ridgeWidth + 2, x + width - ridgeX), ridgeHeight + 10);
-    backdrop.fillStyle(palette.ink, 0.18);
-    backdrop.fillEllipse(ridgeX + Math.floor(ridgeWidth * 0.46), ridgeTop + Math.max(6, Math.floor(ridgeHeight * 0.34)), Math.max(18, Math.floor(ridgeWidth * 0.5)), Math.max(10, Math.floor(ridgeHeight * 0.22)));
+    skylineLayer.fillStyle(ridgeColor, index % 2 === 0 ? 0.72 : 0.48);
+    skylineLayer.fillRect(ridgeX, ridgeTop, Math.min(ridgeWidth + 2, x + width - ridgeX), ridgeHeight + 10);
+    skylineLayer.fillStyle(palette.ink, 0.18);
+    skylineLayer.fillEllipse(ridgeX + Math.floor(ridgeWidth * 0.46), ridgeTop + Math.max(6, Math.floor(ridgeHeight * 0.34)), Math.max(18, Math.floor(ridgeWidth * 0.5)), Math.max(10, Math.floor(ridgeHeight * 0.22)));
   }
 
-  backdrop.fillStyle(palette.groundBand, 1);
-  backdrop.fillRect(x, horizonY, width, y + height - horizonY);
+  foregroundLayer.fillStyle(palette.groundBand, 1);
+  foregroundLayer.fillRect(x, horizonY, width, y + height - horizonY);
 
-  backdrop.fillStyle(motifPalette.horizonGlow, 0.22);
-  backdrop.fillRect(x, horizonY - 16, width, 8);
+  foregroundLayer.fillStyle(motifPalette.horizonGlow, 0.22);
+  foregroundLayer.fillRect(x, horizonY - 16, width, 8);
 
   for (let index = 0; index < craterCount; index += 1) {
     const craterX = x + Math.floor(((index + 1) / (craterCount + 1)) * width);
     const craterY = horizonY + 20 + (index % 3) * 18;
     const craterWidth = variant === 'gameplay' ? 44 + (index % 3) * 10 : 34 + (index % 2) * 10;
     const craterHeight = 12 + (index % 2) * 5;
-    backdrop.fillStyle(motifPalette.craterDark, 0.26);
-    backdrop.fillEllipse(craterX, craterY, craterWidth, craterHeight);
-    backdrop.fillStyle(motifPalette.craterLight, 0.16);
-    backdrop.fillEllipse(craterX, craterY - 2, craterWidth - 8, Math.max(6, craterHeight - 4));
+    foregroundLayer.fillStyle(motifPalette.craterDark, 0.26);
+    foregroundLayer.fillEllipse(craterX, craterY, craterWidth, craterHeight);
+    foregroundLayer.fillStyle(motifPalette.craterLight, 0.16);
+    foregroundLayer.fillEllipse(craterX, craterY - 2, craterWidth - 8, Math.max(6, craterHeight - 4));
   }
 
   const scanlineStart = skylineY + 10;
   const scanlineSpacing = variant === 'gameplay' ? 22 : 16;
-  backdrop.fillStyle(palette.ink, 0.18);
+  skylineLayer.fillStyle(palette.ink, 0.18);
   for (let lineY = scanlineStart; lineY < horizonY - 8; lineY += scanlineSpacing) {
-    backdrop.fillRect(x, lineY, width, 2);
+    skylineLayer.fillRect(x, lineY, width, 2);
   }
 
   const groundLineSpacing = variant === 'gameplay' ? 22 : 16;
-  backdrop.fillStyle(motifPalette.horizonGlow, 0.08);
+  foregroundLayer.fillStyle(motifPalette.horizonGlow, 0.08);
   for (let lineY = horizonY + 10; lineY < y + height - 8; lineY += groundLineSpacing) {
-    backdrop.fillRect(x, lineY, width, 2);
+    foregroundLayer.fillRect(x, lineY, width, 2);
   }
 
   if (variant === 'transition') {
-    backdrop.fillStyle(palette.ink, 1);
-    backdrop.fillRect(x, y + height - 22, width, 22);
+    foregroundLayer.fillStyle(palette.ink, 1);
+    foregroundLayer.fillRect(x, y + height - 22, width, 22);
   }
 
-  return backdrop;
+  return foregroundLayer;
 };
 
 const RETRO_DEFEAT_FLASH_PRESETS: Record<RetroDefeatFlashPresetName, RetroDefeatFlashPreset> = {

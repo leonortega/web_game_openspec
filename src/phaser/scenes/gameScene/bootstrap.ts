@@ -10,13 +10,10 @@ import type {
 } from '../../../game/simulation/state';
 import { createHud } from '../../../ui/hud/hud';
 import { runUnlockedAudioAction } from '../../audio/sceneAudio';
-import {
-  CAPSULE_PRESENTATION,
-  EXIT_CAPSULE_ART_BOUNDS,
-  EXIT_CAPSULE_TEXTURE_KEYS,
-} from '../../view/capsulePresentation';
+import { EXIT_CAPSULE_ART_BOUNDS, EXIT_CAPSULE_TEXTURE_KEYS } from '../../view/capsulePresentation';
 import { configureCamera } from '../../view/camera/configureCamera';
 import { drawRetroBackdrop, RETRO_FONT_FAMILY, type RetroPresentationPalette } from '../../view/retroPresentation';
+import { createOptimizedSprite } from '../../plugins/enhancedRenderUtils';
 
 export type GameSceneHudSetupContext = Phaser.Scene & {
   hud: ReturnType<typeof createHud>;
@@ -50,9 +47,9 @@ export type GameSceneCleanupContext = Phaser.Scene & {
   platformDetailSprites: Map<string, Phaser.GameObjects.Rectangle>;
   platformCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  terrainVariantShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantShadowSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   terrainVariantAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  terrainVariantDetailSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
+  terrainVariantDetailSprites: Map<string, Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>>;
   gravityZoneSprites: Phaser.GameObjects.Rectangle[];
   gravityFieldSprites: Map<string, Phaser.GameObjects.Rectangle>;
   gravityFieldCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
@@ -68,7 +65,7 @@ export type GameSceneCleanupContext = Phaser.Scene & {
   enemySprites: Map<string, Phaser.GameObjects.Sprite>;
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   checkpointSprites: Map<string, Phaser.GameObjects.Sprite>;
-  collectibleSprites: Map<string, Phaser.GameObjects.Sprite>;
+  collectibleSprites: Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>;
   projectileSprites: Map<string, Phaser.GameObjects.Sprite>;
   rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle>;
   rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
@@ -97,15 +94,15 @@ export type GameSceneBaseDisplayContext = Phaser.Scene & {
   activationNodeSprites: Map<string, Phaser.GameObjects.Rectangle>;
   activationNodeMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   platformSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  platformShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  platformDetailSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  platformShadowSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
+  platformDetailSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   platformCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  terrainVariantShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantShadowSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   terrainVariantAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  terrainVariantDetailSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
+  terrainVariantDetailSprites: Map<string, Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>>;
   checkpointSprites: Map<string, Phaser.GameObjects.Sprite>;
-  collectibleSprites: Map<string, Phaser.GameObjects.Sprite>;
+  collectibleSprites: Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>;
   rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle>;
   rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
   enemySprites: Map<string, Phaser.GameObjects.Sprite>;
@@ -245,6 +242,38 @@ export function cleanupGameScene(scene: GameSceneCleanupContext): void {
   scene.audio.stopMusic();
   scene.setPauseOverlayVisible(false);
   scene.hud.root.remove();
+  // Destroy any GPU layers created at runtime.
+  try {
+    (scene as any).tileGPULayer?.destroy?.();
+  } catch (e) {
+    // ignore
+  }
+  try {
+    (scene as any).collectibleGPULayer?.destroy?.();
+  } catch (e) {
+    // ignore
+  }
+  try {
+    (scene as any).platformShadowGPULayer?.destroy?.();
+  } catch (e) {
+    // ignore
+  }
+  try {
+    (scene as any).platformDetailGPULayer?.destroy?.();
+  } catch (e) {
+    // ignore
+  }
+  try {
+    (scene as any).terrainVariantShadowGPULayer?.destroy?.();
+  } catch (e) {
+    // ignore
+  }
+  try {
+    (scene as any).terrainVariantDetailGPULayer?.destroy?.();
+  } catch (e) {
+    // ignore
+  }
+
   scene.platformSprites.clear();
   scene.platformShadowSprites.clear();
   scene.platformDetailSprites.clear();
@@ -293,6 +322,94 @@ export function createBaseDisplayObjects(scene: GameSceneBaseDisplayContext, sta
   );
 
   drawRetroBackdrop(scene, 0, 0, stage.world.width, stage.world.height, scene.retroPalette, 'gameplay');
+
+  // Create a lightweight GPU-backed background tile layer when available.
+  try {
+    // Ensure a tiny white pixel texture exists for scalable quads.
+    if (!scene.textures.exists('gpuPixel')) {
+      try {
+        const dt = scene.textures.addDynamicTexture('gpuPixel', 2, 2) as any;
+        if (dt) {
+          dt.fill(0xffffff);
+          dt.render();
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    if ((scene as any).add && typeof (scene as any).add.spriteGPULayer === 'function') {
+      const tileSize = 16;
+      const cols = Math.ceil(stage.world.width / tileSize);
+      const rows = Math.ceil(stage.world.height / tileSize);
+      const count = Math.min(8192, cols * rows);
+      const tileLayer = (scene as any).add.spriteGPULayer('gpuPixel', count) as any;
+      tileLayer.setDepth(0.15);
+      // populate a sparse grid of faint tiles for visual texture
+      let added = 0;
+      for (let y = 0; y < stage.world.height && added < count; y += tileSize) {
+        for (let x = 0; x < stage.world.width && added < count; x += tileSize) {
+          tileLayer.addMember({
+            x: x + tileSize / 2,
+            y: y + tileSize / 2,
+            scaleX: tileSize / 2,
+            scaleY: tileSize / 2,
+            alpha: 0.06,
+            tintTopLeft: scene.retroPalette.panelAlt,
+          });
+          added += 1;
+        }
+      }
+      (scene as any).tileGPULayer = tileLayer;
+    }
+  } catch (e) {
+    // ignore if GPULayer or dynamic textures not supported
+  }
+
+  // Create GPULayers for platform shadows and platform details when available.
+  try {
+    if ((scene as any).add && typeof (scene as any).add.spriteGPULayer === 'function') {
+      const platformCount = (state.stageRuntime.platforms && state.stageRuntime.platforms.length) || 0;
+      const size = Math.max(16, platformCount * 2);
+      try {
+        const shadowLayer = (scene as any).add.spriteGPULayer('gpuPixel', size) as any;
+        shadowLayer.setDepth(0.5);
+        (scene as any).platformShadowGPULayer = shadowLayer;
+      } catch (e) {
+        // ignore per-layer
+      }
+      try {
+        const detailLayer = (scene as any).add.spriteGPULayer('gpuPixel', size) as any;
+        detailLayer.setDepth(1);
+        (scene as any).platformDetailGPULayer = detailLayer;
+      } catch (e) {
+        // ignore per-layer
+      }
+      // Terrain variant GPULayers (shadows + details)
+      try {
+        const terrainCount = state.stageRuntime.platforms.filter((p) => p.surfaceMechanic).length;
+        const terrainSize = Math.max(16, terrainCount * 3);
+        try {
+          const terrainShadowLayer = (scene as any).add.spriteGPULayer('gpuPixel', terrainSize) as any;
+          terrainShadowLayer.setDepth(2.5);
+          (scene as any).terrainVariantShadowGPULayer = terrainShadowLayer;
+        } catch (e) {
+          // ignore per-layer
+        }
+        try {
+          const terrainDetailLayer = (scene as any).add.spriteGPULayer('gpuPixel', terrainSize) as any;
+          terrainDetailLayer.setDepth(3.2);
+          (scene as any).terrainVariantDetailGPULayer = terrainDetailLayer;
+        } catch (e) {
+          // ignore per-layer
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
 
   createEnvironmentRenderables(scene, state);
   createPlayerRenderables(scene);
@@ -410,27 +527,74 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
     const sprite = scene.add
       .rectangle(platform.x + platform.width / 2, platform.y + platform.height / 2, platform.width, platform.height, scene.platformColor(platform))
       .setOrigin(0.5);
-    const shadow = scene.add
-      .rectangle(
-        platform.x + platform.width / 2,
-        platform.y + platform.height / 2 + Math.max(2, Math.floor(platform.height * 0.18)),
-        Math.max(6, platform.width - 6),
-        Math.max(4, Math.floor(platform.height * 0.38)),
-        scene.retroPalette.ink,
-        0.3,
-      )
-      .setOrigin(0.5)
-      .setDepth(0.5);
-    const detail = scene.add
-      .rectangle(
-        platform.x + platform.width / 2,
-        platform.y + topSurfaceHeight / 2,
-        platform.width,
-        topSurfaceHeight,
-        scene.platformDetailColor(platform),
-      )
-      .setOrigin(0.5)
-      .setDepth(1);
+    // Shadow and detail may be GPULayer members when supported; otherwise fallback to rectangles.
+    const shadowLayer = (scene as any).platformShadowGPULayer as any | undefined;
+    const detailLayer = (scene as any).platformDetailGPULayer as any | undefined;
+
+    // Shadow: add to GPULayer or create rectangle
+    let shadowRec: Phaser.GameObjects.Rectangle | { layer: any; index: number };
+    if (shadowLayer) {
+      const offsetY = Math.max(2, Math.floor(platform.height * 0.18));
+      const width = Math.max(6, platform.width - 6);
+      const height = Math.max(4, Math.floor(platform.height * 0.38));
+      const idx = shadowLayer.memberCount;
+      shadowLayer.addMember({
+        x: platform.x + platform.width / 2,
+        y: platform.y + platform.height / 2 + offsetY,
+        scaleX: width / 2,
+        scaleY: height / 2,
+        alpha: 0.28,
+        tintTopLeft: scene.retroPalette.ink,
+        tintTopRight: scene.retroPalette.ink,
+        tintBottomLeft: scene.retroPalette.ink,
+        tintBottomRight: scene.retroPalette.ink,
+      });
+      shadowRec = { layer: shadowLayer, index: idx };
+    } else {
+      const shadow = scene.add
+        .rectangle(
+          platform.x + platform.width / 2,
+          platform.y + platform.height / 2 + Math.max(2, Math.floor(platform.height * 0.18)),
+          Math.max(6, platform.width - 6),
+          Math.max(4, Math.floor(platform.height * 0.38)),
+          scene.retroPalette.ink,
+          0.3,
+        )
+        .setOrigin(0.5)
+        .setDepth(0.5);
+      shadowRec = shadow;
+    }
+
+    // Detail: add to GPULayer or create rectangle
+    let detailRec: Phaser.GameObjects.Rectangle | { layer: any; index: number };
+    if (detailLayer) {
+      const idx = detailLayer.memberCount;
+      detailLayer.addMember({
+        x: platform.x + platform.width / 2,
+        y: platform.y + topSurfaceHeight / 2,
+        scaleX: platform.width / 2,
+        scaleY: topSurfaceHeight / 2,
+        alpha: 1,
+        tintTopLeft: scene.platformDetailColor(platform),
+        tintTopRight: scene.platformDetailColor(platform),
+        tintBottomLeft: scene.platformDetailColor(platform),
+        tintBottomRight: scene.platformDetailColor(platform),
+      });
+      detailRec = { layer: detailLayer, index: idx };
+    } else {
+      const detail = scene.add
+        .rectangle(
+          platform.x + platform.width / 2,
+          platform.y + topSurfaceHeight / 2,
+          platform.width,
+          topSurfaceHeight,
+          scene.platformDetailColor(platform),
+        )
+        .setOrigin(0.5)
+        .setDepth(1);
+      detailRec = detail;
+    }
+
     sprite.setVisible(
       isPlatformVisible(
         platform,
@@ -439,8 +603,8 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
       ),
     );
     scene.platformSprites.set(platform.id, sprite);
-    scene.platformShadowSprites.set(platform.id, shadow);
-    scene.platformDetailSprites.set(platform.id, detail);
+    scene.platformShadowSprites.set(platform.id, shadowRec as any);
+    scene.platformDetailSprites.set(platform.id, detailRec as any);
     scene.platformCategoryMarkerSprites.set(platform.id, scene.createTraversalMarkerRects(3, 1.1));
   }
 
@@ -516,16 +680,45 @@ function createPlayerRenderables(scene: GameSceneBaseDisplayContext): void {
 
 function createRewardRenderables(scene: GameSceneBaseDisplayContext, state: Readonly<SessionSnapshot>): void {
   for (const checkpoint of state.stageRuntime.checkpoints) {
-    const sprite = scene.add
-      .sprite(checkpoint.rect.x, checkpoint.rect.y, 'checkpoint')
+    const sprite = createOptimizedSprite(scene, checkpoint.rect.x, checkpoint.rect.y, 'checkpoint')
       .setOrigin(0, 0)
       .setDisplaySize(checkpoint.rect.width, checkpoint.rect.height);
     scene.checkpointSprites.set(checkpoint.id, sprite);
   }
 
+  // Attempt to create collectibles in a SpriteGPULayer for high-count performance.
+  let collectibleLayer: any | null = null;
+  try {
+    if ((scene as any).add && typeof (scene as any).add.spriteGPULayer === 'function' && state.stageRuntime.collectibles.length > 0) {
+      const size = Math.max(64, state.stageRuntime.collectibles.length * 2);
+      collectibleLayer = (scene as any).add.spriteGPULayer('collectible', size) as any;
+      collectibleLayer.setDepth(4.05);
+    }
+  } catch (e) {
+    collectibleLayer = null;
+  }
+
   for (const collectible of state.stageRuntime.collectibles) {
-    const sprite = scene.add.sprite(collectible.position.x, collectible.position.y, 'collectible');
-    scene.collectibleSprites.set(collectible.id, sprite);
+    if (collectibleLayer) {
+      const index = collectibleLayer.memberCount;
+      // uniform frame, animated properties handled via editMember later
+      collectibleLayer.addMember({
+        x: collectible.position.x,
+        y: collectible.position.y,
+        scaleX: 1,
+        scaleY: 1,
+        alpha: collectible.collected ? 0 : 1,
+        tintTopLeft: scene.retroPalette.warm,
+      });
+      scene.collectibleSprites.set(collectible.id, { layer: collectibleLayer, index });
+    } else {
+      const sprite = createOptimizedSprite(scene, collectible.position.x, collectible.position.y, 'collectible');
+      scene.collectibleSprites.set(collectible.id, sprite as any);
+    }
+  }
+
+  if (collectibleLayer) {
+    (scene as any).collectibleGPULayer = collectibleLayer;
   }
 
   for (const rewardBlock of state.stageRuntime.rewardBlocks) {
@@ -554,7 +747,7 @@ function createRewardRenderables(scene: GameSceneBaseDisplayContext, state: Read
 
 function createEnemyRenderables(scene: GameSceneBaseDisplayContext, state: Readonly<SessionSnapshot>): void {
   for (const enemy of state.stageRuntime.enemies) {
-    const sprite = scene.add.sprite(enemy.x, enemy.y, enemy.kind).setOrigin(0, 0);
+    const sprite = createOptimizedSprite(scene, enemy.x, enemy.y, enemy.kind).setOrigin(0, 0);
     scene.enemySprites.set(enemy.id, sprite);
     if (enemy.kind === 'flyer') {
       const accents = [
@@ -586,10 +779,7 @@ function createExitAndArrivalRenderables(scene: GameSceneBaseDisplayContext, sta
       stage.exit.y + EXIT_CAPSULE_ART_BOUNDS.shell.y + EXIT_CAPSULE_ART_BOUNDS.shell.height / 2,
       EXIT_CAPSULE_TEXTURE_KEYS.shell,
     )
-    .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.shell.width, EXIT_CAPSULE_ART_BOUNDS.shell.height)
-    .setOrigin(0.5)
-    .setTint(scene.retroPalette.warm)
-    .setDepth(2);
+    .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.shell.width, EXIT_CAPSULE_ART_BOUNDS.shell.height);
   scene.exitDoor = scene.add
     .image(
       stage.exit.x + EXIT_CAPSULE_ART_BOUNDS.door.x + EXIT_CAPSULE_ART_BOUNDS.door.width / 2,
@@ -598,30 +788,30 @@ function createExitAndArrivalRenderables(scene: GameSceneBaseDisplayContext, sta
     )
     .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.door.width, EXIT_CAPSULE_ART_BOUNDS.door.height)
     .setOrigin(0.5)
-    .setTint(scene.retroPalette.ink)
-    .setDepth(2.1);
+    .setDepth(1.3);
+    
+  // Arrival base (start) visuals: create placeholders; positions are set by presentation logic.
   scene.arrivalBaseShadow = scene.add
-    .rectangle(0, 0, CAPSULE_PRESENTATION.baseShadowWidth, CAPSULE_PRESENTATION.baseShadowHeight, scene.retroPalette.ink, 0.24)
+    .rectangle(0, 0, 12, 6, scene.retroPalette.ink, 0.22)
     .setOrigin(0.5)
-    .setDepth(8.8)
+    .setDepth(9.1)
     .setVisible(false);
   scene.arrivalBase = scene.add
-    .rectangle(0, 0, CAPSULE_PRESENTATION.baseWidth, CAPSULE_PRESENTATION.baseHeight, scene.retroPalette.panelAlt, 0.9)
-    .setStrokeStyle(2, scene.retroPalette.border, 0.45)
-    .setOrigin(0.5)
-    .setDepth(8.9)
-    .setVisible(false);
-  scene.arrivalBeacon = scene.add
-    .rectangle(0, 0, CAPSULE_PRESENTATION.beaconWidth, CAPSULE_PRESENTATION.beaconHeight, scene.retroPalette.bright, 0.8)
+    .rectangle(0, 0, 14, 8, scene.retroPalette.panelAlt, 0.92)
     .setOrigin(0.5)
     .setDepth(9.2)
     .setVisible(false);
-  scene.arrivalShell = scene.add
-    .image(0, 0, EXIT_CAPSULE_TEXTURE_KEYS.shell)
-    .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.shell.width, EXIT_CAPSULE_ART_BOUNDS.shell.height)
+  scene.arrivalBeacon = scene.add
+    .rectangle(0, 0, 14, 8, scene.retroPalette.bright, 0.34)
     .setOrigin(0.5)
-    .setDepth(9.4)
+    .setDepth(9.3)
     .setVisible(false);
+    scene.arrivalShell = scene.add
+      .image(0, 0, EXIT_CAPSULE_TEXTURE_KEYS.shell)
+      .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.shell.width, EXIT_CAPSULE_ART_BOUNDS.shell.height)
+      .setOrigin(0.5)
+      .setDepth(9.4)
+      .setVisible(false);
   scene.arrivalDoor = scene.add
     .image(0, 0, EXIT_CAPSULE_TEXTURE_KEYS.door)
     .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.door.width, EXIT_CAPSULE_ART_BOUNDS.door.height)
@@ -629,7 +819,12 @@ function createExitAndArrivalRenderables(scene: GameSceneBaseDisplayContext, sta
     .setDepth(9.5)
     .setVisible(false);
   scene.arrivalAura = scene.add.ellipse(0, 0, 46, 62, scene.retroPalette.cool, 0.2).setDepth(9.6).setVisible(false);
-  scene.arrivalPlayer = scene.add.sprite(0, 0, 'player').setOrigin(0, 0).setDepth(9.7).setTint(scene.retroPalette.cool).setVisible(false);
+  scene.arrivalPlayer = createOptimizedSprite(scene, 0, 0, 'player').setOrigin(0, 0).setDepth(9.7).setTint(scene.retroPalette.cool).setVisible(false);
+  try {
+    (scene.arrivalPlayer as any).setLighting?.(true, { selfShadow: true });
+  } catch (e) {
+    // ignore
+  }
 }
 
 function createPauseOverlay(scene: GameSceneBaseDisplayContext): void {

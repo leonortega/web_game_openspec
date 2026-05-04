@@ -13,7 +13,7 @@ export type GameSceneRewardRenderingContext = Phaser.Scene & {
   };
   checkpointSprites: Map<string, Phaser.GameObjects.Sprite>;
   checkpointContactStrips: Map<string, Phaser.GameObjects.Rectangle>;
-  collectibleSprites: Map<string, Phaser.GameObjects.Sprite>;
+  collectibleSprites: Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>;
   rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle>;
   rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
   rewardRevealTexts: Map<string, Phaser.GameObjects.Text>;
@@ -81,10 +81,34 @@ export function syncCheckpoint(
 }
 
 export function syncCollectible(scene: GameSceneRewardRenderingContext, collectible: CollectibleState): void {
-  const sprite = scene.collectibleSprites.get(collectible.id);
-  if (!sprite) {
+  const mapped = scene.collectibleSprites.get(collectible.id);
+  if (!mapped) return;
+
+  // GPULayer member record
+  if ((mapped as any).layer && typeof (mapped as any).index === 'number') {
+    const rec = mapped as { layer: any; index: number };
+    const layer = rec.layer;
+    const idx = rec.index;
+    if (collectible.collected) {
+      layer.editMember(idx, { alpha: 0 });
+    } else {
+      const step = getRetroMotionStep(scene.time.now + collectible.position.x, 140, 2);
+      const scale = step === 0 ? 1 : 1.12;
+      const alpha = step === 0 ? 1 : 0.86;
+      layer.editMember(idx, {
+        x: collectible.position.x,
+        y: collectible.position.y,
+        scaleX: scale,
+        scaleY: scale,
+        alpha,
+        tintTopLeft: scene.retroPalette.warm,
+      });
+    }
     return;
   }
+
+  // Fallback sprite path
+  const sprite = mapped as Phaser.GameObjects.Sprite;
   sprite.setVisible(!collectible.collected);
   if (!collectible.collected) {
     const collectibleStep = getRetroMotionStep(scene.time.now + collectible.position.x, 140, 2);

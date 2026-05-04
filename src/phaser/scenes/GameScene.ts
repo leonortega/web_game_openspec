@@ -193,19 +193,20 @@ export class GameScene extends Phaser.Scene {
 
   private platformSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
-  private platformShadowSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private platformShadowSprites = new Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>();
 
-  private platformDetailSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private platformDetailSprites = new Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>();
+
 
   private platformCategoryMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
   private terrainVariantSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
-  private terrainVariantShadowSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private terrainVariantShadowSprites = new Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>();
 
   private terrainVariantAccentSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
-  private terrainVariantDetailSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
+  private terrainVariantDetailSprites = new Map<string, Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>>();
 
   private hazardSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
@@ -243,7 +244,7 @@ export class GameScene extends Phaser.Scene {
 
   private checkpointContactStrips = new Map<string, Phaser.GameObjects.Rectangle>();
 
-  private collectibleSprites = new Map<string, Phaser.GameObjects.Sprite>();
+  private collectibleSprites = new Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>();
 
   private rewardBlockSprites = new Map<string, Phaser.GameObjects.Rectangle>();
 
@@ -850,25 +851,30 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (!state.exitFinish.active) {
-      this.exitBase
-        .setFillStyle(this.retroPalette.panelAlt, 0.94)
-        .setScale(1, 1)
-        .setAlpha(1);
-      this.exitBaseShadow.setAlpha(0.26).setScale(1, 1);
-      this.exitBeacon
-        .setFillStyle(state.stageRuntime.exitReached ? this.retroPalette.cool : this.retroPalette.bright, state.stageRuntime.exitReached ? 0.86 : 0.78)
-        .setScale(1, 1)
-        .setAlpha(state.stageRuntime.exitReached ? 0.9 : 0.78);
-      this.exitShell
-        .setAlpha(state.stageRuntime.exitReached ? 0.68 : 1)
-        .setScale(1, 1)
-        .setTint(this.retroPalette.warm);
-      this.exitDoor
-        .setTexture(EXIT_CAPSULE_TEXTURE_KEYS.door)
-        .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.door.width, EXIT_CAPSULE_ART_BOUNDS.door.height)
-        .setTint(state.stageRuntime.exitReached ? this.retroPalette.border : this.retroPalette.ink)
-        .setAlpha(state.stageRuntime.exitReached ? 0.76 : 0.88)
-        .setVisible(true);
+      if (this.exitBase && this.exitBaseShadow && this.exitBeacon && this.exitShell && this.exitDoor) {
+        this.exitBase
+          .setFillStyle(this.retroPalette.panelAlt, 0.94)
+          .setScale(1, 1)
+          .setAlpha(1);
+        this.exitBaseShadow.setAlpha(0.26).setScale(1, 1);
+        this.exitBeacon
+          .setFillStyle(state.stageRuntime.exitReached ? this.retroPalette.cool : this.retroPalette.bright, state.stageRuntime.exitReached ? 0.86 : 0.78)
+          .setScale(1, 1)
+          .setAlpha(state.stageRuntime.exitReached ? 0.9 : 0.78);
+        this.exitShell
+          .setAlpha(state.stageRuntime.exitReached ? 0.68 : 1)
+          .setScale(1, 1)
+          .setTint(this.retroPalette.warm);
+        this.exitDoor
+          .setTexture(EXIT_CAPSULE_TEXTURE_KEYS.door)
+          .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.door.width, EXIT_CAPSULE_ART_BOUNDS.door.height)
+          .setTint(state.stageRuntime.exitReached ? this.retroPalette.border : this.retroPalette.ink)
+          .setAlpha(state.stageRuntime.exitReached ? 0.76 : 0.88)
+          .setVisible(true);
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('syncView: exit visuals not ready');
+      }
     }
   }
 
@@ -1051,29 +1057,52 @@ export class GameScene extends Phaser.Scene {
       terrainVariantVisuals: this.bridge
         .getSession()
         .getState()
-        .stageRuntime.platforms.filter((platform) => platform.surfaceMechanic).map((platform) => ({
-          id: platform.id,
-          visualCategory: getTerrainTraversalVisualCategory(platform),
-          kind: platform.surfaceMechanic!.kind,
-          x: platform.x,
-          y: platform.y,
-          width: platform.width,
-          height: platform.height,
-          visible: this.terrainVariantSprites.get(platform.id)?.visible ?? false,
-          fillColor: this.terrainVariantSprites.get(platform.id)?.fillColor ?? 0,
-          fillAlpha: this.terrainVariantSprites.get(platform.id)?.fillAlpha ?? 0,
-          accentColor: this.terrainVariantAccentSprites.get(platform.id)?.fillColor ?? 0,
-          accentAlpha: this.terrainVariantAccentSprites.get(platform.id)?.fillAlpha ?? 0,
-          detailVisibleCount:
-            this.terrainVariantDetailSprites.get(platform.id)?.filter((detail) => detail.visible).length ?? 0,
-          detailWidths: this.terrainVariantDetailSprites.get(platform.id)?.map((detail) => detail.width) ?? [],
-          detailHeights: this.terrainVariantDetailSprites.get(platform.id)?.map((detail) => detail.height) ?? [],
-          detailOffsets:
-            this.terrainVariantDetailSprites.get(platform.id)?.map((detail) => ({
-              x: Math.round(detail.x - (platform.x + platform.width / 2)),
-              y: Math.round(detail.y - (platform.y + platform.height / 2)),
-            })) ?? [],
-        })),
+        .stageRuntime.platforms.filter((platform) => platform.surfaceMechanic).map((platform) => {
+          const sprite = this.terrainVariantSprites.get(platform.id);
+          const accent = this.terrainVariantAccentSprites.get(platform.id);
+          const detailsRec = this.terrainVariantDetailSprites.get(platform.id) ?? [];
+
+          const detailInfo = detailsRec.map((detail) => {
+            if ((detail as any).layer) {
+              const member = (detail as any).layer.getMember((detail as any).index);
+              if (!member) {
+                return { visible: false, width: 0, height: 0, x: platform.x + platform.width / 2, y: platform.y + platform.height / 2 };
+              }
+              return {
+                visible: (member.alpha ?? 1) > 0,
+                width: (member.scaleX ?? 0) * 2,
+                height: (member.scaleY ?? 0) * 2,
+                x: member.x ?? platform.x + platform.width / 2,
+                y: member.y ?? platform.y + platform.height / 2,
+              };
+            }
+
+            const rect = detail as Phaser.GameObjects.Rectangle;
+            return { visible: rect.visible, width: rect.width, height: rect.height, x: rect.x, y: rect.y };
+          });
+
+          return {
+            id: platform.id,
+            visualCategory: getTerrainTraversalVisualCategory(platform),
+            kind: platform.surfaceMechanic!.kind,
+            x: platform.x,
+            y: platform.y,
+            width: platform.width,
+            height: platform.height,
+            visible: sprite?.visible ?? false,
+            fillColor: sprite?.fillColor ?? 0,
+            fillAlpha: sprite?.fillAlpha ?? 0,
+            accentColor: accent?.fillColor ?? 0,
+            accentAlpha: accent?.fillAlpha ?? 0,
+            detailVisibleCount: detailInfo.filter((d) => d.visible).length,
+            detailWidths: detailInfo.map((d) => d.width),
+            detailHeights: detailInfo.map((d) => d.height),
+            detailOffsets: detailInfo.map((d) => ({
+              x: Math.round(d.x - (platform.x + platform.width / 2)),
+              y: Math.round(d.y - (platform.y + platform.height / 2)),
+            })),
+          };
+        }),
       platformVisuals: this.bridge
         .getSession()
         .getState()
@@ -1200,7 +1229,7 @@ export class GameScene extends Phaser.Scene {
     syncGravityCapsuleRendering(this.getGravityRenderingContext(), capsule);
   }
 
-  private syncBrittleTerrainVariantDetails(platform: PlatformState, details: Phaser.GameObjects.Rectangle[]): void {
+  private syncBrittleTerrainVariantDetails(platform: PlatformState, details: Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>): void {
     const broken = isBrittlePlatformBroken(platform);
     const warning = isBrittlePlatformWarning(platform);
     const ready = isBrittlePlatformReady(platform);
@@ -1212,25 +1241,31 @@ export class GameScene extends Phaser.Scene {
     const shardYOffsets = broken ? [0.12, 0.18, 0.08] : ready ? [0.02, -0.16, 0.04] : [0.06, -0.08, 0.1];
     const shardAlphas = broken ? [0.22, 0.16, 0.22] : ready ? [0.92, 1, 0.92] : warning ? [0.82, 0.96, 0.82] : [0.44, 0.66, 0.44];
 
-    details.forEach((detail, index) => {
-      detail
-        .setPosition(centerX + platform.width * shardOffsets[index], centerY + platform.height * shardYOffsets[index])
-        .setSize(index === 1 ? shardWidth + 2 : shardWidth, index === 1 ? shardHeight + (broken ? 0 : 2) : shardHeight)
-        .setFillStyle(
-          broken
-            ? this.retroPalette.border
-            : ready
-              ? this.retroPalette.alert
-              : warning
-                ? this.retroPalette.bright
-                : this.retroPalette.border,
-          shardAlphas[index],
-        )
-        .setVisible(true);
+    const setDetailMember = (rec: any, opts: any) => {
+      if (!rec) return;
+      if (rec.layer) {
+        rec.layer.editMember(rec.index, opts);
+      } else if (typeof rec.setPosition === 'function') {
+        if (opts.x !== undefined && opts.y !== undefined) rec.setPosition(opts.x, opts.y);
+        if (opts.width !== undefined && opts.height !== undefined) rec.setSize(opts.width, opts.height);
+        if (opts.fill !== undefined) rec.setFillStyle(opts.fill, opts.alpha ?? 1);
+        if (opts.alpha !== undefined) rec.setAlpha(opts.alpha);
+        if (opts.visible !== undefined) rec.setVisible(opts.visible);
+      }
+    };
+
+    details.forEach((detail: any, index: number) => {
+      const x = centerX + platform.width * shardOffsets[index];
+      const y = centerY + platform.height * shardYOffsets[index];
+      const w = index === 1 ? shardWidth + 2 : shardWidth;
+      const h = index === 1 ? shardHeight + (broken ? 0 : 2) : shardHeight;
+      const color = broken ? this.retroPalette.border : ready ? this.retroPalette.alert : warning ? this.retroPalette.bright : this.retroPalette.border;
+      const alpha = shardAlphas[index];
+      setDetailMember(detail, { x, y, width: w, height: h, fill: color, alpha, visible: true, scaleX: w / 2, scaleY: h / 2, tintTopLeft: color, tintTopRight: color, tintBottomLeft: color, tintBottomRight: color });
     });
   }
 
-  private syncStickyTerrainVariantDetails(platform: PlatformState, details: Phaser.GameObjects.Rectangle[]): void {
+  private syncStickyTerrainVariantDetails(platform: PlatformState, details: Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>): void {
     const centerX = platform.x + platform.width / 2;
     const centerY = platform.y + platform.height / 2;
     const bandHeight = Math.max(2, Math.floor(platform.height * 0.24));
@@ -1238,15 +1273,28 @@ export class GameScene extends Phaser.Scene {
     const yOffsets = [-0.16, 0.04, 0.22];
     const driftStep = (this.time.now + platform.x) / 140;
 
-    details.forEach((detail, index) => {
+    const setDetailMember = (rec: any, opts: any) => {
+      if (!rec) return;
+      if (rec.layer) {
+        rec.layer.editMember(rec.index, opts);
+      } else if (typeof rec.setPosition === 'function') {
+        if (opts.x !== undefined && opts.y !== undefined) rec.setPosition(opts.x, opts.y);
+        if (opts.width !== undefined && opts.height !== undefined) rec.setSize(opts.width, opts.height);
+        if (opts.fill !== undefined) rec.setFillStyle(opts.fill, opts.alpha ?? 1);
+        if (opts.alpha !== undefined) rec.setAlpha(opts.alpha);
+        if (opts.visible !== undefined) rec.setVisible(opts.visible);
+      }
+    };
+
+    details.forEach((detail: any, index: number) => {
       const drift = Math.sin(driftStep + index * 0.9) * Math.max(4, platform.width * 0.04);
       const widthPulse = (Math.cos(driftStep * 1.2 + index) + 1) * Math.max(2, platform.width * 0.03);
       const bandWidth = Math.max(12, Math.floor(platform.width * baseWidths[index] - widthPulse));
-      detail
-        .setPosition(centerX + drift * (index === 1 ? -1 : 1), centerY + platform.height * yOffsets[index])
-        .setSize(bandWidth, bandHeight)
-        .setFillStyle(index === 1 ? this.retroPalette.warm : this.retroPalette.alert, index === 1 ? 0.34 : 0.46)
-        .setVisible(true);
+      const x = centerX + drift * (index === 1 ? -1 : 1);
+      const y = centerY + platform.height * yOffsets[index];
+      const fill = index === 1 ? this.retroPalette.warm : this.retroPalette.alert;
+      const alpha = index === 1 ? 0.34 : 0.46;
+      setDetailMember(detail, { x, y, width: bandWidth, height: bandHeight, fill, alpha, visible: true, scaleX: bandWidth / 2, scaleY: bandHeight / 2, tintTopLeft: fill, tintTopRight: fill, tintBottomLeft: fill, tintBottomRight: fill });
     });
   }
 
@@ -1663,6 +1711,12 @@ export class GameScene extends Phaser.Scene {
     const playerCenterX = layout.playerTargetX + state.player.width / 2;
     const playerCenterY = layout.playerY + state.player.height / 2;
     const sequence = this.getStageStartSequenceState();
+    // Defensive guard: arrival visuals may not be created in some startup races.
+    if (!this.arrivalBaseShadow || !this.arrivalBase || !this.arrivalBeacon || !this.arrivalShell || !this.arrivalDoor || !this.arrivalAura || !this.arrivalPlayer) {
+      // eslint-disable-next-line no-console
+      console.warn('applyStageStartArrivalPresentation: arrival visuals not ready');
+      return;
+    }
     if (!this.isStageStartArrivalActive()) {
       this.arrivalBaseShadow
         .setPosition(layout.capsuleCenterX, layout.baseShadowY)
@@ -1777,6 +1831,13 @@ export class GameScene extends Phaser.Scene {
     );
     const hidden = state.exitFinish.suppressPresentation;
     const collapseAlpha = hidden ? 0 : Phaser.Math.Clamp(1 - progress * 2.6, 0, 1) * flickerAlpha;
+
+    // Defensive guard: ensure exit visuals exist before mutating them.
+    if (!this.exitBase || !this.exitBaseShadow || !this.exitBeacon || !this.exitShell || !this.exitDoor) {
+      // eslint-disable-next-line no-console
+      console.warn('applyExitFinishPresentation: exit visuals not ready');
+      return;
+    }
 
     for (const target of this.getPlayerVisualTargets()) {
       const shape = target as Phaser.GameObjects.Shape;

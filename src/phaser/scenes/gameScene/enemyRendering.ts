@@ -7,6 +7,7 @@ import {
   TURRET_TEXTURE_SIZE,
   WALKER_TEXTURE_SIZE,
 } from '../../assets/bootTextures';
+import { createOptimizedSprite } from '../../plugins/enhancedRenderUtils';
 import { TURRET_VARIANT_CONFIG, type EnemyState, type HazardState, type ProjectileState } from '../../../game/simulation/state';
 import {
   getRetroDefeatTweenPreset,
@@ -21,9 +22,6 @@ const ENEMY_VISUAL_HEIGHTS = {
   charger: CHARGER_TEXTURE_SIZE.height,
   flyer: FLYER_TEXTURE_SIZE.height,
 } as const;
-
-const ENEMY_CONTACT_STRIP_DEPTH = -0.1;
-const ENEMY_CONTACT_STRIP_HEIGHT = 2;
 
 export type GameSceneEnemyRenderingContext = Phaser.Scene & {
   retroPalette: RetroPresentationPalette;
@@ -79,26 +77,11 @@ export function drawHazard(scene: GameSceneEnemyRenderingContext, hazard: Hazard
   scene.hazardSprites.set(hazard.id, base);
 }
 
-function syncEnemyContactStrip(scene: GameSceneEnemyRenderingContext, enemy: EnemyState, tintColor: number): void {
-  const supportY = enemy.supportY;
-  const isGrounded = enemy.kind !== 'flyer' && supportY !== null && Math.abs(enemy.y - supportY) <= 4;
-  if (!isGrounded) {
+function syncEnemyContactStrip(scene: GameSceneEnemyRenderingContext, enemy: EnemyState): void {
+  const strip = scene.enemyContactStrips.get(enemy.id);
+  if (strip) {
+    strip.destroy();
     scene.enemyContactStrips.delete(enemy.id);
-    return;
-  }
-
-  let strip = scene.enemyContactStrips.get(enemy.id);
-  if (!strip) {
-    strip = scene.add
-      .rectangle(enemy.x, supportY + ENEMY_CONTACT_STRIP_HEIGHT / 2, enemy.width, ENEMY_CONTACT_STRIP_HEIGHT, tintColor)
-      .setOrigin(0.5, 0.5)
-      .setDepth(ENEMY_CONTACT_STRIP_DEPTH);
-    scene.enemyContactStrips.set(enemy.id, strip);
-  } else {
-    strip
-      .setPosition(enemy.x, supportY + ENEMY_CONTACT_STRIP_HEIGHT / 2)
-      .setDisplaySize(enemy.width, ENEMY_CONTACT_STRIP_HEIGHT)
-      .setFillStyle(tintColor);
   }
 }
 
@@ -156,7 +139,7 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
         .setFillStyle(scene.retroPalette.bright, 0.16 + motion.accentAlpha * 0.5)
         .setVisible(true);
     }
-    syncEnemyContactStrip(scene, enemy, tint);
+    syncEnemyContactStrip(scene, enemy);
     return;
   }
 
@@ -177,7 +160,7 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
     accent.setVisible(false);
   }
 
-  scene.enemyContactStrips.delete(enemy.id);
+  syncEnemyContactStrip(scene, enemy);
 }
 
 export function syncProjectile(scene: GameSceneEnemyRenderingContext, projectile: ProjectileState): void {
@@ -189,7 +172,7 @@ export function syncProjectile(scene: GameSceneEnemyRenderingContext, projectile
   }
 
   if (!sprite) {
-    sprite = scene.add.sprite(projectile.x, projectile.y, 'projectile').setOrigin(0, 0);
+    sprite = createOptimizedSprite(scene, projectile.x, projectile.y, 'projectile').setOrigin(0, 0);
     scene.projectileSprites.set(projectile.id, sprite);
   }
 
