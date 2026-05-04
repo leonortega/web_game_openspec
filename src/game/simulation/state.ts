@@ -139,6 +139,8 @@ export type PlatformState = {
   brittle?: BrittlePlatformState;
   x: number;
   y: number;
+  prevX: number;
+  prevY: number;
   width: number;
   height: number;
   startX: number;

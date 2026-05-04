@@ -211,6 +211,8 @@ const createRuntimeMovingPlatform = (
   kind: 'moving',
   x,
   y,
+  prevX: x,
+  prevY: y,
   width: 28,
   height: 20,
   startX: x,
@@ -233,6 +235,8 @@ const createRuntimeHorizontalMovingPlatform = (
   kind: 'moving',
   x,
   y,
+  prevX: x,
+  prevY: y,
   width,
   height: 20,
   startX: x,
@@ -255,6 +259,8 @@ const createRuntimeFallingPlatformFixture = (
   kind: 'falling',
   x,
   y,
+  prevX: x,
+  prevY: y,
   width,
   height: 32,
   startX: x,
@@ -2546,6 +2552,78 @@ describe('GameSession regression coverage', () => {
 
     state = getMutableState(session);
     expect(state.player.vy).toBeLessThan(0);
+  });
+
+  it('carries rider by realized displacement when horizontal mover bounces at range end', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const support = createRuntimeHorizontalMovingPlatform('bounce-carry-support', 2000, 520, 128, 10, 1000, 1);
+    isolatePlayerPlatformFixture(state, [support]);
+
+    state.player.x = support.x + 8;
+    state.player.y = support.y - state.player.height;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    state.player.supportPlatformId = support.id;
+
+    const startPlayerX = state.player.x;
+    const startPlatformX = support.x;
+
+    session.update(16, defaultInputState());
+
+    const actualPlatformDeltaX = support.x - startPlatformX;
+    expect(actualPlatformDeltaX).toBeCloseTo(10, 4);
+    expect(state.player.x).toBeCloseTo(startPlayerX + actualPlatformDeltaX, 4);
+    expect(state.player.x).toBeLessThan(startPlayerX + support.move.speed * 0.016);
+  });
+
+  it('carries rider by realized displacement when falling platform is vertically contained', () => {
+    const session = new GameSession();
+    session.forceStartStage(2);
+
+    let state = getMutableState(session);
+    const { capsule } = getGravityCapsuleFixture(state);
+    const support = createRuntimeFallingPlatformFixture(
+      'contained-falling-carry',
+      capsule.shell.x + 32,
+      capsule.shell.y + capsule.shell.height - 32 - 0.05,
+      96,
+      0,
+    );
+    support.fall.triggered = true;
+    support.fall.falling = true;
+    support.fall.timerMs = 0;
+
+    state.stageRuntime.platforms = [support];
+    state.stageRuntime.hazards = [];
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.rewardBlocks = [];
+    state.stageRuntime.activationNodes = [];
+    state.stageRuntime.scannerVolumes = [];
+    state.stageRuntime.revealVolumes = [];
+    state.stageRuntime.temporaryBridges = [];
+
+    state.player.x = support.x + 16;
+    state.player.y = support.y - state.player.height;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    state.player.supportPlatformId = support.id;
+
+    const startPlayerY = state.player.y;
+    const startPlatformY = support.y;
+
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    const liveSupport = state.stageRuntime.platforms.find((platform: any) => platform.id === support.id);
+    const actualPlatformDeltaY = liveSupport.y - startPlatformY;
+
+    expect(actualPlatformDeltaY).toBeGreaterThan(0);
+    expect(actualPlatformDeltaY).toBeLessThan(0.2);
+    expect(state.player.y).toBeCloseTo(startPlayerY + actualPlatformDeltaY, 4);
+    expect(state.player.y).toBeLessThan(startPlayerY + liveSupport.vy * 0.016);
   });
 
   it('keeps enemies trapped at gravity-room side-wall doors in active and disabled states', () => {

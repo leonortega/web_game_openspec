@@ -366,6 +366,8 @@ type SolidSurface =
       kind: 'platform';
       x: number;
       y: number;
+  prevX: number;
+  prevY: number;
       width: number;
       height: number;
       vx: number;
@@ -377,6 +379,8 @@ type SolidSurface =
       kind: 'rewardBlock';
       x: number;
       y: number;
+      prevX: number;
+      prevY: number;
       width: number;
       height: number;
       vx: 0;
@@ -388,6 +392,8 @@ type SolidSurface =
       kind: 'gravityCapsuleWall';
       x: number;
       y: number;
+      prevX: number;
+      prevY: number;
       width: number;
       height: number;
       vx: 0;
@@ -685,6 +691,8 @@ const createSolidSurfaceList = (runtime: StageRuntime): SolidSurface[] => [
     kind: 'platform',
     x: platform.x,
     y: platform.y,
+    prevX: platform.prevX,
+    prevY: platform.prevY,
     width: platform.width,
     height: platform.height,
     vx: platform.vx,
@@ -696,6 +704,8 @@ const createSolidSurfaceList = (runtime: StageRuntime): SolidSurface[] => [
     kind: 'rewardBlock',
     x: rewardBlock.x,
     y: rewardBlock.y,
+    prevX: rewardBlock.x,
+    prevY: rewardBlock.y,
     width: rewardBlock.width,
     height: rewardBlock.height,
     vx: 0,
@@ -712,6 +722,8 @@ const createSolidSurfaceList = (runtime: StageRuntime): SolidSurface[] => [
         kind: 'gravityCapsuleWall',
         x: capsule.shell.x,
         y: capsule.shell.y,
+        prevX: capsule.shell.x,
+        prevY: capsule.shell.y,
         width: capsule.shell.width,
         height: wallThickness,
         vx: 0,
@@ -723,6 +735,8 @@ const createSolidSurfaceList = (runtime: StageRuntime): SolidSurface[] => [
         kind: 'gravityCapsuleWall',
         x: capsule.shell.x,
         y: capsule.shell.y,
+        prevX: capsule.shell.x,
+        prevY: capsule.shell.y,
         width: wallThickness,
         height: capsule.entryDoor.y - capsule.shell.y,
         vx: 0,
@@ -734,6 +748,8 @@ const createSolidSurfaceList = (runtime: StageRuntime): SolidSurface[] => [
         kind: 'gravityCapsuleWall',
         x: capsule.shell.x,
         y: capsule.entryDoor.y + capsule.entryDoor.height,
+        prevX: capsule.shell.x,
+        prevY: capsule.entryDoor.y + capsule.entryDoor.height,
         width: wallThickness,
         height: shellBottom - (capsule.entryDoor.y + capsule.entryDoor.height),
         vx: 0,
@@ -745,6 +761,8 @@ const createSolidSurfaceList = (runtime: StageRuntime): SolidSurface[] => [
         kind: 'gravityCapsuleWall',
         x: shellRight - wallThickness,
         y: capsule.shell.y,
+        prevX: shellRight - wallThickness,
+        prevY: capsule.shell.y,
         width: wallThickness,
         height: capsule.exitDoor.y - capsule.shell.y,
         vx: 0,
@@ -756,6 +774,8 @@ const createSolidSurfaceList = (runtime: StageRuntime): SolidSurface[] => [
         kind: 'gravityCapsuleWall',
         x: shellRight - wallThickness,
         y: capsule.exitDoor.y + capsule.exitDoor.height,
+        prevX: shellRight - wallThickness,
+        prevY: capsule.exitDoor.y + capsule.exitDoor.height,
         width: wallThickness,
         height: shellBottom - (capsule.exitDoor.y + capsule.exitDoor.height),
         vx: 0,
@@ -767,6 +787,8 @@ const createSolidSurfaceList = (runtime: StageRuntime): SolidSurface[] => [
         kind: 'gravityCapsuleWall',
         x: capsule.shell.x,
         y: shellBottom - wallThickness,
+        prevX: capsule.shell.x,
+        prevY: shellBottom - wallThickness,
         width: capsule.shell.width,
         height: wallThickness,
         vx: 0,
@@ -1076,8 +1098,10 @@ export class GameSession {
         ? this.findSupportingTerrainPlatform(supportSurface.platform.id, player.x, player.y)
         : null;
     if (supportSurface && (wasOnGround || hadSupportAtFrameStart)) {
-        const priorSupportX = supportSurface.x - supportSurface.vx * deltaSec;
-        const priorSupportY = supportSurface.y - supportSurface.vy * deltaSec;
+      const priorSupportX = supportSurface.prevX;
+      const priorSupportY = supportSurface.prevY;
+      const platformFrameDeltaX = supportSurface.x - supportSurface.prevX;
+      const platformFrameDeltaY = supportSurface.y - supportSurface.prevY;
         const wasSupportedBeforePlatformMotion =
           Math.abs(player.y + player.height - priorSupportY) <= 8 &&
           player.x + player.width > priorSupportX + 6 &&
@@ -1093,17 +1117,19 @@ export class GameSession {
         player.x < supportSurface.x + supportSurface.width - 6;
 
       if (stillSupported) {
-        player.x = clamp(player.x + supportSurface.vx * deltaSec, 0, stage.world.width - player.width);
-        player.y += supportSurface.vy * deltaSec;
+        player.x = clamp(player.x + platformFrameDeltaX, 0, stage.world.width - player.width);
+        player.y += platformFrameDeltaY;
         retainedSupportSurface = supportSurface;
       } else {
-          const supportMovedAwayThisFrame =
+        const platformActuallyMoved =
+          Math.abs(platformFrameDeltaX) > 0.01 || Math.abs(platformFrameDeltaY) > 0.01;
+        const supportMovedAwayThisFrame =
           wasSupportedBeforePlatformMotion &&
           wouldRemainSupportedWithoutSupportMotion &&
-          (Math.abs(supportSurface.vx) > 0 || Math.abs(supportSurface.vy) > 0);
-          if (supportMovedAwayThisFrame) {
-            detachFrameHorizontalCollisionExemptSurfaceId = supportSurface.id;
-          }
+          platformActuallyMoved;
+        if (supportMovedAwayThisFrame) {
+          detachFrameHorizontalCollisionExemptSurfaceId = supportSurface.id;
+        }
         player.supportPlatformId = null;
         detachedFromSupportThisFrame = true;
       }
@@ -1464,7 +1490,9 @@ export class GameSession {
 
   private updatePlatforms(deltaMs: number, deltaSec: number): void {
     for (const platform of this.snapshot.stageRuntime.platforms) {
-      const previousRect = { x: platform.x, y: platform.y, width: platform.width, height: platform.height };
+      platform.prevX = platform.x;
+      platform.prevY = platform.y;
+      const previousRect = { x: platform.prevX, y: platform.prevY, width: platform.width, height: platform.height };
       platform.vx = 0;
       platform.vy = 0;
 
@@ -2922,6 +2950,8 @@ export class GameSession {
             : undefined,
         x: platform.x,
         y: platform.y,
+        prevX: platform.x,
+        prevY: platform.y,
         width: platform.width,
         height: platform.height,
         startX: platform.x,
