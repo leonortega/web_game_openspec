@@ -313,6 +313,7 @@ export type PlayerState = {
   gravityScale: number;
   suppressPresentation: boolean;
   dead: boolean;
+  _machine?: any; // Internal: XState machine instance
 };
 
 export type StageRuntime = {
@@ -416,6 +417,47 @@ export const PLAYER_POWER_VARIANTS: Record<'base' | PowerType, PlayerPowerVarian
     auraColor: null,
   },
 };
+
+/**
+ * Creates a proxy wrapper around PlayerState that intercepts reads of `dead` and `onGround`
+ * to derive them from the XState machine state instead of stored boolean values.
+ * This provides backwards compatibility while using the machine as the source of truth.
+ * 
+ * These properties are READ-ONLY via the proxy. State changes must go through the machine
+ * by sending events (GROUND_CONTACT, LEAVE_GROUND, DAMAGE_TAKEN leading to death).
+ */
+export function createPlayerStateWithMachine(
+  baseState: PlayerState,
+  machineActor: any
+): PlayerState {
+  return new Proxy(baseState, {
+    get(target, prop) {
+      if (prop === 'dead') {
+        const snapshot = machineActor.getSnapshot?.() || machineActor.state;
+        return snapshot?.matches?.('dead') ?? false;
+      }
+      if (prop === 'onGround') {
+        const snapshot = machineActor.getSnapshot?.() || machineActor.state;
+        return (snapshot?.matches?.('idle') || snapshot?.matches?.('run')) ?? false;
+      }
+      return Reflect.get(target, prop);
+    },
+    set(target, prop, value) {
+      if (prop === 'onGround' || prop === 'dead') {
+        const nextValue = Boolean(value);
+        if (prop === 'onGround') {
+          machineActor.send?.({ type: nextValue ? 'GROUND_CONTACT' : 'LEAVE_GROUND' });
+        } else {
+          machineActor.send?.({ type: nextValue ? 'DAMAGE_TAKEN' : 'RESPAWN' });
+        }
+        return true;
+      }
+      
+      // Allow normal property writes for all other properties
+      return Reflect.set(target, prop, value);
+    },
+  });
+}
 
 export const DIFFICULTY_LABELS: Record<DifficultySetting, string> = {
   casual: 'Casual',

@@ -14,6 +14,8 @@ import {
 import type { InputState } from '../input/actions';
 import { AUDIO_CUES, type AudioCue } from '../../audio/audioContract';
 import { clamp } from './math';
+import { playerStateMachine, type PlayerStateMachineActor } from './playerStateMachine';
+import { createActor } from 'xstate';
 import {
   BRITTLE_READY_BREAK_DELAY_MS,
   BRITTLE_WARNING_MS,
@@ -23,6 +25,7 @@ import {
   createDefaultPowerTimers,
   createDefaultRunSettings,
   createDefaultSessionProgress,
+  createPlayerStateWithMachine,
   getAllCollectiblesRecoveredMessage,
   getCheckpointActivatedMessage,
   getPowerGainMessage,
@@ -922,6 +925,8 @@ const findEnabledGravityCapsuleAtPoint = (
 export class GameSession {
   private snapshot: SessionSnapshot;
 
+  private playerActor: PlayerStateMachineActor;
+
   private cues: AudioCue[] = [];
 
   private cameraViewBox: Rect | null = null;
@@ -931,6 +936,8 @@ export class GameSession {
   private checkpointRevealIds: string[] = [];
 
   constructor() {
+    this.playerActor = createActor(playerStateMachine);
+    this.playerActor.start();
     this.snapshot = this.createSnapshot(0, createDefaultSessionProgress());
   }
 
@@ -1009,11 +1016,29 @@ export class GameSession {
     this.setCameraViewBox(viewBox);
   }
 
+  private syncPlayerContextToMachine(moveDir: -1 | 0 | 1 = 0): void {
+    const { player } = this.snapshot;
+    this.playerActor.send({
+      type: 'SYNC_PHYSICS',
+      onGround: player.onGround,
+      vy: player.vy,
+      coyoteMs: player.coyoteMs,
+      airJumpsRemaining: player.airJumpsRemaining,
+      dashCooldownMs: player.dashCooldownMs,
+      health: player.health,
+      maxHealth: player.maxHealth,
+      moveDir,
+    });
+  }
+
   update(deltaMs: number, input: InputState): void {
     const deltaSec = deltaMs / 1000;
     const { player, stage, stageRuntime } = this.snapshot;
     const wasOnGround = player.onGround;
+    const hadSupportAtFrameStart = player.supportPlatformId != null;
+    const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0);
 
+    this.syncPlayerContextToMachine(direction as -1 | 0 | 1);
     this.snapshot.levelJustCompleted = false;
     this.updateMessageTimer(deltaMs);
     this.updatePowerTimers(deltaMs);
@@ -1045,11 +1070,12 @@ export class GameSession {
     const supportSurface = player.supportPlatformId ? this.findSupportSurface(player.supportPlatformId) : null;
     let retainedSupportSurface: SolidSurface | null = null;
     let detachFrameHorizontalCollisionExemptSurfaceId: string | null = null;
+    let detachedFromSupportThisFrame = false;
     const supportTerrainPlatform =
       supportSurface?.kind === 'platform'
         ? this.findSupportingTerrainPlatform(supportSurface.platform.id, player.x, player.y)
         : null;
-    if (supportSurface && player.onGround) {
+    if (supportSurface && (wasOnGround || hadSupportAtFrameStart)) {
         const priorSupportX = supportSurface.x - supportSurface.vx * deltaSec;
         const priorSupportY = supportSurface.y - supportSurface.vy * deltaSec;
         const wasSupportedBeforePlatformMotion =
@@ -1078,24 +1104,31 @@ export class GameSession {
           if (supportMovedAwayThisFrame) {
             detachFrameHorizontalCollisionExemptSurfaceId = supportSurface.id;
           }
-        player.onGround = false;
         player.supportPlatformId = null;
+        detachedFromSupportThisFrame = true;
       }
     }
 
     if (player.invulnerableMs > 0) {
       player.invulnerableMs = Math.max(0, player.invulnerableMs - deltaMs);
+      if (player.invulnerableMs <= 0) {
+        this.playerActor.send({ type: 'INVULNERABILITY_EXPIRED' });
+      }
     }
+    const wasDashing = player.dashTimerMs > 0;
     player.dashCooldownMs = Math.max(0, player.dashCooldownMs - deltaMs);
     player.dashTimerMs = Math.max(0, player.dashTimerMs - deltaMs);
+    if (wasDashing && player.dashTimerMs <= 0) {
+      this.playerActor.send({ type: 'DASH_END' });
+    }
     player.shootCooldownMs = Math.max(0, player.shootCooldownMs - deltaMs);
     player.thrusterPulseCooldownMs = Math.max(0, player.thrusterPulseCooldownMs - deltaMs);
     player.thrusterImpactWindowMs = Math.max(0, player.thrusterImpactWindowMs - deltaMs);
 
-    const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     if (direction !== 0) {
       player.facing = direction > 0 ? 1 : -1;
     }
+    this.playerActor.send({ type: 'MOVE_INPUT', dir: (direction as -1 | 0 | 1) });
 
     if (input.shootPressed && this.snapshot.progress.activePowers.shooter && player.shootCooldownMs <= 0) {
       player.shootCooldownMs = SHOOT_COOLDOWN_MS;
@@ -1113,6 +1146,7 @@ export class GameSession {
     }
 
     if (input.dashPressed && this.snapshot.progress.activePowers.dash && player.dashCooldownMs <= 0) {
+      this.playerActor.send({ type: 'DASH_INPUT' });
       player.dashTimerMs = DASH_DURATION_MS;
       player.dashCooldownMs = DASH_COOLDOWN_MS;
       player.vx = player.facing * DASH_SPEED;
@@ -1122,24 +1156,25 @@ export class GameSession {
     }
 
     if (player.dashTimerMs <= 0) {
-      const groundedOnSticky = player.onGround && supportTerrainPlatform?.surfaceMechanic?.kind === 'stickySludge';
+      const groundedForMotion = hadSupportAtFrameStart && !detachedFromSupportThisFrame;
+      const groundedOnSticky = groundedForMotion && supportTerrainPlatform?.surfaceMechanic?.kind === 'stickySludge';
       const groundAccel = groundedOnSticky ? GROUND_ACCEL * SLUDGE_GROUND_ACCEL_MULTIPLIER : GROUND_ACCEL;
       const groundMaxSpeed = groundedOnSticky ? MAX_MOVE_SPEED * SLUDGE_MAX_SPEED_MULTIPLIER : MAX_MOVE_SPEED;
-      const accel = player.onGround ? groundAccel : AIR_ACCEL;
+      const accel = groundedForMotion ? groundAccel : AIR_ACCEL;
       if (direction !== 0) {
         player.vx = clamp(
           player.vx + direction * accel * deltaSec,
-          player.onGround ? -groundMaxSpeed : -MAX_MOVE_SPEED,
-          player.onGround ? groundMaxSpeed : MAX_MOVE_SPEED,
+          groundedForMotion ? -groundMaxSpeed : -MAX_MOVE_SPEED,
+          groundedForMotion ? groundMaxSpeed : MAX_MOVE_SPEED,
         );
-      } else if (player.onGround) {
+      } else if (groundedForMotion) {
         const drag = Math.min(Math.abs(player.vx), groundAccel * deltaSec);
         player.vx -= Math.sign(player.vx) * drag;
       }
 
       const ceilingSupport = this.findActiveGravityRoomCeilingSupport();
 
-      if (player.onGround) {
+      if (groundedForMotion) {
         player.coyoteMs = COYOTE_TIME_MS;
         player.airJumpsRemaining = this.snapshot.progress.activePowers.doubleJump ? 1 : 0;
         player.thrusterPulseFuel = THRUSTER_PULSE_MAX_FUEL;
@@ -1147,28 +1182,35 @@ export class GameSession {
         player.coyoteMs = COYOTE_TIME_MS;
       } else {
         player.coyoteMs = Math.max(0, player.coyoteMs - deltaMs);
+        if (player.vy === 0 && player.thrusterPulseCooldownMs <= 0) {
+          player.thrusterPulseFuel = THRUSTER_PULSE_MAX_FUEL;
+        }
       }
 
-      const supportedGravityCapsule = player.onGround ? this.findSupportedPlayerGravityCapsule() : null;
+      const supportedGravityCapsule = player.supportPlatformId ? this.findSupportedPlayerGravityCapsule() : null;
       if (supportedGravityCapsule && player.supportPlatformId) {
         player.jumpSourceGravityCapsuleId = supportedGravityCapsule.id;
         player.jumpSourceSupportPlatformId = player.supportPlatformId;
       } else if (ceilingSupport) {
         player.jumpSourceGravityCapsuleId = ceilingSupport.capsule.id;
         player.jumpSourceSupportPlatformId = ceilingSupport.phaseThroughSupportPlatformId;
-      } else if (player.onGround || player.coyoteMs <= 0) {
+      } else if (groundedForMotion || player.coyoteMs <= 0) {
         player.jumpSourceGravityCapsuleId = null;
         player.jumpSourceSupportPlatformId = null;
       }
 
       const wantsCeilingHeldJump = Boolean(ceilingSupport && input.jumpHeld && player.vy === 0);
-      player.jumpBufferMs = input.jumpPressed || wantsCeilingHeldJump ? JUMP_BUFFER_MS : Math.max(0, player.jumpBufferMs - deltaMs);
+      const jumpInputTriggered = input.jumpPressed || wantsCeilingHeldJump;
+      if (jumpInputTriggered) {
+        this.playerActor.send({ type: 'JUMP_INPUT' });
+      }
+      player.jumpBufferMs = jumpInputTriggered ? JUMP_BUFFER_MS : Math.max(0, player.jumpBufferMs - deltaMs);
       if (player.jumpBufferMs > 0) {
         if (player.coyoteMs > 0) {
           this.startSupportedPlayerJump(AUDIO_CUES.jump);
         } else if (this.snapshot.progress.activePowers.doubleJump && player.airJumpsRemaining > 0) {
+          this.playerActor.send({ type: 'JUMP_INPUT' });
           player.vy = -JUMP_SPEED;
-          player.onGround = false;
           player.supportPlatformId = null;
           player.phaseThroughSupportPlatformId = null;
           player.airJumpsRemaining -= 1;
@@ -1179,7 +1221,7 @@ export class GameSession {
 
       if (
         input.thrusterPressed &&
-        !player.onGround &&
+        !groundedForMotion &&
         player.thrusterPulseCooldownMs <= 0 &&
         player.thrusterPulseFuel > 0
       ) {
@@ -1197,7 +1239,6 @@ export class GameSession {
     } else {
       player.vx = player.facing * DASH_SPEED;
       player.vy = 0;
-      player.onGround = false;
       player.lowGravityZoneId = null;
       player.gravityFieldId = null;
       player.gravityFieldKind = null;
@@ -1230,8 +1271,8 @@ export class GameSession {
     }
 
     nextY += player.vy * deltaSec;
-    player.onGround = false;
-    player.supportPlatformId = null;
+    // Don't mutate player.onGround directly - it's read-only via proxy
+    // Instead track ridingSurface to determine ground state
     let ridingSurface: SolidSurface | null = null;
     const verticalRect: Rect = { x: nextX, y: nextY, width: player.width, height: player.height };
     for (const surface of solidSurfaces) {
@@ -1256,9 +1297,8 @@ export class GameSession {
           continue;
         }
         nextY = surface.y - player.height;
-        player.onGround = true;
-        player.supportPlatformId = surface.id;
         ridingSurface = surface;
+        player.supportPlatformId = surface.id;
         this.armBrittlePlatform(terrainPlatform);
       } else if (player.vy < 0) {
         nextY = surface.y + surface.height;
@@ -1270,11 +1310,38 @@ export class GameSession {
       break;
     }
 
-    if (!player.onGround && player.vy === 0 && wasOnGround && retainedSupportSurface) {
+    if (!ridingSurface && player.vy === 0) {
+      for (const surface of solidSurfaces) {
+        if (surface.id === player.phaseThroughSupportPlatformId) {
+          continue;
+        }
+        if (surface.kind === 'platform' && isTopSurfaceOnlyPlatform(surface.platform) && player.y + player.height > surface.y + 1) {
+          continue;
+        }
+        const horizontalOverlap = nextX + player.width > surface.x + 6 && nextX < surface.x + surface.width - 6;
+        const touchingTop = Math.abs(player.y + player.height - surface.y) <= TERRAIN_SURFACE_TOP_EPSILON;
+        if (!horizontalOverlap || !touchingTop) {
+          continue;
+        }
+        const terrainPlatform =
+          surface.kind === 'platform'
+            ? this.findSupportingTerrainPlatform(surface.id, nextX, surface.y - player.height)
+            : null;
+        if (terrainPlatform && !isPlatformTerrainSupportActive(terrainPlatform)) {
+          continue;
+        }
+        nextY = surface.y - player.height;
+        ridingSurface = surface;
+        player.supportPlatformId = surface.id;
+        this.armBrittlePlatform(terrainPlatform);
+        break;
+      }
+    }
+
+    if (!ridingSurface && player.vy === 0 && wasOnGround && retainedSupportSurface) {
       nextY = retainedSupportSurface.y - player.height;
-      player.onGround = true;
-      player.supportPlatformId = retainedSupportSurface.id;
       ridingSurface = retainedSupportSurface;
+      player.supportPlatformId = retainedSupportSurface.id;
     }
 
     player.x = clamp(nextX, 0, stage.world.width - player.width);
@@ -1285,6 +1352,22 @@ export class GameSession {
         player.phaseThroughSupportPlatformId = null;
       }
     }
+
+    if (ridingSurface) {
+      if (!wasOnGround) {
+        this.playerActor.send({ type: 'GROUND_CONTACT' });
+        this.emitCue(AUDIO_CUES.land);
+      }
+      player.coyoteMs = COYOTE_TIME_MS;
+      player.airJumpsRemaining = this.snapshot.progress.activePowers.doubleJump ? 1 : 0;
+      player.thrusterPulseFuel = THRUSTER_PULSE_MAX_FUEL;
+    } else if (wasOnGround) {
+      this.playerActor.send({ type: 'LEAVE_GROUND' });
+      if (hadSupportAtFrameStart && !detachedFromSupportThisFrame) {
+        player.coyoteMs = Math.max(0, player.coyoteMs - deltaMs);
+      }
+    }
+
     this.handleActivationNodes();
     this.handleGravityCapsules();
     this.handleScannerVolumes();
@@ -1299,12 +1382,6 @@ export class GameSession {
           : null;
     this.updateTerrainVariantPlatforms(deltaMs);
     this.updateFallingPlatformContactTiming(deltaMs);
-
-    if (ridingSurface) {
-      if (!wasOnGround) {
-        this.emitCue(AUDIO_CUES.land);
-      }
-    }
 
     if (!contactedSpringPlatform) {
       player.springContactPlatformId = null;
@@ -1322,7 +1399,6 @@ export class GameSession {
       ) {
         contactedSpringPlatform.spring.timerMs = contactedSpringPlatform.spring.cooldownMs;
         player.vy = -contactedSpringPlatform.spring.boost;
-        player.onGround = false;
         player.supportPlatformId = null;
         player.phaseThroughSupportPlatformId = null;
         this.emitCue(AUDIO_CUES.spring);
@@ -1337,6 +1413,13 @@ export class GameSession {
     this.handleHazards();
     this.handleEnemyInteractions();
     this.handleExit();
+
+    if (Object.is(player.vx, -0)) {
+      player.vx = 0;
+    }
+    if (Object.is(player.vy, -0)) {
+      player.vy = 0;
+    }
   }
 
   private updateMessageTimer(deltaMs: number): void {
@@ -1445,7 +1528,7 @@ export class GameSession {
   }
 
   private updateFallingPlatformContactTiming(deltaMs: number): void {
-    const supportedPlatformId = this.snapshot.player.onGround ? this.snapshot.player.supportPlatformId : null;
+    const supportedPlatformId = this.snapshot.player.supportPlatformId;
 
     for (const platform of this.snapshot.stageRuntime.platforms) {
       if (platform.kind !== 'falling' || !platform.fall || platform.fall.falling) {
@@ -1503,7 +1586,7 @@ export class GameSession {
         continue;
       }
 
-      if (player.onGround && player.supportPlatformId === bridge.id) {
+      if (player.supportPlatformId === bridge.id) {
         bridge.pendingHide = true;
         continue;
       }
@@ -1515,7 +1598,7 @@ export class GameSession {
 
   private updateTerrainVariantPlatforms(deltaMs: number): void {
     const { player, stageRuntime } = this.snapshot;
-    const supportedPlatformId = player.onGround ? player.supportPlatformId : null;
+    const supportedPlatformId = player.supportPlatformId;
 
     for (const platform of stageRuntime.platforms) {
       if (platform.surfaceMechanic?.kind !== 'brittleCrystal' || !platform.brittle) {
@@ -1596,7 +1679,7 @@ export class GameSession {
         continue;
       }
 
-      if (player.onGround && player.supportPlatformId === bridge.id) {
+      if (player.supportPlatformId === bridge.id) {
         continue;
       }
 
@@ -1616,7 +1699,7 @@ export class GameSession {
     }
 
     const zone = findPlayerLowGravityZone(this.snapshot.player, this.snapshot.stageRuntime.lowGravityZones);
-    const field = this.snapshot.player.onGround
+    const field = this.snapshot.player.supportPlatformId
       ? null
       : findPlayerGravityField(
           this.snapshot.player,
@@ -1631,7 +1714,7 @@ export class GameSession {
 
   private findSupportedPlayerGravityCapsule(): GravityCapsuleState | null {
     const { player, stageRuntime } = this.snapshot;
-    if (!player.onGround || !player.supportPlatformId) {
+    if (!player.supportPlatformId) {
       return null;
     }
 
@@ -1646,7 +1729,7 @@ export class GameSession {
 
   private findActiveGravityRoomCeilingSupport(): { capsule: GravityCapsuleState; phaseThroughSupportPlatformId: string | null } | null {
     const { player, stageRuntime } = this.snapshot;
-    if (player.onGround || player.vy > 0) {
+    if (player.supportPlatformId || player.vy > 0) {
       return null;
     }
 
@@ -1727,7 +1810,6 @@ export class GameSession {
     const { player } = this.snapshot;
     const takeoff = this.resolveSupportedPlayerJumpTakeoff();
     player.vy = takeoff.velocityY;
-    player.onGround = false;
     player.supportPlatformId = null;
     player.phaseThroughSupportPlatformId = takeoff.phaseThroughSupportPlatformId;
     player.coyoteMs = 0;
@@ -1943,6 +2025,7 @@ export class GameSession {
             enemy.charger.state = 'windup';
             enemy.charger.timerMs = enemy.charger.windupMs;
             enemy.vx = 0;
+            emitVisibleCue(AUDIO_CUES.danger);
             emitVisibleCue(AUDIO_CUES.chargerWindup);
           }
         } else if (enemy.charger.state === 'windup') {
@@ -2230,7 +2313,6 @@ export class GameSession {
         this.defeatEnemy(enemy, 'thruster-impact', AUDIO_CUES.thrusterImpact);
         player.vy = -THRUSTER_IMPACT_REBOUND;
         player.thrusterImpactWindowMs = 0;
-        player.onGround = false;
         player.supportPlatformId = null;
       } else {
         this.damagePlayer();
@@ -2356,7 +2438,6 @@ export class GameSession {
     player.vy = 0;
     player.dashTimerMs = 0;
     player.jumpBufferMs = 0;
-    player.onGround = false;
     player.supportPlatformId = null;
     player.jumpSourceGravityCapsuleId = null;
     player.jumpSourceSupportPlatformId = null;
@@ -2390,6 +2471,8 @@ export class GameSession {
       player.invulnerableMs = INVULNERABLE_MS;
       player.vy = -260;
       player.vx = player.facing === 1 ? -180 : 180;
+      this.syncPlayerContextToMachine();
+      this.playerActor.send({ type: 'DAMAGE_TAKEN', knockbackVx: player.vx });
       this.emitCue(AUDIO_CUES.hurt);
       return;
     }
@@ -2398,10 +2481,12 @@ export class GameSession {
     player.invulnerableMs = INVULNERABLE_MS;
     player.vy = -260;
     player.vx = player.facing === 1 ? -180 : 180;
-    this.clearActivePowers();
     if (player.health <= 0) {
       this.killPlayer();
     } else {
+      this.syncPlayerContextToMachine();
+      this.playerActor.send({ type: 'DAMAGE_TAKEN', knockbackVx: player.vx });
+      this.clearActivePowers();
       this.emitCue(AUDIO_CUES.hurt);
     }
   }
@@ -2413,7 +2498,11 @@ export class GameSession {
     }
 
     this.clearActivePowers();
-    player.dead = true;
+    // Force health to 0 so isHealthZero guard is satisfied regardless of call site
+    // (e.g. pit deaths bypass damagePlayer and never decrement health first)
+    player.health = 0;
+    this.syncPlayerContextToMachine();
+    this.playerActor.send({ type: 'DAMAGE_TAKEN' }); // Triggers dead transition via guard
     this.snapshot.respawnTimerMs = RESPAWN_DELAY_MS;
     this.emitCue(AUDIO_CUES.death);
   }
@@ -2430,6 +2519,7 @@ export class GameSession {
 
   private respawnPlayer(): void {
     const { progress, stageIndex } = this.snapshot;
+    this.playerActor.send({ type: 'RESPAWN' });
     this.snapshot = this.createSnapshot(
       stageIndex,
       cloneProgress(progress),
@@ -3002,11 +3092,14 @@ export class GameSession {
     };
     const objective = createStageObjectiveState(stage, checkpointRestore?.objectiveCompleted ?? false);
 
+    // Wrap player state with machine proxy for state derivation
+    const wrappedPlayer = createPlayerStateWithMachine(player, this.playerActor);
+
     return {
       stageIndex,
       stage,
       currentSegmentId: stage.segments[0]?.id ?? 'stage',
-      player,
+      player: wrappedPlayer,
       progress: normalizedProgress,
       activeCheckpointId,
       stageStartCoins: progress.totalCoins,

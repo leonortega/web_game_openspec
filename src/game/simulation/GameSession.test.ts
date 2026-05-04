@@ -56,7 +56,6 @@ const placePlayerAbovePlatform = (state: any, platform: any, vy = 160) => {
   state.player.y = platform.y - state.player.height - 1;
   state.player.vx = 0;
   state.player.vy = vy;
-  state.player.onGround = false;
   state.player.supportPlatformId = null;
 };
 
@@ -65,7 +64,6 @@ const placePlayerPastPlatformEdge = (state: any, platform: any) => {
   state.player.y = platform.y - state.player.height - 1;
   state.player.vx = 0;
   state.player.vy = 0;
-  state.player.onGround = false;
   state.player.supportPlatformId = null;
 };
 
@@ -140,7 +138,6 @@ const placePlayerInsideField = (state: any, field: any, vy = 0) => {
   state.player.y = field.y + Math.min(field.height - state.player.height, 56);
   state.player.vx = 0;
   state.player.vy = vy;
-  state.player.onGround = false;
   state.player.supportPlatformId = null;
 };
 
@@ -149,7 +146,6 @@ const placePlayerInsideCapsuleNearLeftWall = (state: any, capsule: any, vy = 0) 
   state.player.y = capsule.shell.y + 40;
   state.player.vx = 0;
   state.player.vy = vy;
-  state.player.onGround = false;
   state.player.supportPlatformId = null;
 };
 
@@ -176,7 +172,6 @@ const touchGravityCapsuleButton = (state: any, capsule: any) => {
   state.player.y = supportPlatform.y - state.player.height;
   state.player.vx = 0;
   state.player.vy = 0;
-  state.player.onGround = true;
   state.player.supportPlatformId = supportPlatform.id;
 };
 
@@ -310,7 +305,6 @@ const placePlayerOnSupportedPlatform = (state: any, platform: any) => {
   state.player.y = platform.y - state.player.height;
   state.player.vx = 0;
   state.player.vy = 0;
-  state.player.onGround = true;
   state.player.supportPlatformId = platform.id;
 };
 
@@ -319,7 +313,6 @@ const placePlayerOffPlatformSupport = (state: any, platform: any) => {
   state.player.y = platform.y - state.player.height - 1;
   state.player.vx = 0;
   state.player.vy = 0;
-  state.player.onGround = false;
   state.player.supportPlatformId = null;
 };
 
@@ -396,7 +389,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = activationNode.y + 2;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
 
     session.update(16, defaultInputState());
@@ -426,7 +418,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = activationNode.y + 2;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
     session.update(16, defaultInputState());
 
@@ -434,7 +425,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = platform.y - state.player.height - 2;
     state.player.vx = 0;
     state.player.vy = 320;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
     advanceSession(session, 32, 16);
 
@@ -446,7 +436,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = platform.y - state.player.height + 8;
     state.player.vx = 180;
     state.player.vy = 0;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
     session.update(16, defaultInputState());
 
@@ -456,7 +445,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = platform.y + platform.height + 2;
     state.player.vx = 0;
     state.player.vy = -220;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
     session.update(16, defaultInputState());
 
@@ -837,7 +825,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = enemy.y - state.player.height - 2;
     state.player.vx = 0;
     state.player.vy = 320;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
 
     session.update(16, { ...defaultInputState(), thrusterPressed: true });
@@ -867,7 +854,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = enemy.y - state.player.height - 2;
     state.player.vx = 0;
     state.player.vy = 320;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
 
     session.update(16, defaultInputState());
@@ -882,7 +868,6 @@ describe('GameSession regression coverage', () => {
 
     state.stageRuntime.enemies = [];
     state.stageRuntime.hazards = [];
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
     state.player.y = 100;
     state.player.vy = 0;
@@ -901,7 +886,6 @@ describe('GameSession regression coverage', () => {
     session.update(16, { ...defaultInputState(), thrusterPressed: true });
     expect(state.player.thrusterPulseFuel).toBe(0);
 
-    state.player.onGround = true;
     state.player.vy = 0;
     session.update(16, defaultInputState());
     expect(state.player.thrusterPulseFuel).toBe(2);
@@ -1116,7 +1100,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = activationNode.y + 2;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
     session.update(16, defaultInputState());
 
@@ -1130,7 +1113,6 @@ describe('GameSession regression coverage', () => {
     revealState.player.y = revealVolume.y + 8;
     revealState.player.vx = 0;
     revealState.player.vy = 0;
-    revealState.player.onGround = false;
     revealState.player.supportPlatformId = null;
     session.update(16, defaultInputState());
 
@@ -1599,7 +1581,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = bridgePlatform.y - state.player.height;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = bridge.id;
 
     session.update(16, defaultInputState());
@@ -1611,7 +1592,6 @@ describe('GameSession regression coverage', () => {
 
     state.player.x = bridgePlatform.x + bridgePlatform.width + 36;
     state.player.y = bridgePlatform.y - state.player.height;
-    state.player.onGround = true;
     state.player.supportPlatformId = bridge.id;
     session.update(16, defaultInputState());
 
@@ -1760,7 +1740,6 @@ describe('GameSession regression coverage', () => {
     ];
     state.player.x = support.x + 24;
     state.player.y = support.y - state.player.height;
-    state.player.onGround = true;
     state.player.supportPlatformId = support.id;
 
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
@@ -1772,7 +1751,6 @@ describe('GameSession regression coverage', () => {
     next.progress.activePowers.dash = true;
     next.player.x = support.x + 30;
     next.player.y = support.y - 120;
-    next.player.onGround = false;
     next.player.supportPlatformId = null;
     next.player.vy = 90;
     session.update(16, { ...defaultInputState(), dashPressed: true });
@@ -1816,7 +1794,6 @@ describe('GameSession regression coverage', () => {
     ];
     state.player.x = support.x + 24;
     state.player.y = support.y - state.player.height;
-    state.player.onGround = true;
     state.player.supportPlatformId = support.id;
 
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
@@ -1830,7 +1807,6 @@ describe('GameSession regression coverage', () => {
     next.progress.activePowers.dash = true;
     next.player.x = support.x + 30;
     next.player.y = support.y - 120;
-    next.player.onGround = false;
     next.player.supportPlatformId = null;
     next.player.vy = 90;
     session.update(16, { ...defaultInputState(), dashPressed: true });
@@ -1843,7 +1819,6 @@ describe('GameSession regression coverage', () => {
 
     next.player.dashTimerMs = 0;
     next.player.vy = 0;
-    next.player.onGround = false;
     next.player.supportPlatformId = null;
     session.update(16, defaultInputState());
 
@@ -1864,7 +1839,6 @@ describe('GameSession regression coverage', () => {
     next.player.y = support.y - 120;
     next.player.vx = 0;
     next.player.vy = 0;
-    next.player.onGround = false;
     next.player.supportPlatformId = null;
     session.update(16, defaultInputState());
 
@@ -1913,7 +1887,6 @@ describe('GameSession regression coverage', () => {
     ];
     state.player.x = fallingPlatform.x + 28;
     state.player.y = fallingPlatform.y - state.player.height;
-    state.player.onGround = true;
     state.player.supportPlatformId = fallingPlatform.id;
 
     session.update(16, defaultInputState());
@@ -2093,7 +2066,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = shellBottom + 2;
     state.player.vx = 0;
     state.player.vy = -400;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
     session.update(16, defaultInputState());
 
@@ -2105,7 +2077,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = capsule.entryDoor.y + capsule.entryDoor.height / 2 - state.player.height / 2;
     state.player.vx = 420;
     state.player.vy = 0;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
     advanceSession(session, 96);
 
@@ -2117,7 +2088,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = capsule.exitDoor.y + capsule.exitDoor.height / 2 - state.player.height / 2;
     state.player.vx = 420;
     state.player.vy = 0;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
     advanceSession(session, 96);
 
@@ -2423,7 +2393,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = support.y - state.player.height + 8;
     state.player.vx = 1;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = support.id;
 
     session.update(16, defaultInputState());
@@ -2446,7 +2415,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = support.y - state.player.height + 8;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = support.id;
 
     session.update(16, { ...defaultInputState(), right: true });
@@ -2472,7 +2440,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = support.y - state.player.height - 4;
     state.player.vx = 400;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = support.id;
 
     session.update(16, defaultInputState());
@@ -2497,7 +2464,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = support.y - state.player.height - 4;
     state.player.vx = 400;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = support.id;
 
     session.update(16, defaultInputState());
@@ -2518,7 +2484,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = support.y - state.player.height + 8;
     state.player.vx = 1;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = support.id;
 
     session.update(16, defaultInputState());
@@ -2529,7 +2494,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = support.y - state.player.height + 8;
     state.player.vx = 260;
     state.player.vy = 0;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
 
     session.update(16, defaultInputState());
@@ -2549,7 +2513,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = support.y - state.player.height + 8;
     state.player.vx = -180;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = support.id;
 
     session.update(16, defaultInputState());
@@ -2570,7 +2533,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = support.y - state.player.height + 8;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = support.id;
     state.player.coyoteMs = 120;
 
@@ -2691,7 +2653,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = buttonSupport.y - state.player.height;
     state.player.vx = 180;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = buttonSupport.id;
 
     session.update(16, { ...defaultInputState(), right: true, jumpHeld: true, jumpPressed: true });
@@ -2816,7 +2777,6 @@ describe('GameSession regression coverage', () => {
   state.player.y = stickyPlatform.y - state.player.height;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = true;
   state.player.supportPlatformId = stickyPlatform.id;
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
 
@@ -2839,7 +2799,6 @@ describe('GameSession regression coverage', () => {
     ];
     state.player.x = fallingPlatform.x + 28;
     state.player.y = fallingPlatform.y - state.player.height;
-    state.player.onGround = true;
     state.player.supportPlatformId = fallingPlatform.id;
 
     session.update(16, defaultInputState());
@@ -2965,7 +2924,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = support.y - state.player.height;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = support.id;
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
 
@@ -3004,12 +2962,10 @@ describe('GameSession regression coverage', () => {
     state.player.y = coyoteSupport.y - state.player.height;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = coyoteSupport.id;
     session.update(16, defaultInputState());
 
     state = getMutableState(session);
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
     state.player.y -= 6;
     state.player.vy = 0;
@@ -3039,7 +2995,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = ceilingSupport.y + ceilingSupport.height + 2;
     state.player.vx = 0;
     state.player.vy = -120;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
 
     session.update(16, defaultInputState());
@@ -3075,7 +3030,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = ceilingSupport.y + ceilingSupport.height + 12;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
 
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
@@ -3102,7 +3056,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = ceilingSupport.y + ceilingSupport.height + 2;
     state.player.vx = 0;
     state.player.vy = -120;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
 
     session.update(16, { ...defaultInputState(), jumpHeld: true });
@@ -3125,7 +3078,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = capsule.shell.y + 4;
     state.player.vx = 0;
     state.player.vy = -120;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
 
     session.update(16, { ...defaultInputState(), jumpHeld: true });
@@ -3161,7 +3113,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = support.y - state.player.height;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = support.id;
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
 
@@ -3405,7 +3356,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = support.y - state.player.height;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = support.id;
     for (let index = 0; index < 5; index += 1) {
       session.update(16, { ...defaultInputState(), right: true });
@@ -3422,7 +3372,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = stickySupport.y - state.player.height;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = stickySupport.id;
     for (let index = 0; index < 5; index += 1) {
       session.update(16, { ...defaultInputState(), right: true });
@@ -3452,7 +3401,6 @@ describe('GameSession regression coverage', () => {
     expect(state.player.vy).toBeLessThan(0);
     expect(state.player.vy).toBeCloseTo(expectedBufferedJumpVy, 4);
 
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
     state.player.coyoteMs = 100;
     state.player.vy = 0;
@@ -3478,7 +3426,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = stickySupport.y - state.player.height;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = stickySupport.id;
     state.player.facing = 1;
     session.update(16, { ...defaultInputState(), dashPressed: true });
@@ -3507,7 +3454,6 @@ describe('GameSession regression coverage', () => {
     state.player.y = lowGravityStickySupport.y - state.player.height;
     state.player.vx = 0;
     state.player.vy = 0;
-    state.player.onGround = true;
     state.player.supportPlatformId = lowGravityStickySupport.id;
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
     state = getMutableState(session);
@@ -3618,7 +3564,6 @@ describe('GameSession regression coverage', () => {
     state.player.vy = 0;
     state.player.x = springPlatform.x + Math.min(springPlatform.width - 12, 12) - state.player.width / 2;
     state.player.y = springPlatform.y - state.player.height - 8;
-    state.player.onGround = false;
     state.player.supportPlatformId = null;
 
     session.update(16, defaultInputState());
@@ -3634,7 +3579,6 @@ describe('GameSession regression coverage', () => {
     state.player.vx = 0;
     state.player.vy = 0;
     state.player.y = springPlatform.y - state.player.height;
-    state.player.onGround = true;
     state.player.supportPlatformId = springPlatform.id;
     session.update(16, defaultInputState());
 
