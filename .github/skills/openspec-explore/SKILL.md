@@ -1,6 +1,6 @@
 ---
 name: openspec-explore
-description: Enter explore mode - a thinking partner for exploring ideas, investigating problems, and clarifying requirements. Use when the user wants to think through something before or during a change.
+description: Enter OpenSpec explore mode for the explore stage, change triage, requirement clarification, affected-spec mapping, affected-file mapping, ambiguity discovery, and change-name recommendation before proposal.
 license: MIT
 compatibility: Requires openspec CLI.
 metadata:
@@ -32,11 +32,20 @@ Enter explore mode. Think deeply. Visualize freely. Follow the conversation wher
 
 Depending on what the user brings, you might:
 
+**Check relevant local skills first**
+- Identify whether the requested change touches a domain with local repo skills or best-practice guides
+- Read the relevant skill files before drawing conclusions about requirements, design direction, or implementation touchpoints
+- Use those skills to sharpen the exploration, not to replace codebase inspection
+- If no relevant skill exists, state that clearly and continue with codebase-first exploration
+
 **Explore the problem space**
 - Ask clarifying questions that emerge from what they said
 - Challenge assumptions
 - Reframe the problem
 - Find analogies
+- Translate player-facing intent into concrete constraints before proposing implementation shape
+- Decode examples, sketches, screenshots, annotations, comparisons, and references into explicit keep/remove/move/forbid semantics when they materially affect scope
+- Identify false-positive solutions that might satisfy code, validation, or spec wording while still missing the user's intended gameplay or UX outcome
 
 **Investigate the codebase**
 - Map existing architecture relevant to the discussion
@@ -73,6 +82,13 @@ Depending on what the user brings, you might:
 - Find gaps in understanding
 - Suggest spikes or investigations
 
+**Normalize intent before formalization**
+- Separate gameplay/design intent from implementation wording
+- State what experience should change for the player, not only what geometry, code, or data should change
+- When examples or annotations are present, explain what they mean before treating them as implementation requirements
+- Capture what must stay, what must be removed, what may move, and what kinds of workaround are forbidden
+- Call out ambiguous interpretations early so proposal/apply do not lock onto a technically valid but experientially wrong solution
+
 ---
 
 ## OpenSpec Awareness
@@ -85,6 +101,8 @@ At the start, quickly check what exists:
 ```bash
 openspec list --json
 ```
+
+Also quickly check whether the request maps to any local repo skills that should inform exploration before you recommend a path.
 
 This tells you:
 - If there are active changes
@@ -108,11 +126,17 @@ If the user mentions a change or you detect one is relevant:
    - `openspec/changes/<name>/tasks.md`
    - etc.
 
-2. **Reference them naturally in conversation**
+2. **Read relevant local skills for best-practice context**
+     - Check `.github/skills/` for skills that match the requested domain or affected subsystem
+     - Read the applicable skill files before concluding on scope, risks, or recommended approach
+     - Keep note of which skills materially influenced the exploration
+
+3. **Reference them naturally in conversation**
    - "Your design mentions using Redis, but we just realized SQLite fits better..."
    - "The proposal scopes this to premium users, but we're now thinking everyone..."
+     - "The Phaser input skill changes the risk profile here because pointer handling is stricter than the current sketch assumes..."
 
-3. **Offer to capture when decisions are made**
+4. **Offer to capture when decisions are made**
 
    | Insight Type | Where to Capture |
    |--------------|------------------|
@@ -127,8 +151,9 @@ If the user mentions a change or you detect one is relevant:
    - "That's a design decision. Capture it in design.md?"
    - "This is a new requirement. Add it to specs?"
    - "This changes scope. Update the proposal?"
+     - "This screenshot implies remove/move semantics, not just new validation. Capture that before proposal?"
 
-4. **The user decides** - Offer and move on. Don't pressure. Don't auto-capture.
+5. **The user decides** - Offer and move on. Don't pressure. Don't auto-capture.
 
 ---
 
@@ -283,6 +308,8 @@ But this summary is optional. Sometimes the thinking IS the value.
 - **Don't rush** - Discovery is thinking time, not task time
 - **Don't force structure** - Let patterns emerge naturally
 - **Don't auto-capture** - Offer to save insights, don't just do it
+- **Don't collapse player intent into code intent too early** - A technically valid validator or data change can still miss requested gameplay outcome
+- **Don't ignore user-provided examples** - If sketches, screenshots, markup, or comparisons are present, interpret their meaning explicitly before recommending a path
 - **Do visualize** - A good diagram is worth many paragraphs
 - **Do explore the codebase** - Ground discussions in reality
 - **Do question assumptions** - Including the user's and your own

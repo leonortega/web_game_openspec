@@ -5,6 +5,5 @@ test_results/
 .preview.out.log
 .preview.err.log
 .playtest-*.png
-
 .DS_Store
 Thumbs.db

@@ -3,7 +3,9 @@ export type InputState = {
   right: boolean;
   jumpHeld: boolean;
   jumpPressed: boolean;
+  thrusterPressed: boolean;
   dashPressed: boolean;
+  shootPressed: boolean;
 };
 
 export const defaultInputState = (): InputState => ({
@@ -11,5 +13,7 @@ export const defaultInputState = (): InputState => ({
   right: false,
   jumpHeld: false,
   jumpPressed: false,
+  thrusterPressed: false,
   dashPressed: false,
+  shootPressed: false,
 });

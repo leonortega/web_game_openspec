@@ -1,0 +1,152 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "archive-sync-specs-contact-aware",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"$ErrorActionPreference='Stop';\n$platformFile='openspec/specs/platform-variation/spec.md';\n$playerFile='openspec/specs/player-controller/spec.md';\n$platformOld=@'\n### Requirement: Unstable platforms create timing pressure\nThe game SHALL support unstable or collapsing platforms that remain usable briefly before falling or becoming unsafe, and SHALL support brittle crystal platforms that behave as one-shot delayed-collapse static support. A falling platform MUST continue to act as valid support for grounded movement and jump initiation while the player still has top-surface contact with it. A brittle crystal platform MUST be authored as a static platform variant, MUST start its warning countdown only after first top-surface contact, MUST remain fully solid across its full authored footprint during that warning window, and MUST become broken and non-supporting across that full footprint after the warning delay unless the player is still using its top surface for support at the instant of expiry. If the warning delay expires while the player still has top-surface support contact, the brittle platform MUST remain valid support only until that support contact ends and MUST then break immediately.\n\n#### Scenario: Standing on a collapsing platform\n- **WHEN** the player lands on an unstable platform\n- **THEN** the platform gives a short readable warning before dropping or failing\n\n#### Scenario: Leaving a collapsing platform early\n- **WHEN** the player exits the unstable platform before it fails\n- **THEN** the player can continue traversal if they moved in time\n\n#### Scenario: Jumping during platform descent\n- **WHEN** the platform has started falling but the player is still standing on its top surface\n- **THEN** the player can still jump normally from that platform\n\n#### Scenario: Triggering a brittle crystal platform\n- **WHEN** the player lands on a brittle crystal platform's top surface for the first time in the current attempt\n- **THEN** the full platform shows a readable warning and remains usable during its short delay\n\n#### Scenario: Escaping a brittle crystal platform at expiry\n- **WHEN** a brittle crystal platform's warning delay expires while the player still has top-surface support contact\n- **THEN** the full platform stays solid long enough for that support contact to end\n- **AND** the full platform breaks immediately after the player leaves that support contact\n'@;\n$platformNew=@'\n### Requirement: Unstable platforms create timing pressure\nThe game SHALL support unstable or collapsing platforms that remain usable briefly before falling or becoming unsafe, and SHALL support brittle crystal platforms that behave as one-shot delayed-collapse static support. For falling-platform collapse timing, collapse progression MUST be contact-aware rather than first-touch fixed. A falling platform MUST NOT arm collapse countdown from a skim contact alone. A falling platform collapse countdown MUST arm only after the player accumulates at least 120 ms of top-surface support contact on that platform (`stayArmThresholdMs`). While unarmed, an unsupported gap of 50 ms or less (`hopGapThresholdMs`) MUST preserve that accumulated pre-arm support-contact time, and a longer unsupported gap MUST reset that pre-arm accumulation. After the falling platform is armed, remaining collapse time MUST decrease only while top-surface support contact with that platform is active. A falling platform MUST continue to act as valid support for grounded movement and jump initiation while the player still has top-surface contact with it. Brittle crystal platform behavior in this requirement remains unchanged.\n\n#### Scenario: Skimming a falling platform\n- **WHEN** the player touches a falling platform from above and leaves before accumulating 120 ms of support contact\n- **THEN** the falling platform does not arm its collapse countdown\n\n#### Scenario: Staying on a falling platform long enough to arm\n- **WHEN** the player accumulates at least 120 ms of top-surface support contact on a falling platform\n- **THEN** that platform arms its collapse countdown\n\n#### Scenario: Brief hop while preparing to arm\n- **WHEN** the player briefly loses top-surface support on an unarmed falling platform for 50 ms or less and then re-contacts it\n- **THEN** pre-arm accumulated support-contact time is preserved\n\n#### Scenario: Leaving too long before arming\n- **WHEN** the player loses top-surface support on an unarmed falling platform for longer than 50 ms\n- **THEN** pre-arm accumulated support-contact time resets before any later re-contact\n\n#### Scenario: Armed timer while not supported\n- **WHEN** a falling platform is armed and the player is not in top-surface support contact with it\n- **THEN** the platform's remaining collapse time does not decrease during that unsupported interval\n\n#### Scenario: Jumping from armed falling support\n- **WHEN** the player is still in top-surface support contact with an armed falling platform and presses jump\n- **THEN** jump initiation remains valid until that support contact ends\n'@;\n$playerOldLine='While the player is still supported by a falling platform''s top surface, that support MUST remain valid for normal movement and jump initiation.';\n$playerNewLine='While the player is still supported by a falling platform''s top surface, that support MUST remain valid for normal movement and jump initiation, including falling platforms that are in contact-aware collapse timing states before or after arm. Falling-platform arming and collapse timing MUST use deterministic contact-pattern thresholds (`stayArmThresholdMs = 120`, `hopGapThresholdMs = 50`) without invalidating grounded jump eligibility during active support contact.';\n$playerScenarioOld=@'\n#### Scenario: Jumping from a falling platform\n- **WHEN** the player is still in contact with the top of a falling platform and presses jump\n- **THEN** the controller performs a normal jump rather than dropping the player out of jumpable support early\n'@;\n$playerScenarioNew=@'\n#### Scenario: Jumping during contact-aware falling-platform timing\n- **WHEN** the player is in valid top-surface support contact with a falling platform while that platform is accumulating pre-arm stay time or consuming armed collapse time\n- **THEN** jump initiation remains valid under normal controller jump rules\n'@;\n$detachOld='The exemption MUST expire immediately after that update and MUST NOT alter jump initiation, coyote time, buffered jump resolution, dash motion, gravity-field behavior, or falling-platform support retention while top-surface contact remains valid.';\n$detachNew='The exemption MUST expire immediately after that update and MUST NOT alter jump initiation, coyote time, buffered jump resolution, dash motion, gravity-field behavior, or falling-platform support retention while top-surface contact remains valid. Contact-aware falling-platform timing thresholds MUST NOT broaden or weaken this single-update exemption.';\n$detachScenario=@'\n#### Scenario: Detaching from support after contact-aware falling timing\n- **WHEN** authored support motion clears a falling platform away from under the player''s occupied footprint after any contact-aware arm/timer state transitions\n- **THEN** the player begins airborne motion from the same occupied position on that detach update\n- **AND** only the immediately former support is exempt from horizontal blocking on that one update\n- **AND** other solids still block normally\n'@;\n\n$platformText=Get-Content -Raw -Path $platformFile;\nif($platformText -notlike '*For falling-platform collapse timing, collapse progression MUST be contact-aware rather than first-touch fixed.*'){\n  if($platformText.Contains($platformOld)){\n    $platformText=$platformText.Replace($platformOld,$platformNew);\n    Set-Content -Path $platformFile -Value $platformText -NoNewline;\n  } else { throw 'Expected unstable platform block not found for replacement.' }\n}\n\n$playerText=Get-Content -Raw -Path $playerFile;\n$playerText=$playerText.Replace($playerOldLine,$playerNewLine);\n$playerText=$playerText.Replace($playerScenarioOld,$playerScenarioNew);\n$playerText=$playerText.Replace($detachOld,$detachNew);\nif($playerText -notlike '*Detaching from support after contact-aware falling timing*'){\n  $marker='#### Scenario: Detaching from moving support without edge shove';\n  $idx=$playerText.IndexOf($marker);\n  if($idx -lt 0){ throw 'Detach scenario marker not found.' }\n  $playerText=$playerText.Insert($idx,$detachScenario + \"`r`n\");\n}\nSet-Content -Path $playerFile -Value $playerText -NoNewline;\nWrite-Output 'Spec sync complete.'"
+			]
+		},
+		{
+			"label": "hello-task",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Write-Output 'hello'"
+			]
+		},
+		{
+			"label": "openspec-apply-npm-test-brittle-occupied-break",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"test"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "openspec-apply-npm-build-brittle-occupied-break",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "openspec-apply-npm-test-brittle-occupied-break",
+			"type": "shell",
+			"command": "npm test",
+			"isBackground": false
+		},
+		{
+			"label": "hello-task",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Write-Output 'hello'"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "agent-npm-test",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"test"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "agent-npm-build",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"build"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "archive-sync-2026-04-27-brittle-platform-occupied-break",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"cd 'c:\\Endava\\EndevLocal\\Personal\\web_game_openspec'; npx openspec sync-specs --change '2026-04-27-brittle-platform-occupied-break' --apply; if ($LASTEXITCODE -eq 0) { Write-Output 'Sync OK' } else { Write-Output 'Sync failed'; exit 1 }"
+			]
+		},
+		{
+			"label": "archive-brittle-platform-occupied-break",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Move-Item -Path 'openspec/changes/2026-04-27-brittle-platform-occupied-break' -Destination 'openspec/changes/archive/2026-04-27-brittle-platform-occupied-break'; Write-Output 'Archive move complete'"
+			]
+		},
+		{
+			"label": "archive-status-2026-04-27-brittle-ready-break-timer",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"cd 'c:\\Endava\\EndevLocal\\Personal\\web_game_openspec'; npx openspec status --change '2026-04-27-brittle-ready-break-timer' --json"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "tmp-echo-openspec",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-Command",
+				"Write-Output 'ok'"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "tmp-echo-openspec",
+			"type": "shell",
+			"command": "powershell -NoProfile -Command \"Write-Output 'ok'\"",
+			"isBackground": false
+		},
+		{
+			"label": "archive-status-brittle-ready-break-timer",
+			"type": "shell",
+			"command": "powershell -NoProfile -Command \"$ErrorActionPreference='Stop'; cd 'c:\\Endava\\EndevLocal\\Personal\\web_game_openspec'; npx openspec status --change '2026-04-27-brittle-ready-break-timer' --json\"",
+			"isBackground": false
+		},
+		{
+			"label": "archive-manual-sync-brittle-ready-break-timer",
+			"type": "shell",
+			"command": "powershell -NoProfile -Command \"$ErrorActionPreference='Stop'; cd 'c:\\Endava\\EndevLocal\\Personal\\web_game_openspec'; $deltaPath='openspec/changes/2026-04-27-brittle-ready-break-timer/specs/platform-variation/spec.md'; $mainPath='openspec/specs/platform-variation/spec.md'; $delta=Get-Content -Raw -Path $deltaPath; $main=Get-Content -Raw -Path $mainPath; $marker='### Requirement: Unstable platforms create timing pressure'; $next='### Requirement:'; $deltaStart=$delta.IndexOf($marker); if($deltaStart -lt 0){ throw 'Delta requirement marker not found.' }; $newSection=$delta.Substring($deltaStart).TrimEnd(); $mainStart=$main.IndexOf($marker); if($mainStart -lt 0){ throw 'Main requirement marker not found.' }; $searchFrom=$mainStart + $marker.Length; $mainNext=$main.IndexOf($next,$searchFrom); if($mainNext -lt 0){ throw 'Next requirement marker not found in main spec.' }; $prefix=$main.Substring(0,$mainStart); $suffix=$main.Substring($mainNext); $updated=($prefix + $newSection + \"`r`n`r`n\" + $suffix).TrimEnd(); Set-Content -Path $mainPath -Value $updated; Write-Output 'Manual spec sync complete: platform-variation unstable-platform requirement updated.'\"",
+			"isBackground": false
+		},
+		{
+			"label": "archive-manual-sync-brittle-ready-break-timer-retry",
+			"type": "shell",
+			"command": "cd 'c:\\Endava\\EndevLocal\\Personal\\web_game_openspec'; $ErrorActionPreference='Stop'; $deltaPath='openspec/changes/2026-04-27-brittle-ready-break-timer/specs/platform-variation/spec.md'; $mainPath='openspec/specs/platform-variation/spec.md'; $delta=Get-Content -Raw -Path $deltaPath; $main=Get-Content -Raw -Path $mainPath; $marker='### Requirement: Unstable platforms create timing pressure'; $next='### Requirement:'; $deltaStart=$delta.IndexOf($marker); if($deltaStart -lt 0){ throw 'Delta requirement marker not found.' }; $newSection=$delta.Substring($deltaStart).TrimEnd(); $mainStart=$main.IndexOf($marker); if($mainStart -lt 0){ throw 'Main requirement marker not found.' }; $searchFrom=$mainStart + $marker.Length; $mainNext=$main.IndexOf($next,$searchFrom); if($mainNext -lt 0){ throw 'Next requirement marker not found in main spec.' }; $prefix=$main.Substring(0,$mainStart); $suffix=$main.Substring($mainNext); $sep=[Environment]::NewLine + [Environment]::NewLine; $updated=($prefix + $newSection + $sep + $suffix).TrimEnd(); Set-Content -Path $mainPath -Value $updated; Write-Output 'Manual spec sync complete: platform-variation unstable-platform requirement updated.'",
+			"isBackground": false
+		},
+		{
+			"label": "archive-move-brittle-ready-break-timer",
+			"type": "shell",
+			"command": "cd 'c:\\Endava\\EndevLocal\\Personal\\web_game_openspec'; $ErrorActionPreference='Stop'; $src='openspec/changes/2026-04-27-brittle-ready-break-timer'; $dst='openspec/changes/archive/2026-04-27-brittle-ready-break-timer'; if (-not (Test-Path 'openspec/changes/archive')) { New-Item -ItemType Directory -Path 'openspec/changes/archive' | Out-Null }; if (-not (Test-Path $src)) { throw \"Source change folder missing: $src\" }; if (Test-Path $dst) { throw \"Archive target already exists: $dst\" }; Move-Item -Path $src -Destination $dst; Write-Output \"Archive move complete: $dst\"",
+			"isBackground": false
+		}
+	]
+}

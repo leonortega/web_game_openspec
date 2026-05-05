@@ -1,0 +1,264 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  COLLECTIBLE_PRESENTATION,
+  CHECKPOINT_PRESENTATION,
+  createInactiveActivationNodeState,
+  createInactiveScannerVolumeState,
+  createInactiveTemporaryBridgeState,
+  formatActivePowerSummary,
+  formatCheckpointStatus,
+  formatCollectibleCount,
+  formatHudCollectibleSummary,
+  formatRunCollectibleSummary,
+  formatStageCollectibleSummary,
+  formatStageCollectibleTarget,
+  getAllCollectiblesRecoveredMessage,
+  getCheckpointActivatedMessage,
+  getCollectibleRecoveredMessage,
+  getCollectibleRewardBlockLabel,
+  getCollectibleRewardMessage,
+  getCollectibleRewardRevealLabel,
+  getPowerGainMessage,
+  getPowerHelpSummary,
+  getPowerLabel,
+  getPowerRevealLabel,
+  getPowerShortLabel,
+  getStageObjectiveBriefing,
+  getStageObjectiveCompletionMessage,
+  getStageObjectiveExitReminder,
+  isBrittlePlatformBroken,
+  isBrittlePlatformWarning,
+  isPlatformActive,
+  isPlatformTerrainSupportActive,
+  isTopSurfaceOnlyPlatform,
+  isPlatformVisible,
+  isPlatformRevealed,
+  isTimedRevealBridgeLegible,
+  normalizeRevealedPlatformIds,
+} from './state';
+
+describe('astronaut presentation mappings', () => {
+  it('maps the four supported powers to astronaut-facing labels and summaries', () => {
+    expect(getPowerLabel('doubleJump')).toBe('Thruster Burst');
+    expect(getPowerLabel('shooter')).toBe('Plasma Blaster');
+    expect(getPowerLabel('invincible')).toBe('Shield Field');
+    expect(getPowerLabel('dash')).toBe('Booster Dash');
+
+    expect(getPowerShortLabel('doubleJump')).toBe('TB');
+    expect(getPowerShortLabel('shooter')).toBe('PB');
+    expect(getPowerShortLabel('invincible')).toBe('SF');
+    expect(getPowerShortLabel('dash')).toBe('BD');
+
+    expect(getPowerRevealLabel('invincible')).toBe('SHIELD FIELD');
+    expect(getPowerGainMessage('dash')).toBe('Booster Dash online');
+    expect(getPowerHelpSummary('shooter')).toContain('plasma shots');
+  });
+
+  it('formats active power summaries without changing the underlying mechanics', () => {
+    expect(
+      formatActivePowerSummary(
+        { doubleJump: true, shooter: false, invincible: false, dash: true },
+        { invincibleMs: 0 },
+      ),
+    ).toBe('Thruster Burst, Booster Dash');
+
+    expect(
+      formatActivePowerSummary(
+        { doubleJump: false, shooter: false, invincible: true, dash: false },
+        { invincibleMs: 4500 },
+      ),
+    ).toBe('Shield Field (5s)');
+
+    expect(
+      formatActivePowerSummary(
+        { doubleJump: false, shooter: false, invincible: false, dash: false },
+        { invincibleMs: 0 },
+      ),
+    ).toBe('None');
+  });
+
+  it('formats research-sample and survey-beacon presentation strings consistently', () => {
+    expect(COLLECTIBLE_PRESENTATION.hudLabel).toBe('Research Samples');
+    expect(CHECKPOINT_PRESENTATION.plural).toBe('survey beacons');
+    expect(formatCollectibleCount(1)).toBe('1 research sample');
+    expect(formatCollectibleCount(4)).toBe('4 research samples');
+    expect(formatHudCollectibleSummary(2, 7, 11)).toBe('2/7 in sector (11 research samples total)');
+    expect(formatRunCollectibleSummary(11)).toBe('Run research samples: 11');
+    expect(formatStageCollectibleTarget(7)).toBe('Sector research samples: 7');
+    expect(formatStageCollectibleSummary(2, 7)).toBe('Sector research samples: 2/7');
+    expect(formatCheckpointStatus(1, 3)).toBe('Survey beacons online: 1/3');
+    expect(getCheckpointActivatedMessage()).toBe('Survey beacon activated');
+    expect(getCollectibleRecoveredMessage()).toBe('Research sample recovered');
+    expect(getCollectibleRewardMessage(2)).toBe('Research sample gained - 2 left');
+    expect(getCollectibleRewardMessage(0)).toBe('Research sample gained');
+    expect(getAllCollectiblesRecoveredMessage()).toBe('All research samples recovered. Health restored');
+    expect(getCollectibleRewardRevealLabel()).toBe('SAMPLE');
+    expect(getCollectibleRewardBlockLabel(2)).toBe('RS2');
+  });
+
+  it('formats lightweight objective messages through the transient stage-message copy', () => {
+    expect(getStageObjectiveBriefing('restoreBeacon')).toBe('Restore survey beacon');
+    expect(getStageObjectiveCompletionMessage('reactivateRelay')).toBe('Relay reactivated');
+    expect(getStageObjectiveExitReminder('powerLiftTower')).toBe('Power the lift tower before exit');
+  });
+
+  it('normalizes revealed platform ids for deterministic checkpoint snapshots', () => {
+    expect(normalizeRevealedPlatformIds(['bridge-b', 'bridge-a', 'bridge-b'])).toEqual(['bridge-a', 'bridge-b']);
+  });
+
+  it('treats reveal platforms as solid only after their authored reveal id is active', () => {
+    expect(isPlatformRevealed({ reveal: undefined }, [])).toBe(true);
+    expect(isPlatformRevealed({ reveal: { id: 'bridge-a' } }, [])).toBe(false);
+    expect(isPlatformRevealed({ reveal: { id: 'bridge-a' } }, ['bridge-a'])).toBe(true);
+  });
+
+  it('treats temporary bridges as solid only while their runtime state is active', () => {
+    expect(isPlatformActive({ id: 'bridge-a', reveal: undefined, temporaryBridge: { scannerId: 'scan-a', durationMs: 2000 } }, [], [])).toBe(false);
+    expect(
+      isPlatformActive(
+        { id: 'bridge-a', reveal: undefined, temporaryBridge: { scannerId: 'scan-a', durationMs: 2000 } },
+        [],
+        ['bridge-a'],
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps magnetic platforms visible while dormant and solid only once they are powered', () => {
+    const magneticPlatform = {
+      id: 'magnetic-a',
+      reveal: undefined,
+      temporaryBridge: undefined,
+      magnetic: { activationNodeId: 'node-a', powered: false },
+    };
+
+    expect(isPlatformVisible(magneticPlatform, [], [])).toBe(true);
+    expect(isPlatformActive(magneticPlatform, [], [])).toBe(false);
+    expect(isTopSurfaceOnlyPlatform(magneticPlatform)).toBe(true);
+    expect(isPlatformActive({ ...magneticPlatform, magnetic: { activationNodeId: 'node-a', powered: true } }, [], [])).toBe(true);
+  });
+
+  it('creates inactive scanner and bridge runtime state for fresh attempts and respawns', () => {
+    expect(
+      createInactiveActivationNodeState({
+        id: 'node-a',
+        x: 10,
+        y: 20,
+        width: 28,
+        height: 44,
+      }),
+    ).toEqual({
+      id: 'node-a',
+      x: 10,
+      y: 20,
+      width: 28,
+      height: 44,
+      activated: false,
+    });
+
+    expect(
+      createInactiveScannerVolumeState({
+        id: 'scanner-a',
+        x: 10,
+        y: 20,
+        width: 30,
+        height: 40,
+        temporaryBridgeIds: ['bridge-a'],
+      }),
+    ).toEqual({
+      id: 'scanner-a',
+      x: 10,
+      y: 20,
+      width: 30,
+      height: 40,
+      temporaryBridgeIds: ['bridge-a'],
+      activated: false,
+      playerInside: false,
+    });
+
+    expect(
+      createInactiveTemporaryBridgeState({
+        id: 'bridge-a',
+        scannerId: 'scanner-a',
+        revealId: 'reveal-a',
+        durationMs: 2400,
+      }),
+    ).toEqual({
+      id: 'bridge-a',
+      scannerId: 'scanner-a',
+      revealId: 'reveal-a',
+      durationMs: 2400,
+      remainingMs: 0,
+      active: false,
+      pendingHide: false,
+    });
+  });
+
+  it('treats timed-reveal bridges as legible only after their reveal state is discovered', () => {
+    expect(isTimedRevealBridgeLegible({ revealId: null }, [])).toBe(true);
+    expect(isTimedRevealBridgeLegible({ revealId: 'route-a' }, [])).toBe(false);
+    expect(isTimedRevealBridgeLegible({ revealId: 'route-a' }, ['route-a'])).toBe(true);
+  });
+
+  it('shows timed-reveal support after reveal but keeps it solid only during the active timed window', () => {
+    const timedRevealPlatform = {
+      id: 'bridge-a',
+      reveal: { id: 'route-a' },
+      temporaryBridge: { scannerId: 'scanner-a', durationMs: 2000 },
+    };
+
+    expect(isPlatformVisible(timedRevealPlatform, [], [])).toBe(false);
+    expect(isPlatformVisible(timedRevealPlatform, ['route-a'], [])).toBe(true);
+    expect(isPlatformActive(timedRevealPlatform, ['route-a'], [])).toBe(false);
+    expect(isPlatformActive(timedRevealPlatform, ['route-a'], ['bridge-a'])).toBe(true);
+  });
+
+  it('treats brittle terrain support as active until the broken phase and keeps sludge always supporting', () => {
+    expect(
+      isPlatformTerrainSupportActive({
+        surfaceMechanic: { kind: 'brittleCrystal' },
+        brittle: { phase: 'intact', warningMs: 420, unsupportedGapMs: 0 },
+      }),
+    ).toBe(true);
+    expect(
+      isPlatformTerrainSupportActive({
+        surfaceMechanic: { kind: 'brittleCrystal' },
+        brittle: { phase: 'warning', warningMs: 120, unsupportedGapMs: 0 },
+      }),
+    ).toBe(true);
+    expect(
+      isPlatformTerrainSupportActive({
+        surfaceMechanic: { kind: 'brittleCrystal' },
+        brittle: { phase: 'ready', warningMs: 0, unsupportedGapMs: 0 },
+      }),
+    ).toBe(true);
+    expect(
+      isPlatformTerrainSupportActive({
+        surfaceMechanic: { kind: 'brittleCrystal' },
+        brittle: { phase: 'broken', warningMs: 0, unsupportedGapMs: 0 },
+      }),
+    ).toBe(false);
+    expect(isPlatformTerrainSupportActive({ surfaceMechanic: { kind: 'stickySludge' }, brittle: undefined })).toBe(true);
+  });
+
+  it('distinguishes brittle warning and broken phases for rendering and runtime checks', () => {
+    expect(
+      isBrittlePlatformWarning({
+        surfaceMechanic: { kind: 'brittleCrystal' },
+        brittle: { phase: 'warning', warningMs: 120, unsupportedGapMs: 0 },
+      }),
+    ).toBe(true);
+    expect(
+      isBrittlePlatformBroken({
+        surfaceMechanic: { kind: 'brittleCrystal' },
+        brittle: { phase: 'warning', warningMs: 120, unsupportedGapMs: 0 },
+      }),
+    ).toBe(false);
+    expect(
+      isBrittlePlatformBroken({
+        surfaceMechanic: { kind: 'brittleCrystal' },
+        brittle: { phase: 'broken', warningMs: 0, unsupportedGapMs: 0 },
+      }),
+    ).toBe(true);
+  });
+});

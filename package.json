@@ -5,19 +5,27 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
     "preview": "vite preview",
-    "playtest:stages": "node scripts/stage-playtest.mjs"
+    "playtest:stages": "node scripts/stage-playtest.mjs",
+    "playtest:fix-hopper-grounding-and-initial-routing": "node scripts/fix-hopper-grounding-and-initial-routing-playtest.mjs",
+    "playtest:gravity-room-in-out-flow": "node scripts/gravity-room-in-out-flow-playtest.mjs",
+    "playtest:traversal-visual-language": "node scripts/traversal-category-visual-language-playtest.mjs",
+    "playtest:complete-scene-accent": "node scripts/complete-scene-accent-playtest.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "phaser": "^3.90.0"
+    "phaser": "^4.0.0",
+    "xstate": "^5.13.0"
   },
   "devDependencies": {
+    "@types/node": "^25.6.0",
     "playwright": "^1.59.1",
     "typescript": "^5.9.3",
-    "vite": "^7.1.12"
+    "vite": "^7.1.12",
+    "vitest": "^3.2.4"
   }
 }

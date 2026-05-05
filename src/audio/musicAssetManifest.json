@@ -1,0 +1,89 @@
+{
+  "active": [
+    {
+      "assetKey": "music-menu-call-for-love",
+      "surface": "menu",
+      "title": "Call For Love",
+      "creator": "ChillMindscapes",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "https://chillmindscapes.itch.io/free-chiptune-music-pack-4-chillmindscapes",
+      "originalFileName": "70 Call For Love - Orchestrated.WAV",
+      "originalSourcePackRelativePath": "70 Call For Love - Orchestrated.WAV",
+      "localAssetPath": "/audio/music/chillmindscapes-pack-4/menu-call-for-love.wav",
+      "webFormat": "wav",
+      "intendedMapping": "menu",
+      "volume": 0.3
+    },
+    {
+      "assetKey": "music-stage-forest-goodbye-tales-68",
+      "surface": "stage",
+      "stageId": "forest-ruins",
+      "title": "Goodbye Tales",
+      "creator": "ChillMindscapes",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "https://chillmindscapes.itch.io/free-chiptune-music-pack-4-chillmindscapes",
+      "originalFileName": "68 Goodbye Tales - Orchestrated.WAV",
+      "originalSourcePackRelativePath": "68 Goodbye Tales - Orchestrated.WAV",
+      "localAssetPath": "/audio/music/chillmindscapes-free-chiptune-music-pack-4/68 Goodbye Tales - Orchestrated.WAV",
+      "webFormat": "wav",
+      "intendedMapping": "forest-ruins gameplay",
+      "volume": 0.3
+    },
+    {
+      "assetKey": "music-stage-amber-give-her-shadow",
+      "surface": "stage",
+      "stageId": "amber-cavern",
+      "title": "Give Her Shadow",
+      "creator": "ChillMindscapes",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "https://chillmindscapes.itch.io/free-chiptune-music-pack-4-chillmindscapes",
+      "originalFileName": "66 Give Her Shadow - Orchestrated.WAV",
+      "originalSourcePackRelativePath": "66 Give Her Shadow - Orchestrated.WAV",
+      "localAssetPath": "/audio/music/chillmindscapes-pack-4/amber-give-her-shadow.wav",
+      "webFormat": "wav",
+      "intendedMapping": "amber-cavern gameplay",
+      "volume": 0.26
+    },
+    {
+      "assetKey": "music-stage-sky-get-out",
+      "surface": "stage",
+      "stageId": "sky-sanctum",
+      "title": "Get Out",
+      "creator": "ChillMindscapes",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "https://chillmindscapes.itch.io/free-chiptune-music-pack-4-chillmindscapes",
+      "originalFileName": "72 Get Out - Orchestrated.WAV",
+      "originalSourcePackRelativePath": "72 Get Out - Orchestrated.WAV",
+      "localAssetPath": "/audio/music/chillmindscapes-pack-4/sky-get-out.wav",
+      "webFormat": "wav",
+      "intendedMapping": "sky-sanctum gameplay",
+      "volume": 0.28
+    }
+  ],
+  "backups": [
+    {
+      "title": "She Will Try",
+      "creator": "ChillMindscapes",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "https://chillmindscapes.itch.io/free-chiptune-music-pack-4-chillmindscapes",
+      "originalFileName": "59 She Will Try - Orchestrated.WAV",
+      "notes": "Backup from the same downloaded pack if a calmer sustained surface is needed."
+    },
+    {
+      "title": "Easy Dreams",
+      "creator": "ChillMindscapes",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "https://chillmindscapes.itch.io/free-chiptune-music-pack-4-chillmindscapes",
+      "originalFileName": "60 Easy Dreams - Orchestrated.WAV",
+      "notes": "Backup from the same downloaded pack if a lighter sustained surface is needed."
+    },
+    {
+      "title": "A Day",
+      "creator": "ChillMindscapes",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "https://chillmindscapes.itch.io/free-chiptune-music-pack-4-chillmindscapes",
+      "originalFileName": "65 A Day - Orchestrated.WAV",
+      "notes": "Backup from the same downloaded pack if a broader sustained surface is needed."
+    }
+  ]
+}

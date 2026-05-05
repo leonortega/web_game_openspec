@@ -1,36 +1,105 @@
 # enemy-hazard-system Specification
 
-## ADDED Requirements
+## Purpose
+Define enemy, hazard, and threat-readability behavior during stage play.
+## Requirements
+### Requirement: Grounded enemies and floor hazards stay on visible support
+The game SHALL treat player-visible authored ground contact as the source of truth for grounded non-flying enemies and floor-bound hazards. Grounded placement MUST preserve footed contact for walkers, hoppers, turrets, chargers, spikes, and comparable floor-bound threats on the intended route, encounter pad, or equally readable local support surface, and authored source coordinates for those threats MUST already sit flush to that support before runtime use. Validation, stage building, catalog ingestion, runtime setup, and rendering MUST reject or report unsupported placements instead of masking them through hidden helper support, blanket Y-offset fudges, render-only cheats, globally loosened support tolerances, default snap-to-ground fallback, or hover-like recovery for non-flying threats. Focused automated coverage MUST report authored entries whose visible footing or first grounded action depends on tolerant normalization, runtime correction, or art-only bottom-edge compensation rather than obvious authored contact.
 
-### Requirement: The game does not use pit hazards
-The game SHALL not author, render, or evaluate `pit` as a hazard kind. Falling out of bounds remains a valid death condition, but holes in the stage MUST be represented through level geometry and out-of-bounds death rather than a dedicated pit hazard element.
+#### Scenario: Spawning a grounded enemy on its patrol support
+- **WHEN** a stage spawns a non-flying enemy on an authored route segment
+- **THEN** that enemy resolves with visible foot contact on the intended support surface
+- **AND** its grounded movement starts from that same support instead of from an airborne correction
 
-#### Scenario: Falling beyond the play area
-- **WHEN** the player falls below the traversable world
-- **THEN** the game triggers the existing death flow without requiring a pit hazard
+#### Scenario: Starting a hopper jump from authored ground contact
+- **WHEN** a stage spawns a grounded hopper enemy that immediately begins its first jump cycle
+- **THEN** the hopper starts from visible authored support rather than from an already-airborne placement
+- **AND** the jump does not rely on spawn-time snap-to-ground or hover fallback to look correct
 
-#### Scenario: Validating stage hazard kinds
-- **WHEN** stage content is checked for hazard kinds
-- **THEN** `pit` is rejected or absent from the authored hazard set
+#### Scenario: Spawning a floor hazard on readable support
+- **WHEN** a stage spawns a floor-bound hazard that threatens an intended traversal line
+- **THEN** the hazard aligns to visible local floor or support geometry
+- **AND** the threat does not read as hovering above the route it controls
 
-### Requirement: Lava hazards are represented as spikes
-The game SHALL represent former `lava` hazard placements as spikes. The authored stage content MUST use `spikes` for damaging hot-surface style hazards instead of a separate lava hazard kind.
+#### Scenario: Rejecting authored grounded threats that need fallback grounding
+- **WHEN** authored stage data places a non-flying enemy or floor-bound hazard so it only appears grounded after support search tolerance, runtime snap-to-ground, or render-only adjustment
+- **THEN** validation, stage setup, or focused audit coverage reports that placement for correction before normal play
+- **AND** the fix path does not keep fallback grounding as the primary mechanism
 
-#### Scenario: Loading authored stage content
-- **WHEN** a stage includes a former lava hazard location
-- **THEN** that location is authored as spikes
+#### Scenario: Leaving flyers unchanged
+- **WHEN** a hover enemy or other flyer is evaluated under grounded-placement guardrails
+- **THEN** its existing hover behavior and placement rules remain unchanged
+- **AND** it is not forced onto floor contact by the grounded-support contract
 
-#### Scenario: Rendering hazards
-- **WHEN** the game draws a hazard that used to be lava
-- **THEN** it appears using the spike hazard visual treatment
+#### Scenario: Auditing authored grounded threat placement across shipped stages
+- **WHEN** focused automated validation checks shipped grounded non-flying enemy and floor-hazard entries in authored stage catalog
+- **THEN** each entry already sits on readable intended support in source data
+- **AND** validation reports entries whose visible footing or first grounded action depends on tolerant normalization, runtime correction, or art-only compensation
 
-### Requirement: Static spikes and shooting enemies do not share a support surface
-The game SHALL keep static spike hazards and turret-style shooting enemies separated so they do not occupy the same support platform area. If authored content places them on the same platform, the content MUST be adjusted so one of the two moves to a different readable support location.
+### Requirement: Hover enemies preserve hover-only fairness while using refreshed ovni presentation
+The game SHALL keep supported hover enemies in their current hover-only threat role while using an original retro ovni presentation. Their refreshed art MUST preserve the existing collision or body footprint, fixed-lane patrol behavior, bobbing motion, and route fairness. The visible silhouette MUST read as a symmetric saucer or ovni with a bounded underside-light cue and clearer canopy-versus-hull separation than the current capped-drone read. This refresh MUST NOT add new attacks, change movement semantics, or depend on direct copying of supplied reference art.
 
-#### Scenario: Turret and spike on the same platform
-- **WHEN** a turret and a spike hazard are authored onto one support surface
-- **THEN** the stage content places at least one of them on a different supported location
+#### Scenario: Reading a hover enemy in active play
+- **WHEN** the player approaches a visible hover enemy after the refresh
+- **THEN** the enemy reads as a symmetric ovni or saucer through silhouette and underside-light placement
+- **AND** it still behaves like the same hover-only lane-patrol threat
 
-#### Scenario: Loading a stage with turrets and spikes
-- **WHEN** a stage is loaded
-- **THEN** the active layout keeps spikes and turrets from sharing the same platform space
+#### Scenario: Preserving hover-enemy fairness
+- **WHEN** the refreshed hover enemy patrols, bobs, or crosses the same authored route
+- **THEN** its collision footprint and reach remain unchanged
+- **AND** the player does not need to relearn spacing because of the presentation refresh
+
+#### Scenario: Avoiding copied-reference art
+- **WHEN** the refreshed hover enemy art is evaluated against supplied style reference
+- **THEN** it reads as original project art inspired by that direction
+- **AND** it does not directly trace or reproduce the supplied image
+
+### Requirement: Hover-enemy blink polish remains optional and non-distracting
+If refreshed hover enemies use blinking or shimmering running lights, that polish SHALL remain optional and visually secondary. Any blink treatment MUST stay local, low-frequency, and low-intensity enough that the enemy silhouette, path, and danger read remain clearer than the blink itself. The blink MUST NOT act as a new attack telegraph, state dependency, or distracting strobe effect.
+
+#### Scenario: Showing a subtle blink accent
+- **WHEN** a hover enemy uses optional light-blink polish during active play
+- **THEN** the blink stays secondary to the enemy silhouette and movement read
+- **AND** it does not pull attention away from nearby route-critical hazards or terrain
+
+#### Scenario: Comparing blink to gameplay state
+- **WHEN** the player reads the hover enemy threat during patrol
+- **THEN** the enemy remains understandable without relying on the blink pattern
+- **AND** no new gameplay timing or attack meaning is communicated only through that light accent
+
+### Requirement: Turret variants stay readable through bounded telegraph presentation
+The game SHALL allow authored turret visual variants while preserving one consistent turret threat contract. Every turret variant MUST keep the same threat cadence and collision semantics as the base turret behavior, and variant differences MUST remain presentation-level readability cues such as bounded base color, telegraph color, and projectile color. Telegraph progression MUST remain short, local, and readable, and MUST NOT depend on hidden timing branches that change the underlying turret threat contract.
+
+#### Scenario: Reading two turret variants in different stages
+- **WHEN** the player encounters turret variants with different authored color treatment
+- **THEN** each turret still reads as the same threat class with the same telegraph-to-fire behavior
+- **AND** the variant styling only changes readability cues rather than core combat semantics
+
+### Requirement: Hopper authored placement preserves first-landing reachability
+The game SHALL require authored hopper placement to keep first-action jump and landing outcomes reachable from visible intended support. Hopper entries MUST begin from readable authored ground contact and MUST keep initial hop timing and landing geometry within bounded reachable ranges on the intended route. Validation MUST report hopper placements whose first landing depends on hidden corrections, unsupported geometry, or unreachable startup trajectories.
+
+#### Scenario: Loading a hopper with valid first landing
+- **WHEN** a stage loads an authored grounded hopper encounter
+- **THEN** the hopper starts from visible support and its first landing remains reachable on intended route geometry
+
+#### Scenario: Rejecting an unreachable hopper startup path
+- **WHEN** authored hopper placement causes the initial hop or first landing to miss reachable intended support
+- **THEN** validation reports that authored data for correction before runtime use
+
+### Requirement: Enemy palette-ramp variants and hit flashes stay presentation-only and readable
+The game MAY present supported enemy visual variants through bounded palette-ramp treatment, Beam-assisted color ramps, or equivalent local post-processing that reads as a retro sprite-family swap rather than a plain tint multiplier. Every supported enemy variant MUST preserve the same collision footprint, cadence, threat timing, and telegraph semantics as its base threat class. Variant presentation MUST stay within a small authored palette family, MUST preserve sprite-edge readability, and MUST NOT introduce gradient-heavy shading or dominant glow that overwhelms the enemy silhouette. Supported enemy damage or defeat feedback MAY also trigger a short object-local hit flash, but that flash MUST remain brief, MUST stay attached to the enemy body, and MUST NOT hide active telegraphs, projectile colors, or nearby route-critical hazards.
+
+#### Scenario: Reading two enemy color variants in play
+- **WHEN** the player encounters two supported variants of the same enemy class in different authored colors
+- **THEN** each variant reads as the same threat class with a bounded palette-family change rather than a different mechanic
+- **AND** the underlying movement, telegraph, and collision behavior remain unchanged
+
+#### Scenario: Reading an enemy hit flash
+- **WHEN** a supported enemy takes damage or defeat feedback triggers a local flash
+- **THEN** the flash stays short and local to that enemy body
+- **AND** the enemy's remaining telegraph or defeat state stays readable during the effect
+
+#### Scenario: Rejecting dominant enemy postfx styling
+- **WHEN** the updated enemy presentation is evaluated in a busy encounter
+- **THEN** the palette-ramp treatment remains secondary to the enemy silhouette and route readability
+- **AND** it does not become a blur-heavy, bloom-heavy, or full-screen shader spectacle
