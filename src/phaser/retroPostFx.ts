@@ -1,6 +1,11 @@
 import * as Phaser from 'phaser';
 
 const RETRO_POST_FX_OWNED_KEY = '__retroPostFxOwned';
+const RETRO_SCANLINE_OVERLAY_KEY = '__retroScanlineOverlay';
+const RETRO_SCANLINE_TEXTURE_KEY = '__retroScanlineTexture';
+const RETRO_SCANLINE_RESIZE_BOUND_KEY = '__retroScanlineResizeBound';
+const RETRO_SCANLINE_ALPHA = 0.3;
+const RETRO_SCANLINE_DEPTH = 1000;
 
 export type RetroWorldLocalEffectKind = 'palette-ramp' | 'hit-flash' | 'distortion';
 
@@ -92,6 +97,56 @@ export const applyConfiguredRetroPostFxToCamera = (
   applyRetroPostFxToCamera(game, camera, getCrtFilterEnabled(game, true));
 };
 
+export const applyRetroOverlayToScene = (scene: Phaser.Scene): void => {
+  const sceneAny = scene as Phaser.Scene & {
+    [RETRO_SCANLINE_OVERLAY_KEY]?: Phaser.GameObjects.TileSprite;
+    [RETRO_SCANLINE_RESIZE_BOUND_KEY]?: boolean;
+  };
+
+  ensureScanlineTexture(scene);
+
+  const width = scene.scale.width;
+  const height = scene.scale.height;
+
+  if (!sceneAny[RETRO_SCANLINE_OVERLAY_KEY]) {
+    sceneAny[RETRO_SCANLINE_OVERLAY_KEY] = scene.add
+      .tileSprite(width / 2, height / 2, width, height, RETRO_SCANLINE_TEXTURE_KEY)
+      .setScrollFactor(0)
+      .setOrigin(0.5)
+      .setDepth(RETRO_SCANLINE_DEPTH)
+      .setAlpha(RETRO_SCANLINE_ALPHA);
+
+    if (!sceneAny[RETRO_SCANLINE_RESIZE_BOUND_KEY]) {
+      const syncOverlaySize = ({ width: nextWidth, height: nextHeight }: { width: number; height: number }): void => {
+        const overlay = sceneAny[RETRO_SCANLINE_OVERLAY_KEY];
+        if (!overlay) {
+          return;
+        }
+        overlay.setPosition(nextWidth / 2, nextHeight / 2);
+        overlay.setSize(nextWidth, nextHeight);
+        overlay.setDisplaySize(nextWidth, nextHeight);
+      };
+
+      scene.scale.on(Phaser.Scale.Events.RESIZE, syncOverlaySize);
+      scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+        scene.scale.off(Phaser.Scale.Events.RESIZE, syncOverlaySize);
+        sceneAny[RETRO_SCANLINE_OVERLAY_KEY]?.destroy();
+        delete sceneAny[RETRO_SCANLINE_OVERLAY_KEY];
+        sceneAny[RETRO_SCANLINE_RESIZE_BOUND_KEY] = false;
+      });
+      sceneAny[RETRO_SCANLINE_RESIZE_BOUND_KEY] = true;
+    }
+  }
+
+  sceneAny[RETRO_SCANLINE_OVERLAY_KEY]
+    ?.setPosition(width / 2, height / 2)
+    .setSize(width, height)
+    .setDisplaySize(width, height)
+    .setDepth(RETRO_SCANLINE_DEPTH)
+    .setAlpha(RETRO_SCANLINE_ALPHA)
+    .setVisible(true);
+};
+
 export const toggleCrtFilterForCamera = (
   game: Phaser.Game,
   camera: Phaser.Cameras.Scene2D.Camera,
@@ -134,10 +189,10 @@ export const applyRetroPostFxToCamera = (
       // Phaser barrel amount: 1 = no distortion. Use a light curve plus vignette for a visible CRT-like fallback.
       filterList.addBarrel(1.035);
       if (typeof filterList.addVignette === 'function') {
-        filterList.addVignette(0.5, 0.5, 0.72, 0.34);
+        filterList.addVignette(0.5, 0.5, 0.82, 0.1);
       }
     } else if (typeof filterList.addVignette === 'function') {
-      filterList.addVignette(0.5, 0.5, 0.72, 0.34);
+      filterList.addVignette(0.5, 0.5, 0.82, 0.1);
     }
   }
 
@@ -154,3 +209,27 @@ export const applyRetroPostFxToCamera = (
     // ignore
   }
 };
+
+function ensureScanlineTexture(scene: Phaser.Scene): void {
+  if (scene.textures.exists(RETRO_SCANLINE_TEXTURE_KEY)) {
+    return;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 2;
+  canvas.height = 3;
+
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Unable to create scanline texture');
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = 'rgba(0, 0, 0, 0.42)';
+  context.fillRect(0, 0, canvas.width, 1);
+  context.fillStyle = 'rgba(0, 0, 0, 0.12)';
+  context.fillRect(0, 1, canvas.width, 1);
+  context.fillStyle = 'rgba(130, 190, 210, 0.06)';
+  context.fillRect(0, 2, canvas.width, 1);
+  scene.textures.addCanvas(RETRO_SCANLINE_TEXTURE_KEY, canvas);
+}

@@ -1,0 +1,498 @@
+
+> web_game_openspec@1.0.0 test
+> vitest run
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mC:/Endava/EndevLocal/Personal/web_game_openspec[39m
+
+ [31mΓ¥»[39m src/styles/app.test.ts [2m([22m[2m2 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 35[2mms[22m[39m
+   [32mΓ£ô[39m HUD message lane layout contract[2m > [22manchors transient gameplay messages in a lower-left safe area with mobile-safe insets[32m 11[2mms[22m[39m
+[31m   [31m├ù[31m HUD message lane layout contract[2m > [22mkeeps the browser shell viewport-bounded while allowing a larger desktop presentation[39m[32m 20[2mms[22m[39m
+[31m     ΓåÆ expected ':root {\r\n  --app-shell-gap: 0px;\r\ΓÇª' to match /:root\s*\{[\s\S]*--app-shell-gap:\s*cΓÇª/[39m
+ [32mΓ£ô[39m src/phaser/retroPostFx.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32mΓ£ô[39m src/game/simulation/state.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32mΓ£ô[39m src/phaser/view/gameSceneStyling.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32mΓ£ô[39m src/phaser/view/capsulePresentation.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32mΓ£ô[39m src/phaser/scenes/gameScene/rewardRendering.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32mΓ£ô[39m src/phaser/view/retroPresentation.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 97[2mms[22m[39m
+ [32mΓ£ô[39m src/phaser/assets/bootAudio.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 35[2mms[22m[39m
+ [32mΓ£ô[39m src/phaser/assets/bootTextures.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32mΓ£ô[39m src/phaser/scenes/gameScene/enemyRendering.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 49[2mms[22m[39m
+ [32mΓ£ô[39m src/phaser/scenes/CompleteScene.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32mΓ£ô[39m src/phaser/audio/sceneAudio.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [31mΓ¥»[39m src/phaser/audio/SynthAudio.test.ts [2m([22m[2m8 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[32m 104[2mms[22m[39m
+   [32mΓ£ô[39m SynthAudio[2m > [22muses a browser audio context without reading scene.sound.context[32m 21[2mms[22m[39m
+[31m   [31m├ù[31m SynthAudio[2m > [22mmaps differentiated cue families through sampled playback[39m[32m 42[2mms[22m[39m
+[31m     ΓåÆ expected 'short capsule teleport' to be 'sampled capsule portal sweep' // Object.is equality[39m
+   [32mΓ£ô[39m SynthAudio[2m > [22mkeeps thruster, projectile, hurt, and death cues distinct on the sampled path[32m 4[2mms[22m[39m
+   [32mΓ£ô[39m SynthAudio[2m > [22mkeeps mapped cues non-blocking while locked or muted[32m 3[2mms[22m[39m
+[31m   [31m├ù[31m SynthAudio[2m > [22mkeeps checked-in provenance manifests for menu, per-stage music, and sampled cues[39m[32m 4[2mms[22m[39m
+[31m     ΓåÆ expected 'Goodbye Tales' to be 'Hour For Two' // Object.is equality[39m
+   [32mΓ£ô[39m SynthAudio[2m > [22mlimits authored synth themes to transition stingers instead of sustained loop ownership[32m 1[2mms[22m[39m
+   [32mΓ£ô[39m SynthAudio[2m > [22mgenerates background music for menu, gameplay, intro, and completion paths[32m 11[2mms[22m[39m
+   [32mΓ£ô[39m SynthAudio[2m > [22mkeeps authored transition themes in catalog and schedules them when requested[32m 10[2mms[22m[39m
+ [32mΓ£ô[39m src/phaser/view/traversalVisualLanguage.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32mΓ£ô[39m src/phaser/scenes/gameScene/platformRendering.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 23[2mms[22m[39m
+ [31mΓ¥»[39m src/game/content/stages.test.ts [2m([22m[2m83 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[33m 767[2mms[22m[39m
+   [32mΓ£ô[39m spring stage validation[2m > [22maccepts exits that stay grounded on a supported final platform[32m 17[2mms[22m[39m
+   [32mΓ£ô[39m spring stage validation[2m > [22mrejects unsupported floating exit endpoints[32m 6[2mms[22m[39m
+   [32mΓ£ô[39m spring stage validation[2m > [22mrejects exits that only stand on reveal-only helper support[32m 4[2mms[22m[39m
+[31m   [31m├ù[31m spring stage validation[2m > [22mrejects retired bounce and gas surface mechanics authored on static support[39m[32m 45[2mms[22m[39m
+[31m     ΓåÆ expected [Function] to throw an error[39m
+   [32mΓ£ô[39m spring stage validation[2m > [22mrejects overlapping spring platforms that fake a token overlay conversion[32m 13[2mms[22m[39m
+   [32mΓ£ô[39m spring stage validation[2m > [22mrejects deprecated spring launcher metadata encoded as launcher annotations[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m spring stage validation[2m > [22maccepts shipped spring-platform conversions while keeping the shipped catalog free of launcher annotations[32m 31[2mms[22m[39m
+   [32mΓ£ô[39m enemy placement validation[2m > [22maccepts current grounded non-flying enemy placement across the authored stage[32m 7[2mms[22m[39m
+   [32mΓ£ô[39m enemy placement validation[2m > [22mkeeps shipped grounded enemies authored flush to their resolved support across current stages[32m 10[2mms[22m[39m
+   [32mΓ£ô[39m enemy placement validation[2m > [22mkeeps shipped spike hazards authored flush to their resolved support across current stages[32m 11[2mms[22m[39m
+   [32mΓ£ô[39m enemy placement validation[2m > [22mkeeps shipped checkpoints authored flush to their resolved support across current stages[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m enemy placement validation[2m > [22mkeeps shipped exits authored flush to their resolved support across current stages[32m 3[2mms[22m[39m
+   [32mΓ£ô[39m enemy placement validation[2m > [22mkeeps shipped stage-start cabin bases planted on the start platform surface[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m enemy placement validation[2m > [22mkeeps shipped reward blocks authored high enough that visible support never snaps them upward[32m 9[2mms[22m[39m
+   [32mΓ£ô[39m enemy placement validation[2m > [22maccepts grounded hoppers that start on real support and have a reachable supported first landing[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m enemy placement validation[2m > [22mrejects non-flying enemies that sit off readable platform support[32m 4[2mms[22m[39m
+   [32mΓ£ô[39m enemy placement validation[2m > [22mrejects grounded hoppers that would start floating above nearby support[32m 3[2mms[22m[39m
+   [32mΓ£ô[39m enemy placement validation[2m > [22mrejects grounded hoppers whose first hop has no reachable supported landing[32m 3[2mms[22m[39m
+   [32mΓ£ô[39m enemy placement validation[2m > [22mrejects non-flying enemies hidden below the stage floor while allowing flyers off platforms[32m 9[2mms[22m[39m
+   [32mΓ£ô[39m enemy placement validation[2m > [22mrejects hazards that float off readable grounded support[32m 6[2mms[22m[39m
+   [32mΓ£ô[39m enemy placement validation[2m > [22mrejects hazards that only pass by tolerant normalization instead of authored flush support[32m 6[2mms[22m[39m
+[31m   [31m├ù[31m enemy placement validation[2m > [22mrejects grounded enemies that only stand on reveal-only helper support[39m[32m 17[2mms[22m[39m
+[31m     ΓåÆ expected [Function] to throw an error[39m
+[31m   [31m├ù[31m stage audio composition validation[2m > [22mmaps the current menu and playable stages to distinct ChillMindscapes sustained tracks[39m[32m 13[2mms[22m[39m
+[31m     ΓåÆ expected 'Goodbye Tales' to be 'Hour For Two' // Object.is equality[39m
+   [32mΓ£ô[39m stage audio composition validation[2m > [22mauthors richer phrase-family metadata for each current playable stage[32m 2[2mms[22m[39m
+   [32mΓ£ô[39m stage audio composition validation[2m > [22mrejects stages missing required transition metadata[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m activation-node magnetic platform stage validation[2m > [22maccepts the bounded forest rollout with one nearby activation node and one retry-safe magnetic platform[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m activation-node magnetic platform stage validation[2m > [22mrejects magnetic platforms linked to unknown activation nodes[32m 2[2mms[22m[39m
+   [32mΓ£ô[39m activation-node magnetic platform stage validation[2m > [22mrejects activation nodes that are too far from their linked magnetic platform[32m 3[2mms[22m[39m
+   [32mΓ£ô[39m activation-node magnetic platform stage validation[2m > [22mrejects magnetic routes that remove the retry-safe fallback below the powered platform[32m 4[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrequires every main stage to keep live brittle or sticky rollout while still authoring gravity sections[32m 37[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mkeeps brittle and sticky terrain authoring valid outside the current main stages[32m 17[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects legacy brittle and sticky terrain overlays and non-static platform variant usage[32m 14[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mauthors exactly one anti-grav stream and one gravity inversion column in Halo Spire Array[32m 9[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mencloses every current playable gravity field in its own authored gravity room[32m 21[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects current playable stages that leave any gravity field outside its own linked room[32m 14[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22maccepts authored enclosed gravity rooms with separate side-wall doors and contained content[32m 12[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22maccepts gravity rooms with authored interior enemies when they stay contained to the room interior[32m 7[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects gravity rooms whose interior enemy envelope can leave through a side-wall door[32m 8[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects gravity rooms whose exterior enemy envelope can enter through a side-wall door[32m 9[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22maccepts current gravity rooms that reuse authored intended route supports without doorway-only helper ledges[32m 20[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22maccepts the current four gravity rooms only when IN reads left, the button sits mid-room, and OUT reads right[32m 22[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22maccepts current gravity rooms only when the inverse-jump button route rises above the entry and exit supports[32m 19[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects gravity rooms whose entry door loses its left-side platform-path continuation[32m 7[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects gravity rooms whose linked button is not on a reachable interior route[32m 7[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects gravity rooms whose active-field button route drops back to entry-floor readability[32m 11[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects gravity rooms whose contained interior enemies block the only button lane[32m 10[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects gravity rooms that reuse one side-wall opening for both entry and exit[32m 6[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects gravity rooms whose door openings consume the shell edge instead of leaving blocking wall segments[32m 4[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects gravity rooms that leave a bottom-edge doorway remnant[32m 4[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects gravity rooms whose linked content escapes the authored shell[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects gravity rooms whose traversal content path intrudes through sealed shell bands[32m 4[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects gravity rooms whose exit door loses its exterior-side reconnect after crossing out of the room[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects current playable gravity rooms when a helper platform replaces the authored intended door support[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects door moves that are not coordinated with the affected route rectangle[32m 6[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects current gravity rooms that technically validate but still keep the old surrogate IN/OUT read[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22maccepts gravity rooms whose doorway path is provided by a moving platform[32m 6[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects current playable gravity rooms that use an above-room surrogate entry path[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects current playable gravity rooms that keep pickups or other mixed mechanics inside the shell[32m 9[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects gravity rooms whose entry-to-exit route geometry is cut off inside the shell[32m 12[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects overlapping gravity fields and nearby checkpoint placement[32m 13[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22maccepts checkpoints that stand on visible stable authored support[32m 9[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects checkpoints that only stand on reveal-platform support[32m 7[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects checkpoints that only stand on temporary bridge support[32m 6[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects airborne checkpoints without grounded support[32m 6[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects checkpoints that only pass by tolerant normalization instead of authored flush support[32m 6[2mms[22m[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects checkpoints that overlap spring footing instead of stable grounded support[32m 5[2mms[22m[39m
+[31m   [31m├ù[31m gravity field stage validation[2m > [22mrejects reward blocks that only clear nearby support after hidden snap fallback[39m[32m 11[2mms[22m[39m
+[31m     ΓåÆ expected [Function] to throw an error[39m
+   [32mΓ£ô[39m gravity field stage validation[2m > [22mrejects checkpoints authored beyond the terminal exit[32m 8[2mms[22m[39m
+   [32mΓ£ô[39m empty-platform variety validation[2m > [22maccepts shipped empty-platform traversal challenge metadata with mixed mechanic families[32m 13[2mms[22m[39m
+   [32mΓ£ô[39m empty-platform variety validation[2m > [22mrejects jump-only empty-platform traversal challenge runs[32m 3[2mms[22m[39m
+   [32mΓ£ô[39m empty-platform variety validation[2m > [22mrejects traversal challenge runs that provide only one supported mechanic family[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m empty-platform variety validation[2m > [22mrejects stage progression metadata that misses a required early/middle/late segment[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m secret route stage validation[2m > [22maccepts the authored reconnecting sample cave route[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m secret route stage validation[2m > [22maccepts the authored timed-reveal secret route in the sky stage[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m secret route stage validation[2m > [22mrejects secret routes without meaningful reward value[32m 6[2mms[22m[39m
+   [32mΓ£ô[39m secret route stage validation[2m > [22mrejects secret routes with unresolved reveal cue metadata[32m 5[2mms[22m[39m
+   [32mΓ£ô[39m secret route stage validation[2m > [22mrejects malformed timed-reveal links that remove the authored reveal cue[32m 9[2mms[22m[39m
+   [32mΓ£ô[39m secret route stage validation[2m > [22mrejects timed-reveal routes whose scanner overlaps the reveal cue before the route is legible[32m 9[2mms[22m[39m
+   [32mΓ£ô[39m lightweight stage objective validation[2m > [22maccepts authored checkpoint and scanner-backed stage objectives[32m 1[2mms[22m[39m
+   [32mΓ£ô[39m lightweight stage objective validation[2m > [22mrejects stage objectives that reference unknown authored targets[32m 6[2mms[22m[39m
+   [32mΓ£ô[39m turret variant stage validation[2m > [22mauthors exactly two supported turret variant encounters per biome rollout[32m 4[2mms[22m[39m
+   [32mΓ£ô[39m turret variant stage validation[2m > [22mrejects unsupported turret variant assignments[32m 8[2mms[22m[39m
+   [32mΓ£ô[39m turret variant stage validation[2m > [22mrejects turret variants on the wrong biome stage[32m 7[2mms[22m[39m
+ [32mΓ£ô[39m src/phaser/adapters/sceneBridge.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 164[2mms[22m[39m
+ [32mΓ£ô[39m src/game/simulation/GameSession.test.ts [2m([22m[2m99 tests[22m[2m)[22m[33m 1037[2mms[22m[39m
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ» Failed Tests 7 ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+
+ FAIL  src/styles/app.test.ts > HUD message lane layout contract > keeps the browser shell viewport-bounded while allowing a larger desktop presentation
+AssertionError: expected ':root {\r\n  --app-shell-gap: 0px;\r\ΓÇª' to match /:root\s*\{[\s\S]*--app-shell-gap:\s*cΓÇª/
+
+- Expected: 
+/:root\s*\{[\s\S]*--app-shell-gap:\s*clamp\(12px,\s*2\.4vw,\s*32px\)/
+
++ Received: 
+":root {
+  --app-shell-gap: 0px;
+  --game-shell-max-width: 100vw;
+  --hud-font-base: clamp(6px, 0.85vw, 9px);
+  font-family: \"Press Start 2P\", monospace;
+  color: #f7f3d6;
+  background:
+    linear-gradient(180deg, rgba(224, 91, 61, 0.12) 0 6%, transparent 6% 100%),
+    repeating-linear-gradient(180deg, #0b0d11 0 22px, #11161c 22px 44px),
+    linear-gradient(180deg, #0b0d11 0%, #1d2731 46%, #312c1d 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+  width: 100%;
+}
+
+body {
+  min-height: 100vh;
+}
+
+#app {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 0;
+}
+
+.game-shell-frame {
+  position: relative;
+  width: min(100vw, calc(100vh * 16 / 9));
+  max-width: 100vw;
+  max-height: 100vh;
+  aspect-ratio: 16 / 9;
+  margin: auto;
+}
+
+.game-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  overflow: hidden;
+  box-shadow: none;
+  background: #11161c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.game-shell canvas {
+  display: block;
+  width: 960px;
+  height: 540px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.hud-layer {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 16px;
+  font-size: var(--hud-font-base);
+  font-family: \"Press Start 2P\", monospace;
+}
+
+.hud-layer-tight {
+  image-rendering: pixelated;
+}
+
+.hud-scoreboard {
+  display: inline-flex;
+  max-width: min(100%, 760px);
+  border: 4px solid #f7f3d6;
+  background: #11161c;
+  box-shadow: 0 0 0 4px rgba(8, 10, 13, 0.96);
+}
+
+.hud-top,
+.hud-meta {
+  display: flex;
+  gap: 12px;
+}
+
+.hud-bar {
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0;
+}
+
+.hud-card {
+  min-width: 142px;
+  padding: 8px 12px 10px;
+  border-right: 2px solid rgba(247, 243, 214, 0.5);
+  background: transparent;
+}
+
+.hud-card:last-child {
+  border-right: 0;
+}
+
+.hud-label {
+  display: block;
+  font-size: 0.72em;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: #aab197;
+}
+
+.hud-value {
+  display: block;
+  margin-top: 6px;
+  font-size: 1em;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+}
+
+.hud-meta {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  color: rgba(245, 207, 100, 0.94);
+  font-size: 0.72em;
+  letter-spacing: 0.08em;
+  text-shadow: 2px 2px 0 rgba(17, 20, 27, 0.9);
+}
+
+.hud-meta-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.hud-meta-label {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: #f0d36f;
+}
+
+.hud-meta-value {
+  font-weight: 700;
+  color: #f5cf64;
+}
+
+.message-panel {
+  position: absolute;
+  left: clamp(8px, 1.8vw, 14px);
+  bottom: max(calc(env(safe-area-inset-bottom, 0px) + 14px), clamp(14px, 3.2vh, 26px));
+  width: fit-content;
+  max-width: min(340px, calc(100% - 188px));
+  padding: 8px 14px;
+  border: 2px solid #11141b;
+  background: #f0b84b;
+  color: #11141b;
+  font-size: 0.82em;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
+  opacity: 0;
+}
+
+.message-panel.visible {
+  opacity: 1;
+}
+
+@media (max-width: 720px) {
+  #app {
+    padding: var(--app-shell-gap);
+  }
+
+  .game-shell-frame {
+    width: min(
+      calc(100vw - (var(--app-shell-gap) * 2)),
+      calc((100vh - (var(--app-shell-gap) * 2)) * 16 / 9)
+    );
+    max-height: calc(100vh - (var(--app-shell-gap) * 2));
+  }
+
+  .hud-layer {
+    padding: 10px;
+    font-size: clamp(5px, 1.45vw, 8px);
+  }
+
+  .hud-bar {
+    flex-wrap: wrap;
+  }
+
+  .hud-scoreboard {
+    max-width: 100%;
+  }
+
+  .hud-card {
+    min-width: 132px;
+    padding: 8px 10px;
+  }
+
+  .hud-value {
+    font-size: 0.92em;
+  }
+
+  .hud-meta {
+    right: 10px;
+    bottom: 76px;
+    font-size: 0.6em;
+  }
+
+  .hud-meta-line {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+  }
+
+  .message-panel {
+    left: 8px;
+    bottom: max(calc(env(safe-area-inset-bottom, 0px) + 12px), 12px);
+    max-width: min(184px, calc(100% - 136px));
+    padding: 8px 12px;
+    font-size: 0.76em;
+    letter-spacing: 0.08em;
+  }
+}
+"
+
+ Γ¥» src/styles/app.test.ts:25:20
+     23|     const appCss = readFileSync(new URL('./app.css', import.meta.url),ΓÇª
+     24| 
+     25|     expect(appCss).toMatch(/:root\s*\{[\s\S]*--app-shell-gap:\s*clamp\ΓÇª
+       |                    ^
+     26|     expect(appCss).toMatch(/:root\s*\{[\s\S]*--game-shell-max-width:\sΓÇª
+     27|     expect(appCss).toMatch(/#app\s*\{[\s\S]*min-height:\s*100vh/);
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1/7]ΓÄ»
+
+ FAIL  src/game/content/stages.test.ts > spring stage validation > rejects retired bounce and gas surface mechanics authored on static support
+AssertionError: expected [Function] to throw an error
+
+- Expected: 
+null
+
++ Received: 
+undefined
+
+ Γ¥» src/game/content/stages.test.ts:136:69
+    134|     ) as typeof stage.platforms;
+    135| 
+    136|     expect(() => validateStageDefinition(stage as StageDefinition)).toΓÇª
+       |                                                                     ^
+    137|       'Platform surface mechanics only support brittle crystal and stiΓÇª
+    138|     );
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[2/7]ΓÄ»
+
+ FAIL  src/game/content/stages.test.ts > enemy placement validation > rejects grounded enemies that only stand on reveal-only helper support
+AssertionError: expected [Function] to throw an error
+
+- Expected: 
+null
+
++ Received: 
+undefined
+
+ Γ¥» src/game/content/stages.test.ts:379:50
+    377|     });
+    378| 
+    379|     expect(() => validateStageDefinition(stage)).toThrow('Non-flying eΓÇª
+       |                                                  ^
+    380|   });
+    381| });
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[3/7]ΓÄ»
+
+ FAIL  src/game/content/stages.test.ts > stage audio composition validation > maps the current menu and playable stages to distinct ChillMindscapes sustained tracks
+AssertionError: expected 'Goodbye Tales' to be 'Hour For Two' // Object.is equality
+
+Expected: "Hour For Two"
+Received: "Goodbye Tales"
+
+ Γ¥» src/game/content/stages.test.ts:386:59
+    384|   it('maps the current menu and playable stages to distinct ChillMindsΓÇª
+    385|     expect(MENU_SUSTAINED_MUSIC.title).toBe('Call For Love');
+    386|     expect(getStageSustainedMusic('forest-ruins')?.title).toBe('Hour FΓÇª
+       |                                                           ^
+    387|     expect(getStageSustainedMusic('amber-cavern')?.title).toBe('Give HΓÇª
+    388|     expect(getStageSustainedMusic('sky-sanctum')?.title).toBe('Get OutΓÇª
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[4/7]ΓÄ»
+
+ FAIL  src/game/content/stages.test.ts > gravity field stage validation > rejects reward blocks that only clear nearby support after hidden snap fallback
+AssertionError: expected [Function] to throw an error
+
+- Expected: 
+null
+
++ Received: 
+undefined
+
+ Γ¥» src/game/content/stages.test.ts:1180:50
+    1178|     };
+    1179| 
+    1180|     expect(() => validateStageDefinition(stage)).toThrow(
+       |                                                  ^
+    1181|       'Reward blocks must keep authored visible-ground clearance withoΓÇª
+    1182|     );
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[5/7]ΓÄ»
+
+ FAIL  src/phaser/audio/SynthAudio.test.ts > SynthAudio > maps differentiated cue families through sampled playback
+AssertionError: expected 'short capsule teleport' to be 'sampled capsule portal sweep' // Object.is equality
+
+Expected: "sampled capsule portal sweep"
+Received: "short capsule teleport"
+
+ Γ¥» src/phaser/audio/SynthAudio.test.ts:186:94
+    184|     expect(scene.__sounds).toHaveLength(5);
+    185|     expect(debugEvents.every((event) => event.playback === 'sample')).ΓÇª
+    186|     expect(debugEvents.find((event) => event.cue === AUDIO_CUES.capsulΓÇª
+       |                                                                                              ^
+    187|       'sampled capsule portal sweep',
+    188|     );
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[6/7]ΓÄ»
+
+ FAIL  src/phaser/audio/SynthAudio.test.ts > SynthAudio > keeps checked-in provenance manifests for menu, per-stage music, and sampled cues
+AssertionError: expected 'Goodbye Tales' to be 'Hour For Two' // Object.is equality
+
+Expected: "Hour For Two"
+Received: "Goodbye Tales"
+
+ Γ¥» src/phaser/audio/SynthAudio.test.ts:241:59
+    239|     expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.liceΓÇª
+    240|     expect(MENU_SUSTAINED_MUSIC.title).toBe('Call For Love');
+    241|     expect(getStageSustainedMusic('forest-ruins')?.title).toBe('Hour FΓÇª
+       |                                                           ^
+    242|     expect(getStageSustainedMusic('amber-cavern')?.title).toBe('Give HΓÇª
+    243|     expect(getStageSustainedMusic('sky-sanctum')?.title).toBe('Get OutΓÇª
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[7/7]ΓÄ»
+
+
+[2m Test Files [22m [1m[31m3 failed[39m[22m[2m | [22m[1m[32m15 passed[39m[22m[90m (18)[39m
+[2m      Tests [22m [1m[31m7 failed[39m[22m[2m | [22m[1m[32m262 passed[39m[22m[90m (269)[39m
+[2m   Start at [22m 18:15:04
+[2m   Duration [22m 6.40s[2m (transform 7.40s, setup 0ms, collect 24.72s, tests 2.54s, environment 19ms, prepare 13.41s)[22m
+

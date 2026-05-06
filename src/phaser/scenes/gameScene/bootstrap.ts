@@ -43,35 +43,35 @@ export type GameSceneCleanupContext = Phaser.Scene & {
   completeTransitionEvent?: Phaser.Time.TimerEvent;
   audio: { stopMusic(): void };
   hud: ReturnType<typeof createHud>;
-  platformSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  platformSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
   platformShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
   platformDetailSprites: Map<string, Phaser.GameObjects.Rectangle>;
   platformCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
   terrainVariantShadowSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   terrainVariantAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
   terrainVariantDetailSprites: Map<string, Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>>;
   gravityZoneSprites: Phaser.GameObjects.Rectangle[];
-  gravityFieldSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  gravityFieldSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
   gravityFieldCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  gravityCapsuleShellSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleEntryDoorSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleExitDoorSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleButtonSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleButtonCoreSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  gravityCapsuleShellSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  gravityCapsuleEntryDoorSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  gravityCapsuleExitDoorSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  gravityCapsuleButtonSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  gravityCapsuleButtonCoreSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
   gravityCapsuleShellMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   gravityCapsuleButtonMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  activationNodeSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  activationNodeSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
   activationNodeMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   enemySprites: Map<string, Phaser.GameObjects.Sprite>;
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   checkpointSprites: Map<string, Phaser.GameObjects.Sprite>;
   collectibleSprites: Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>;
   projectileSprites: Map<string, Phaser.GameObjects.Sprite>;
-  rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
   rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
   rewardRevealTexts: Map<string, Phaser.GameObjects.Text>;
-  hazardSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  hazardSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
   enemyDefeatVisibleUntilMs: Map<string, number>;
   playerDefeatVisibleUntilMs: number;
   playerDefeatResetPending: boolean;
@@ -83,32 +83,33 @@ export type GameSceneCleanupContext = Phaser.Scene & {
 export type GameSceneBaseDisplayContext = Phaser.Scene & {
   retroPalette: RetroPresentationPalette;
   gravityZoneSprites: Phaser.GameObjects.Rectangle[];
-  gravityFieldSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  gravityFieldSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
   gravityFieldCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  gravityCapsuleShellSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleEntryDoorSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleExitDoorSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleButtonSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleButtonCoreSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  gravityCapsuleShellSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  gravityCapsuleEntryDoorSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  gravityCapsuleExitDoorSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  gravityCapsuleButtonSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  gravityCapsuleButtonCoreSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
   gravityCapsuleShellMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   gravityCapsuleButtonMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  activationNodeSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  activationNodeSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
   activationNodeMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  platformSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  platformSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
   platformShadowSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   platformDetailSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   platformCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
   terrainVariantShadowSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   terrainVariantAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
   terrainVariantDetailSprites: Map<string, Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>>;
   checkpointSprites: Map<string, Phaser.GameObjects.Sprite>;
   collectibleSprites: Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>;
-  rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
   rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
   enemySprites: Map<string, Phaser.GameObjects.Sprite>;
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   playerAnchor: Phaser.GameObjects.Rectangle;
+  playerSprite: Phaser.GameObjects.Sprite;
   playerAura: Phaser.GameObjects.Ellipse;
   player: Phaser.GameObjects.Rectangle;
   playerHelmet: Phaser.GameObjects.Rectangle;
@@ -128,12 +129,12 @@ export type GameSceneBaseDisplayContext = Phaser.Scene & {
   playerWingRight: Phaser.GameObjects.Rectangle;
   exitShell: Phaser.GameObjects.Image;
   exitDoor: Phaser.GameObjects.Image;
-  exitBase: Phaser.GameObjects.Rectangle;
+  exitBase: Phaser.GameObjects.Image;
   exitBaseShadow: Phaser.GameObjects.Rectangle;
-  exitBeacon: Phaser.GameObjects.Rectangle;
-  arrivalBase: Phaser.GameObjects.Rectangle;
+  exitBeacon: Phaser.GameObjects.Image;
+  arrivalBase: Phaser.GameObjects.Image;
   arrivalBaseShadow: Phaser.GameObjects.Rectangle;
-  arrivalBeacon: Phaser.GameObjects.Rectangle;
+  arrivalBeacon: Phaser.GameObjects.Image;
   arrivalShell: Phaser.GameObjects.Image;
   arrivalDoor: Phaser.GameObjects.Image;
   arrivalAura: Phaser.GameObjects.Ellipse;
@@ -493,16 +494,16 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
 
   for (const field of state.stageRuntime.gravityFields) {
     const overlay = scene.add
-      .rectangle(
+      .tileSprite(
         field.x + field.width / 2,
         field.y + field.height / 2,
         field.width,
         field.height,
-        scene.gravityFieldColor(field),
-        scene.gravityFieldAlpha(field),
+        field.kind === 'anti-grav-stream' ? 'gravity-field-stream' : 'gravity-field-invert',
       )
-      .setStrokeStyle(2, scene.gravityFieldColor(field), 0.42)
       .setOrigin(0.5)
+      .setTint(scene.gravityFieldColor(field))
+      .setAlpha(scene.gravityFieldAlpha(field))
       .setDepth(1);
     scene.gravityFieldSprites.set(field.id, overlay);
     scene.gravityFieldCategoryMarkerSprites.set(field.id, scene.createTraversalMarkerRects(4, 1.2));
@@ -510,61 +511,39 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
 
   for (const capsule of state.stageRuntime.gravityCapsules) {
     const shell = scene.add
-      .rectangle(
-        capsule.shell.x + capsule.shell.width / 2,
-        capsule.shell.y + capsule.shell.height / 2,
-        capsule.shell.width,
-        capsule.shell.height,
-        scene.gravityCapsuleShellColor(capsule),
-        scene.gravityCapsuleShellAlpha(capsule),
-      )
+      .image(capsule.shell.x + capsule.shell.width / 2, capsule.shell.y + capsule.shell.height / 2, 'gravity-capsule-shell')
       .setOrigin(0.5)
-      .setStrokeStyle(2, scene.gravityCapsuleShellStrokeColor(capsule), 0.55)
+      .setDisplaySize(capsule.shell.width, capsule.shell.height)
+      .setTint(scene.gravityCapsuleShellColor(capsule))
+      .setAlpha(scene.gravityCapsuleShellAlpha(capsule))
       .setDepth(1.4);
     const door = scene.add
-      .rectangle(
-        capsule.entryDoor.x + capsule.entryDoor.width / 2,
-        capsule.entryDoor.y + capsule.entryDoor.height / 2,
-        capsule.entryDoor.width,
-        capsule.entryDoor.height,
-        scene.gravityCapsuleEntryDoorColor(capsule),
-        scene.gravityCapsuleDoorAlpha(capsule),
-      )
+      .image(capsule.entryDoor.x + capsule.entryDoor.width / 2, capsule.entryDoor.y + capsule.entryDoor.height / 2, 'gravity-capsule-entry-door')
       .setOrigin(0.5)
+      .setDisplaySize(capsule.entryDoor.width, capsule.entryDoor.height)
+      .setTint(scene.gravityCapsuleEntryDoorColor(capsule))
+      .setAlpha(scene.gravityCapsuleDoorAlpha(capsule))
       .setDepth(1.6);
     const exitDoor = scene.add
-      .rectangle(
-        capsule.exitDoor.x + capsule.exitDoor.width / 2,
-        capsule.exitDoor.y + capsule.exitDoor.height / 2,
-        capsule.exitDoor.width,
-        capsule.exitDoor.height,
-        scene.gravityCapsuleExitDoorColor(capsule),
-        scene.gravityCapsuleDoorAlpha(capsule),
-      )
+      .image(capsule.exitDoor.x + capsule.exitDoor.width / 2, capsule.exitDoor.y + capsule.exitDoor.height / 2, 'gravity-capsule-exit-door')
       .setOrigin(0.5)
+      .setDisplaySize(capsule.exitDoor.width, capsule.exitDoor.height)
+      .setTint(scene.gravityCapsuleExitDoorColor(capsule))
+      .setAlpha(scene.gravityCapsuleDoorAlpha(capsule))
       .setDepth(1.65);
     const button = scene.add
-      .rectangle(
-        capsule.button.x + capsule.button.width / 2,
-        capsule.button.y + capsule.button.height / 2,
-        capsule.button.width,
-        capsule.button.height,
-        scene.gravityCapsuleButtonColor(capsule),
-        0.92,
-      )
+      .image(capsule.button.x + capsule.button.width / 2, capsule.button.y + capsule.button.height / 2, 'gravity-capsule-button')
       .setOrigin(0.5)
-      .setStrokeStyle(2, scene.gravityCapsuleShellStrokeColor(capsule), 0.5)
+      .setDisplaySize(capsule.button.width, capsule.button.height)
+      .setTint(scene.gravityCapsuleButtonColor(capsule))
+      .setAlpha(0.92)
       .setDepth(3.1);
     const buttonCore = scene.add
-      .rectangle(
-        capsule.button.x + capsule.button.width / 2,
-        capsule.button.y + capsule.button.height / 2,
-        Math.max(8, capsule.button.width - 12),
-        Math.max(8, capsule.button.height - 12),
-        scene.gravityCapsuleButtonCoreColor(capsule),
-        0.95,
-      )
+      .image(capsule.button.x + capsule.button.width / 2, capsule.button.y + capsule.button.height / 2, 'gravity-capsule-button-core')
       .setOrigin(0.5)
+      .setDisplaySize(Math.max(8, capsule.button.width - 12), Math.max(8, capsule.button.height - 12))
+      .setTint(scene.gravityCapsuleButtonCoreColor(capsule))
+      .setAlpha(0.95)
       .setDepth(3.2);
     scene.gravityCapsuleShellSprites.set(capsule.id, shell);
     scene.gravityCapsuleEntryDoorSprites.set(capsule.id, door);
@@ -577,8 +556,10 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
 
   for (const node of state.stageRuntime.activationNodes) {
     const sprite = scene.add
-      .rectangle(node.x + node.width / 2, node.y + node.height / 2, node.width, node.height, scene.activationNodeColor(node), 0.9)
-      .setStrokeStyle(2, scene.retroPalette.border, 0.48)
+      .image(node.x + node.width / 2, node.y + node.height / 2, 'activation-node')
+      .setDisplaySize(node.width, node.height)
+      .setTint(scene.activationNodeColor(node))
+      .setAlpha(0.9)
       .setOrigin(0.5)
       .setDepth(3);
     scene.activationNodeSprites.set(node.id, sprite);
@@ -588,8 +569,9 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
   for (const platform of state.stageRuntime.platforms) {
     const topSurfaceHeight = Math.min(platform.height, 8);
     const sprite = scene.add
-      .rectangle(platform.x + platform.width / 2, platform.y + platform.height / 2, platform.width, platform.height, scene.platformColor(platform))
-      .setOrigin(0.5);
+      .tileSprite(platform.x + platform.width / 2, platform.y + platform.height / 2, platform.width, platform.height, 'platform-tiles')
+      .setOrigin(0.5)
+      .setTint(scene.platformColor(platform));
     // Shadow and detail may be GPULayer members when supported; otherwise fallback to rectangles.
     const shadowLayer = (scene as any).platformShadowGPULayer as any | undefined;
     const detailLayer = (scene as any).platformDetailGPULayer as any | undefined;
@@ -673,15 +655,16 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
 
   for (const terrainVariantPlatform of state.stageRuntime.platforms.filter((platform) => platform.surfaceMechanic)) {
     const sprite = scene.add
-      .rectangle(
+      .tileSprite(
         terrainVariantPlatform.x + terrainVariantPlatform.width / 2,
         terrainVariantPlatform.y + terrainVariantPlatform.height / 2,
         terrainVariantPlatform.width,
         terrainVariantPlatform.height,
-        scene.terrainVariantColor(terrainVariantPlatform),
-        scene.terrainVariantAlpha(terrainVariantPlatform),
+        terrainVariantPlatform.surfaceMechanic?.kind === 'stickySludge' ? 'terrain-sticky' : 'terrain-brittle',
       )
       .setOrigin(0.5)
+      .setTint(scene.terrainVariantColor(terrainVariantPlatform))
+      .setAlpha(scene.terrainVariantAlpha(terrainVariantPlatform))
       .setDepth(2);
     const shadow = scene.add
       .rectangle(
@@ -717,7 +700,12 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
         depth: 3.2,
       }).setOrigin(0.5),
     );
-    sprite.setStrokeStyle(2, scene.retroPalette.border, terrainVariantPlatform.surfaceMechanic?.kind === 'stickySludge' ? 0.24 : 0.38);
+    const terrainSpriteAny = sprite as any;
+    terrainSpriteAny.setStrokeStyle?.(
+      2,
+      scene.retroPalette.border,
+      terrainVariantPlatform.surfaceMechanic?.kind === 'stickySludge' ? 0.24 : 0.38,
+    );
     scene.terrainVariantSprites.set(terrainVariantPlatform.id, sprite);
     scene.terrainVariantShadowSprites.set(terrainVariantPlatform.id, shadow);
     scene.terrainVariantAccentSprites.set(terrainVariantPlatform.id, accent);
@@ -731,7 +719,8 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
 
 function createPlayerRenderables(scene: GameSceneBaseDisplayContext): void {
   scene.playerAnchor = scene.add.rectangle(0, 0, 24, 40, scene.retroPalette.ink, 0).setOrigin(0, 0).setVisible(false);
-  scene.playerAura = scene.add.ellipse(0, 0, 40, 52, scene.retroPalette.cool, 0.18).setVisible(false).setDepth(5);
+  scene.playerSprite = createOptimizedSprite(scene, 0, 0, 'player-sheet').setOrigin(0, 0).setDepth(6).setVisible(false);
+  scene.playerAura = scene.add.ellipse(0, 0, 46, 60, scene.retroPalette.cool, 0.18).setVisible(false).setDepth(5);
   scene.playerPack = scene.add.rectangle(0, 0, 6, 14, scene.retroPalette.ink).setOrigin(0, 0).setDepth(5);
   scene.playerArmLeft = scene.add.rectangle(0, 0, 4, 12, scene.retroPalette.border).setOrigin(0, 0).setDepth(7);
   scene.playerArmRight = scene.add.rectangle(0, 0, 4, 12, scene.retroPalette.border).setOrigin(0, 0).setDepth(7);
@@ -795,14 +784,13 @@ function createRewardRenderables(scene: GameSceneBaseDisplayContext, state: Read
 
   for (const rewardBlock of state.stageRuntime.rewardBlocks) {
     const blockSprite = scene.add
-      .rectangle(
+      .image(
         rewardBlock.x + rewardBlock.width / 2,
         rewardBlock.y + rewardBlock.height / 2,
-        rewardBlock.width,
-        rewardBlock.height,
-        scene.rewardBlockColor(rewardBlock),
+        rewardBlock.used ? 'reward-block-used' : 'reward-block',
       )
-      .setStrokeStyle(2, scene.retroPalette.border, 0.55)
+      .setDisplaySize(rewardBlock.width, rewardBlock.height)
+      .setTint(scene.rewardBlockColor(rewardBlock))
       .setOrigin(0.5);
     const label = scene.add
       .text(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2, scene.rewardBlockLabel(rewardBlock), {
@@ -843,12 +831,17 @@ function createExitAndArrivalRenderables(scene: GameSceneBaseDisplayContext, sta
     .setOrigin(0.5)
     .setDepth(1.1);
   scene.exitBase = scene.add
-    .rectangle(stage.exit.x + stage.exit.width / 2, stage.exit.y + stage.exit.height + 4, stage.exit.width + 24, 12, scene.retroPalette.panelAlt, 0.94)
-    .setStrokeStyle(2, scene.retroPalette.border, 0.5)
+    .image(stage.exit.x + stage.exit.width / 2, stage.exit.y + stage.exit.height + 4, 'exit-base')
+    .setDisplaySize(stage.exit.width + 24, 12)
+    .setTint(scene.retroPalette.panelAlt)
+    .setAlpha(0.94)
     .setOrigin(0.5)
     .setDepth(1.2);
   scene.exitBeacon = scene.add
-    .rectangle(stage.exit.x + stage.exit.width / 2, stage.exit.y + 18, 14, 8, scene.retroPalette.bright, 0.82)
+    .image(stage.exit.x + stage.exit.width / 2, stage.exit.y + 18, 'exit-beacon')
+    .setDisplaySize(14, 8)
+    .setTint(scene.retroPalette.bright)
+    .setAlpha(0.82)
     .setOrigin(0.5)
     .setDepth(2.2);
   scene.exitShell = scene.add
@@ -875,12 +868,18 @@ function createExitAndArrivalRenderables(scene: GameSceneBaseDisplayContext, sta
     .setDepth(9.1)
     .setVisible(false);
   scene.arrivalBase = scene.add
-    .rectangle(0, 0, 14, 8, scene.retroPalette.panelAlt, 0.92)
+    .image(0, 0, 'arrival-base')
+    .setDisplaySize(14, 8)
+    .setTint(scene.retroPalette.panelAlt)
+    .setAlpha(0.92)
     .setOrigin(0.5)
     .setDepth(9.2)
     .setVisible(false);
   scene.arrivalBeacon = scene.add
-    .rectangle(0, 0, 14, 8, scene.retroPalette.bright, 0.34)
+    .image(0, 0, 'arrival-beacon')
+    .setDisplaySize(14, 8)
+    .setTint(scene.retroPalette.bright)
+    .setAlpha(0.34)
     .setOrigin(0.5)
     .setDepth(9.3)
     .setVisible(false);
@@ -897,7 +896,13 @@ function createExitAndArrivalRenderables(scene: GameSceneBaseDisplayContext, sta
     .setDepth(9.5)
     .setVisible(false);
   scene.arrivalAura = scene.add.ellipse(0, 0, 46, 62, scene.retroPalette.cool, 0.2).setDepth(9.6).setVisible(false);
-  scene.arrivalPlayer = createOptimizedSprite(scene, 0, 0, 'player').setOrigin(0, 0).setDepth(9.7).setTint(scene.retroPalette.cool).setVisible(false);
+  scene.arrivalPlayer = createOptimizedSprite(scene, 0, 0, 'player-sheet')
+    .setFrame('0')
+    .setDisplaySize(26, 42)
+    .setOrigin(0, 0)
+    .setDepth(9.7)
+    .setTint(scene.retroPalette.cool)
+    .setVisible(false);
   try {
     (scene.arrivalPlayer as any).setLighting?.(true, { selfShadow: true });
   } catch (e) {

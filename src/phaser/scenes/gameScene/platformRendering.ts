@@ -1,6 +1,9 @@
 import * as Phaser from 'phaser';
 
 import {
+  isBrittlePlatformBroken,
+  isBrittlePlatformReady,
+  isBrittlePlatformWarning,
   isPlatformActive,
   isPlatformVisible,
   type ActivationNodeState,
@@ -24,13 +27,13 @@ export type GameScenePlatformRenderingContext = Phaser.Scene & {
     };
   };
   retroPalette: RetroPresentationPalette;
-  platformSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  platformSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
   platformShadowSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   platformDetailSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   platformCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  activationNodeSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  activationNodeSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
   activationNodeMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
   terrainVariantShadowSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   terrainVariantAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
   terrainVariantDetailSprites: Map<string, Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>>;
@@ -78,7 +81,11 @@ export function syncPlatform(scene: GameScenePlatformRenderingContext, platform:
         rec.setPosition(opts.x, opts.y);
       }
       if (opts.width !== undefined && opts.height !== undefined) {
-        rec.setDisplaySize(opts.width, opts.height);
+        if (typeof rec.setDisplaySize === 'function') {
+          rec.setDisplaySize(opts.width, opts.height);
+        } else if (typeof rec.setSize === 'function') {
+          rec.setSize(opts.width, opts.height);
+        }
       }
       if (opts.alpha !== undefined) {
         rec.setAlpha(opts.alpha);
@@ -94,10 +101,14 @@ export function syncPlatform(scene: GameScenePlatformRenderingContext, platform:
         rec.setPosition(opts.x, opts.y);
       }
       if (opts.width !== undefined && opts.height !== undefined) {
-        rec.setDisplaySize(opts.width, opts.height);
+        if (typeof rec.setDisplaySize === 'function') {
+          rec.setDisplaySize(opts.width, opts.height);
+        } else if (typeof rec.setSize === 'function') {
+          rec.setSize(opts.width, opts.height);
+        }
       }
       if (opts.fill !== undefined) {
-        rec.setFillStyle(opts.fill);
+        rec.setFillStyle?.(opts.fill);
       }
       if (opts.alpha !== undefined) {
         rec.setAlpha(opts.alpha);
@@ -114,9 +125,19 @@ export function syncPlatform(scene: GameScenePlatformRenderingContext, platform:
   }
 
   // Update main sprite
-  sprite.setPosition(platform.x + platform.width / 2, platform.y + platform.height / 2);
-  sprite.setFillStyle(scene.platformColor(platform));
-  sprite.setStrokeStyle(0);
+  const spriteAny = sprite as any;
+  spriteAny.setPosition(platform.x + platform.width / 2, platform.y + platform.height / 2);
+  if (typeof spriteAny.setDisplaySize === 'function') {
+    spriteAny.setDisplaySize(platform.width, platform.height);
+  } else if (typeof spriteAny.setSize === 'function') {
+    spriteAny.setSize(platform.width, platform.height);
+  }
+  if (typeof spriteAny.setFillStyle === 'function') {
+    spriteAny.setFillStyle(scene.platformColor(platform));
+    spriteAny.setStrokeStyle?.(0);
+  } else {
+    spriteAny.setTint?.(scene.platformColor(platform));
+  }
 
   const offsetY = Math.max(2, Math.floor(platform.height * 0.18));
   const shadowWidth = Math.max(6, platform.width - 6);
@@ -152,21 +173,28 @@ export function syncPlatform(scene: GameScenePlatformRenderingContext, platform:
 
   if (platform.kind === 'falling' && platform.fall) {
     const alpha = platform.fall.falling ? 0.45 : platform.fall.triggered ? 0.7 : 1;
-    sprite.setAlpha(alpha);
+    spriteAny.setAlpha(alpha);
     setShadowMember(shadowRec, { alpha: alpha * 0.28 });
     setDetailMember(detailRec, { alpha });
   } else if (platform.magnetic) {
-    sprite.setAlpha(platform.magnetic.powered ? 1 : 0.46);
-    sprite.setStrokeStyle(2, platform.magnetic.powered ? 0xd6fff6 : 0x90a6bf, 0.48);
+    spriteAny.setAlpha(platform.magnetic.powered ? 1 : 0.46);
+    if (typeof spriteAny.setStrokeStyle === 'function') {
+      spriteAny.setStrokeStyle(2, platform.magnetic.powered ? 0xd6fff6 : 0x90a6bf, 0.48);
+    }
+    if (typeof spriteAny.setTint === 'function') {
+      spriteAny.setTint(platform.magnetic.powered ? scene.platformColor(platform) : 0x8aa0b8);
+    }
     setShadowMember(shadowRec, { alpha: platform.magnetic.powered ? 0.3 : 0.16 });
     setDetailMember(detailRec, { alpha: platform.magnetic.powered ? 1 : 0.46 });
   } else if (platform.temporaryBridge && platform.reveal && !active) {
-    sprite.setAlpha(0.38);
-    sprite.setStrokeStyle(2, 0xf7f3d6, 0.2);
+    spriteAny.setAlpha(0.38);
+    if (typeof spriteAny.setStrokeStyle === 'function') {
+      spriteAny.setStrokeStyle(2, 0xf7f3d6, 0.2);
+    }
     setShadowMember(shadowRec, { alpha: 0.12 });
     setDetailMember(detailRec, { alpha: 0.38 });
   } else {
-    sprite.setAlpha(1);
+    spriteAny.setAlpha(1);
     setShadowMember(shadowRec, { alpha: 0.28 });
     setDetailMember(detailRec, { alpha: 1 });
   }
@@ -181,12 +209,23 @@ export function syncActivationNode(scene: GameScenePlatformRenderingContext, nod
     return;
   }
 
-  sprite
+  const nodeSprite = sprite as any;
+  nodeSprite
     .setPosition(node.x + node.width / 2, node.y + node.height / 2)
-    .setSize(node.width, node.height)
-    .setFillStyle(scene.activationNodeColor(node), node.activated ? 0.98 : 0.9)
-    .setStrokeStyle(2, node.activated ? scene.retroPalette.bright : scene.retroPalette.border, node.activated ? 0.52 : 0.4)
     .setVisible(true);
+  if (typeof nodeSprite.setDisplaySize === 'function') {
+    nodeSprite.setDisplaySize(node.width, node.height);
+  } else if (typeof nodeSprite.setSize === 'function') {
+    nodeSprite.setSize(node.width, node.height);
+  }
+  if (typeof nodeSprite.setFillStyle === 'function') {
+    nodeSprite
+      .setFillStyle(scene.activationNodeColor(node), node.activated ? 0.98 : 0.9)
+      .setStrokeStyle(2, node.activated ? scene.retroPalette.bright : scene.retroPalette.border, node.activated ? 0.52 : 0.4);
+  } else {
+    nodeSprite.setTint(scene.activationNodeColor(node));
+    nodeSprite.setAlpha(node.activated ? 0.98 : 0.9);
+  }
   syncActivationNodeMarkers(scene, node, markers);
 }
 
@@ -199,11 +238,32 @@ export function syncTerrainVariantPlatform(scene: GameScenePlatformRenderingCont
     return;
   }
 
-  sprite.setPosition(platform.x + platform.width / 2, platform.y + platform.height / 2);
-  sprite.setSize(platform.width, platform.height);
-  sprite.setVisible(true);
-  sprite.setFillStyle(scene.terrainVariantColor(platform), scene.terrainVariantAlpha(platform));
-  sprite.setStrokeStyle(2, scene.terrainVariantStrokeColor(platform), scene.terrainVariantStrokeAlpha(platform));
+  const terrainSprite = sprite as any;
+  terrainSprite.setPosition(platform.x + platform.width / 2, platform.y + platform.height / 2);
+  if (typeof terrainSprite.setDisplaySize === 'function') {
+    terrainSprite.setDisplaySize(platform.width, platform.height);
+  } else if (typeof terrainSprite.setSize === 'function') {
+    terrainSprite.setSize(platform.width, platform.height);
+  }
+  terrainSprite.setVisible(true);
+  if (platform.surfaceMechanic?.kind === 'brittleCrystal') {
+    if (isBrittlePlatformBroken(platform)) {
+      terrainSprite.setTexture?.('terrain-brittle-broken');
+    } else if (isBrittlePlatformReady(platform)) {
+      terrainSprite.setTexture?.('terrain-brittle-ready');
+    } else if (isBrittlePlatformWarning(platform)) {
+      terrainSprite.setTexture?.('terrain-brittle-warning');
+    } else {
+      terrainSprite.setTexture?.('terrain-brittle');
+    }
+  }
+  if (typeof terrainSprite.setFillStyle === 'function') {
+    terrainSprite.setFillStyle(scene.terrainVariantColor(platform), scene.terrainVariantAlpha(platform));
+    terrainSprite.setStrokeStyle(2, scene.terrainVariantStrokeColor(platform), scene.terrainVariantStrokeAlpha(platform));
+  } else {
+    terrainSprite.setTint(scene.terrainVariantColor(platform));
+    terrainSprite.setAlpha(scene.terrainVariantAlpha(platform));
+  }
   const setShadowMember = (rec: any, opts: any) => {
     if (!rec) return;
     if (rec.layer) {

@@ -87,7 +87,7 @@ The game SHALL require authored hopper placement to keep first-action jump and l
 - **THEN** validation reports that authored data for correction before runtime use
 
 ### Requirement: Enemy palette-ramp variants and hit flashes stay presentation-only and readable
-The game MAY present supported enemy visual variants through bounded palette-ramp treatment, Beam-assisted color ramps, or equivalent local post-processing that reads as a retro sprite-family swap rather than a plain tint multiplier. Every supported enemy variant MUST preserve the same collision footprint, cadence, threat timing, and telegraph semantics as its base threat class. Variant presentation MUST stay within a small authored palette family, MUST preserve sprite-edge readability, and MUST NOT introduce gradient-heavy shading or dominant glow that overwhelms the enemy silhouette. Supported enemy damage or defeat feedback MAY also trigger a short object-local hit flash, but that flash MUST remain brief, MUST stay attached to the enemy body, and MUST NOT hide active telegraphs, projectile colors, or nearby route-critical hazards.
+The game MAY present supported enemy visual variants through bounded palette-ramp treatment, Beam-assisted color ramps, or equivalent local post-processing that reads as a retro sprite-family swap rather than a plain tint multiplier. Under the chibi presentation contract, refreshed enemy sprites MAY add richer 16-bit-like internal detail and more expressive frame animation, but every enemy class MUST stay within its existing sprite canvas envelope and per-state frame budgets defined in `art.md`. Every supported enemy variant MUST preserve the same collision footprint, cadence, threat timing, and telegraph semantics as its base threat class. Variant presentation MUST stay within a small authored palette family, MUST preserve sprite-edge readability, and MUST NOT introduce gradient-heavy shading or dominant glow that overwhelms the enemy silhouette. Supported enemy damage or defeat feedback MAY also trigger a short object-local hit flash, but that flash MUST remain brief, MUST stay attached to the enemy body, and MUST NOT hide active telegraphs, projectile colors, or nearby route-critical hazards.
 
 #### Scenario: Reading two enemy color variants in play
 - **WHEN** the player encounters two supported variants of the same enemy class in different authored colors
@@ -103,3 +103,13 @@ The game MAY present supported enemy visual variants through bounded palette-ram
 - **WHEN** the updated enemy presentation is evaluated in a busy encounter
 - **THEN** the palette-ramp treatment remains secondary to the enemy silhouette and route readability
 - **AND** it does not become a blur-heavy, bloom-heavy, or full-screen shader spectacle
+
+#### Scenario: Respecting enemy size and frame budgets
+- **WHEN** enemy animation clips are expanded for richer motion
+- **THEN** clip lengths remain within the min/max budget ranges in `art.md`
+- **AND** enemy sprite envelopes remain unchanged from current runtime contracts
+
+#### Scenario: Preserving threat fairness
+- **WHEN** the enemy presentation refresh is evaluated in active gameplay
+- **THEN** enemy collision and cadence remain unchanged from baseline
+- **AND** all upgrades remain presentation-only

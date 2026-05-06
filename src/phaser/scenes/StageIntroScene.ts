@@ -1,13 +1,13 @@
 import * as Phaser from 'phaser';
 import {
-  getActivePowerLabels,
-  formatRunCollectibleSummary,
-  formatRunSettings,
-  formatStageCollectibleTarget,
+  getPrimaryPowerVariant,
+  PLAYER_POWER_VARIANTS,
 } from '../../game/simulation/state';
 import { SceneBridge } from '../adapters/sceneBridge';
 import { SynthAudio } from '../audio/SynthAudio';
+import { ensureBootTexturesRegistered } from '../assets/bootTextures';
 import { runUnlockedAudioAction } from '../audio/sceneAudio';
+import { applyConfiguredRetroPostFxToCamera } from '../retroPostFx';
 import {
   RETRO_FONT_FAMILY,
   createRetroPresentationPalette,
@@ -34,95 +34,127 @@ export class StageIntroScene extends Phaser.Scene {
     const state = bridge.getSession().getState();
     const { width, height } = this.scale;
     const stagePresentation = state.stage.presentation;
-    const powerSummary = getActivePowerLabels(state.progress.activePowers, state.progress.powerTimers).join(', ') || 'None';
-    const activeCheckpointCount = state.stageRuntime.checkpoints.filter((checkpoint) => checkpoint.activated).length;
-    const checkpointSummary = `Survey beacons online: ${activeCheckpointCount}/${state.stageRuntime.checkpoints.length}`;
+    const samplesTaken = state.progress.totalCoins;
     const retro = createRetroPresentationPalette(state.stage.palette);
+    const powerVariant = state.player.presentationPower ?? getPrimaryPowerVariant(state.progress.activePowers, state.progress.powerTimers);
+    const variantStyle = PLAYER_POWER_VARIANTS[powerVariant];
     this.audio = new SynthAudio(
       this,
       () => bridge.getSession().getState().progress.runSettings.musicVolume,
       () => bridge.getSession().getState().progress.runSettings.sfxVolume,
     );
+    ensureBootTexturesRegistered(this);
+    applyConfiguredRetroPostFxToCamera(this.game, this.cameras.main);
 
     drawRetroBackdrop(this, 0, 0, width, height, retro, 'transition');
     this.add
-      .rectangle(width / 2, height / 2, width - 104, height - 112, retro.panel, 0.96)
+      .rectangle(width / 2, height / 2, width - 140, height - 140, retro.panel, 0.95)
       .setStrokeStyle(4, retro.border, 0.9);
-    this.add.rectangle(width / 2, 92, width - 136, 36, retro.stageAccent, 0.9).setStrokeStyle(2, retro.ink, 1);
-    this.add.rectangle(width / 2, 388, width - 168, 118, retro.panelAlt, 0.98).setStrokeStyle(3, retro.border, 0.8);
-    this.add.rectangle(width / 2, 512, width - 168, 44, retro.skyline, 0.96).setStrokeStyle(2, retro.border, 0.6);
+    this.add.rectangle(width / 2, 106, width - 180, 44, retro.stageAccent, 0.92).setStrokeStyle(2, retro.ink, 1);
+    this.add.rectangle(width / 2, 180, width - 220, 40, retro.panelAlt, 0.94).setStrokeStyle(2, retro.border, 0.78);
+    this.add.rectangle(width / 2, height - 68, width - 180, 34, retro.skyline, 0.9).setStrokeStyle(2, retro.border, 0.55);
 
     this.add
-      .text(width / 2, 104, stagePresentation.sectorLabel, {
+      .text(width / 2, 108, stagePresentation.sectorLabel, {
         fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '18px',
+        fontSize: '16px',
         color: retro.shadow,
         letterSpacing: 2,
       })
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, 136, `Stage ${state.stageIndex + 1}`, {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '18px',
-        color: retro.dimText,
-        letterSpacing: 3,
-      })
-      .setOrigin(0.5);
-
-    this.add
       .text(width / 2, 182, state.stage.name, {
         fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '34px',
+        fontSize: '30px',
         color: retro.text,
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, 226, `${stagePresentation.biomeLabel}\n${stagePresentation.paletteCue}`, {
+      .text(width / 2, 228, `Muestras tomadas: ${samplesTaken}`, {
         fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '16px',
-        color: retro.dimText,
+        fontSize: '18px',
+        color: '#f0b84b',
         align: 'center',
-        lineSpacing: 8,
       })
       .setOrigin(0.5);
 
+    const astronautX = width / 2 + 120;
+    const astronautY = 410;
+    const astronaut = this.add
+      .sprite(astronautX, astronautY, 'player-sheet', '0')
+      .setDisplaySize(128, 164)
+      .setTint(variantStyle.bodyColor)
+      .setOrigin(0.5, 1);
+
     this.add
-      .text(width / 2, 290, state.stage.hint, {
+      .rectangle(astronautX - 18, astronautY - 70, 12, 28, variantStyle.detailColor, 0.9)
+      .setOrigin(0.5)
+      .setVisible(powerVariant !== 'base');
+
+    this.add
+      .rectangle(astronautX + 18, astronautY - 70, 12, 28, variantStyle.detailColor, 0.9)
+      .setOrigin(0.5)
+      .setVisible(powerVariant === 'dash');
+
+    // Double jump: downward-pointing rocket
+    this.add
+      .rectangle(astronautX + 20, astronautY - 50, 8, 24, variantStyle.accentColor, 0.95)
+      .setOrigin(0.5)
+      .setVisible(powerVariant === 'doubleJump');
+    this.add
+      .rectangle(astronautX + 12, astronautY - 38, 5, 8, variantStyle.accentColor, 0.9)
+      .setOrigin(0.5)
+      .setVisible(powerVariant === 'doubleJump');
+    this.add
+      .rectangle(astronautX + 28, astronautY - 38, 5, 8, variantStyle.accentColor, 0.9)
+      .setOrigin(0.5)
+      .setVisible(powerVariant === 'doubleJump');
+    this.add
+      .triangle(astronautX + 20, astronautY - 26, 0, -8, -5, 8, 5, 8, variantStyle.detailColor, 0.95)
+      .setOrigin(0.5)
+      .setVisible(powerVariant === 'doubleJump');
+
+    this.add
+      .rectangle(astronautX + 48, astronautY - 50, 18, 10, variantStyle.accentColor, 0.95)
+      .setOrigin(0.5)
+      .setVisible(powerVariant === 'shooter');
+
+    this.add
+      .ellipse(astronautX, astronautY - 60, 164, 206, variantStyle.auraColor ?? variantStyle.accentColor, 0.12)
+      .setStrokeStyle(powerVariant === 'invincible' ? 2 : 0, variantStyle.detailColor, powerVariant === 'invincible' ? 0.46 : 0)
+      .setVisible(powerVariant === 'invincible');
+
+    astronaut.setDepth(10);
+
+    const statusLabelMap: Record<string, string> = {
+      base: 'Regular Astronaut',
+      doubleJump: 'Double Jump Power',
+      shooter: 'Plasma Blaster',
+      dash: 'Booster Dash',
+      invincible: 'Invincible Shield',
+    };
+
+    const statusLabel = statusLabelMap[powerVariant] || 'Unknown Status';
+    this.add
+      .text(width / 2 - 120, 280, `Status:\n${statusLabel}`, {
         fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '16px',
-        color: retro.text,
-        align: 'center',
-        wordWrap: { width: width - 216 },
+        fontSize: '14px',
+        color: '#ffffff',
+        align: 'left',
+        lineSpacing: 6,
       })
-      .setOrigin(0.5);
+      .setOrigin(0, 0.5);
 
     this.add
-      .text(
-        width / 2,
-        392,
-        `${formatRunCollectibleSummary(state.progress.totalCoins)}\n${formatStageCollectibleTarget(
-          state.stageRuntime.totalCoins,
-        )}\n${checkpointSummary}\nLoadout: ${powerSummary}\nRun: ${formatRunSettings(state.progress.runSettings)}`,
-        {
-          fontFamily: RETRO_FONT_FAMILY,
-          fontSize: '18px',
-          color: '#f0b84b',
-          align: 'center',
-          lineSpacing: 8,
-        },
-      )
-      .setOrigin(0.5);
-
-    this.add
-      .text(width / 2, 520, stagePresentation.introLine, {
+      .text(width / 2, 526, stagePresentation.introLine, {
         fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '16px',
+        fontSize: '14px',
         color: retro.dimText,
         align: 'center',
-        wordWrap: { width: width - 224 },
+        wordWrap: { width: width - 240 },
       })
       .setOrigin(0.5);
 

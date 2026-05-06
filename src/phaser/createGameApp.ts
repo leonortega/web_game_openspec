@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { SceneBridge } from './adapters/sceneBridge';
 import { buildGameConfig } from './gameConfig';
-import { applyConfiguredRetroPostFxToCamera, setCrtFilterEnabled } from './retroPostFx';
+import { applyConfiguredRetroPostFxToCamera, applyRetroOverlayToScene, setCrtFilterEnabled } from './retroPostFx';
 
 export const createGameApp = (mountNode: HTMLElement | null): Phaser.Game => {
   if (!mountNode) {
@@ -59,6 +59,7 @@ function enableGlobalRetroPostFX(game: Phaser.Game): void {
       }
 
       applyConfiguredRetroPostFxToCamera(game, mainCam);
+      applyRetroOverlayToScene(scene);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('Retro postFX attach failed for scene', (scene as any)?.sys?.settings?.key, err);

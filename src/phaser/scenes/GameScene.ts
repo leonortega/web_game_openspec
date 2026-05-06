@@ -22,7 +22,17 @@ import {
 import { createHud } from '../../ui/hud/hud';
 import { SceneBridge } from '../adapters/sceneBridge';
 import { SynthAudio } from '../audio/SynthAudio';
-import { applyConfiguredRetroPostFxToCamera, createWorldLocalRetroRegion } from '../retroPostFx';
+import { applyConfiguredRetroPostFxToCamera } from '../retroPostFx';
+import {
+  createProjectileTrailEmitter,
+  createBurstEffect,
+  createCheckpointFireworkEffect,
+  createMuzzleSmokeEffect,
+  createFadingRegionEffect,
+  updateTrailEmitter,
+  ensureParticleTexture,
+
+} from '../view/particleEffects';
 import {
   CAPSULE_PRESENTATION,
   EXIT_CAPSULE_ART_BOUNDS,
@@ -138,6 +148,8 @@ export class GameScene extends Phaser.Scene {
 
   private playerAnchor!: Phaser.GameObjects.Rectangle;
 
+  private playerSprite!: Phaser.GameObjects.Sprite;
+
   private playerAura!: Phaser.GameObjects.Ellipse;
 
   private player!: Phaser.GameObjects.Rectangle;
@@ -180,6 +192,8 @@ export class GameScene extends Phaser.Scene {
 
   private currentPlayerPose: ReturnType<typeof getRetroPlayerPose>['state'] = 'idle';
 
+  private currentPlayerAnimation = 'player-anim-idle';
+
   private jumpPoseHoldUntilMs = 0;
 
   private debugJumpPoseUntilMs = 0;
@@ -200,7 +214,7 @@ export class GameScene extends Phaser.Scene {
 
   private enemyHitFlashUntilMs = new Map<string, number>();
 
-  private platformSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private platformSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>();
 
   private platformShadowSprites = new Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>();
 
@@ -209,7 +223,7 @@ export class GameScene extends Phaser.Scene {
 
   private platformCategoryMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
-  private terrainVariantSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private terrainVariantSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>();
 
   private terrainVariantShadowSprites = new Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>();
 
@@ -217,29 +231,29 @@ export class GameScene extends Phaser.Scene {
 
   private terrainVariantDetailSprites = new Map<string, Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>>();
 
-  private hazardSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private hazardSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>();
 
   private gravityZoneSprites: Phaser.GameObjects.Rectangle[] = [];
 
-  private gravityFieldSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private gravityFieldSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>();
 
   private gravityFieldCategoryMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
-  private gravityCapsuleShellSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private gravityCapsuleShellSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>();
 
-  private gravityCapsuleEntryDoorSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private gravityCapsuleEntryDoorSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>();
 
-  private gravityCapsuleExitDoorSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private gravityCapsuleExitDoorSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>();
 
-  private gravityCapsuleButtonSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private gravityCapsuleButtonSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>();
 
-  private gravityCapsuleButtonCoreSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private gravityCapsuleButtonCoreSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>();
 
   private gravityCapsuleShellMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
   private gravityCapsuleButtonMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
-  private activationNodeSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private activationNodeSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>();
 
   private activationNodeMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
@@ -255,7 +269,7 @@ export class GameScene extends Phaser.Scene {
 
   private collectibleSprites = new Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>();
 
-  private rewardBlockSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private rewardBlockSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>();
 
   private rewardBlockLabels = new Map<string, Phaser.GameObjects.Text>();
 
@@ -263,13 +277,11 @@ export class GameScene extends Phaser.Scene {
 
   private projectileSprites = new Map<string, Phaser.GameObjects.Sprite>();
 
-  private projectileBeamTrails = new Map<string, Phaser.GameObjects.Rectangle>();
+  private projectileTrailEmitters = new Map<string, Phaser.GameObjects.Particles.ParticleEmitter>();
 
-  private transientBeamRegions = new Map<string, { region: Phaser.GameObjects.Rectangle; untilMs: number; durationMs: number; maxAlpha: number }>();
+  private transientParticleEffects = new Map<string, Phaser.GameObjects.Particles.ParticleEmitter>();
 
-  private beamTargetEffects = new Map<string, { target: any; untilMs: number }>();
-
-  private beamSequence = 0;
+  private particleSequence = 0;
 
   private lastStageStartPhase: StageStartCapsulePhase | null = null;
 
@@ -279,17 +291,17 @@ export class GameScene extends Phaser.Scene {
 
   private exitDoor!: Phaser.GameObjects.Image;
 
-  private exitBase!: Phaser.GameObjects.Rectangle;
+  private exitBase!: Phaser.GameObjects.Image;
 
   private exitBaseShadow!: Phaser.GameObjects.Rectangle;
 
-  private exitBeacon!: Phaser.GameObjects.Rectangle;
+  private exitBeacon!: Phaser.GameObjects.Image;
 
-  private arrivalBase!: Phaser.GameObjects.Rectangle;
+  private arrivalBase!: Phaser.GameObjects.Image;
 
   private arrivalBaseShadow!: Phaser.GameObjects.Rectangle;
 
-  private arrivalBeacon!: Phaser.GameObjects.Rectangle;
+  private arrivalBeacon!: Phaser.GameObjects.Image;
 
   private arrivalShell!: Phaser.GameObjects.Image;
 
@@ -359,8 +371,8 @@ export class GameScene extends Phaser.Scene {
     void this.checkpointSprites;
     void this.collectibleSprites;
     void this.projectileSprites;
-    void this.projectileBeamTrails;
-    void this.beamTargetEffects;
+    void this.projectileTrailEmitters;
+    void this.transientParticleEffects;
     void this.rewardBlockSprites;
     void this.rewardBlockLabels;
     void this.rewardRevealTexts;
@@ -403,6 +415,7 @@ export class GameScene extends Phaser.Scene {
     void this.enemySprites;
     void this.enemyAccentSprites;
     void this.playerAnchor;
+    void this.playerSprite;
     void this.playerAura;
     void this.player;
     void this.playerHelmet;
@@ -550,6 +563,8 @@ export class GameScene extends Phaser.Scene {
     applyConfiguredRetroPostFxToCamera(this.game, this.cameras.main);
     this.completeTransitionEvent = undefined;
     ensureBootTexturesRegistered(this);
+    ensureParticleTexture(this);
+    this.ensurePlayerAnimations();
     setupGameSceneHud(this.getHudSetupContext());
 
     const state = this.bridge.getSession().getState();
@@ -558,6 +573,7 @@ export class GameScene extends Phaser.Scene {
     this.previousFeedbackState = this.captureFeedbackSnapshot(state);
     this.feedbackCounts = {};
     this.currentPlayerPose = 'idle';
+    this.currentPlayerAnimation = 'player-anim-idle';
     this.jumpPoseHoldUntilMs = 0;
     this.debugJumpPoseUntilMs = 0;
     this.lastJumpFeedbackAtMs = Number.NEGATIVE_INFINITY;
@@ -649,6 +665,56 @@ export class GameScene extends Phaser.Scene {
     setupGameSceneInput(this.getInputContext());
   }
 
+  private ensurePlayerAnimations(): void {
+    const createIfMissing = (
+      key: string,
+      start: number,
+      end: number,
+      frameRate: number,
+      repeat: number,
+    ) => {
+      if (this.anims.exists(key)) {
+        return;
+      }
+      this.anims.create({
+        key,
+        frames: Array.from({ length: end - start + 1 }, (_entry, index) => ({
+          key: 'player-sheet',
+          frame: `${start + index}`,
+        })),
+        frameRate,
+        repeat,
+      });
+    };
+
+    createIfMissing('player-anim-idle', 0, 3, 8, -1);
+    createIfMissing('player-anim-run', 4, 9, 12, -1);
+    createIfMissing('player-anim-jump', 10, 11, 12, -1);
+    createIfMissing('player-anim-fall', 12, 13, 10, -1);
+    createIfMissing('player-anim-dash', 14, 16, 18, -1);
+    createIfMissing('player-anim-hurt', 17, 18, 12, 0);
+    createIfMissing('player-anim-defeat', 19, 23, 10, 0);
+  }
+
+  private resolvePlayerAnimationKey(
+    player: Readonly<SessionSnapshot>['player'],
+    playerDefeatHoldActive: boolean,
+  ): string {
+    if (player.dead || playerDefeatHoldActive) {
+      return 'player-anim-defeat';
+    }
+    if (this.playerHitFlashUntilMs > this.time.now) {
+      return 'player-anim-hurt';
+    }
+    if (player.dashTimerMs > 0) {
+      return 'player-anim-dash';
+    }
+    if (!player.onGround) {
+      return player.vy < 0 ? 'player-anim-jump' : 'player-anim-fall';
+    }
+    return Math.abs(player.vx) > 20 ? 'player-anim-run' : 'player-anim-idle';
+  }
+
   private drawHazard(hazard: { id?: string; kind: string; rect: { x: number; y: number; width: number; height: number } }): void {
     drawHazardRendering(this.getEnemyRenderingContext(), hazard as never);
   }
@@ -701,6 +767,9 @@ export class GameScene extends Phaser.Scene {
           })
         : pose;
     this.currentPlayerPose = effectivePose.state;
+    const invincibleField = variantKey === 'invincible';
+    const playerBaseAlpha =
+      playerDefeatHoldActive ? 1 : !invincibleField && player.invulnerableMs > 0 && Math.floor(player.invulnerableMs / 90) % 2 === 0 ? 0.45 : 1;
     const torsoHeight = effectivePose.state === 'dash' ? 16 : effectivePose.state === 'fall' ? 18 : 17;
     const torsoY = player.y + 13 + effectivePose.bodyOffsetY;
     const armSwing =
@@ -715,28 +784,43 @@ export class GameScene extends Phaser.Scene {
               : effectivePose.state === 'dash'
                 ? 4
                 : 0;
-    const leftArmY = player.y + 15 + effectivePose.chestOffsetY + (facing === 1 ? -armSwing : armSwing);
-    const rightArmY = player.y + 15 + effectivePose.chestOffsetY + (facing === 1 ? armSwing : -armSwing);
     const visorX = facing === 1 ? player.x + 8 : player.x + 6;
     const packX = facing === 1 ? player.x + 2 : player.x + player.width - 8;
     const chestX = player.x + 8;
     this.playerAnchor.setPosition(player.x, player.y).setSize(player.width, player.height);
-    this.player.setVisible(playerVisible);
-    this.playerHelmet.setVisible(playerVisible);
-    this.playerVisor.setVisible(playerVisible);
-    this.playerChest.setVisible(playerVisible);
-    this.playerBelt.setVisible(playerVisible);
-    this.playerPack.setVisible(playerVisible);
+    const playerAnimKey = this.resolvePlayerAnimationKey(player, playerDefeatHoldActive);
+    const renderScale = 1.28;
+    const renderWidth = Math.round(player.width * renderScale);
+    const renderHeight = Math.round(player.height * renderScale);
+    this.playerSprite
+      .setVisible(playerVisible)
+      .setPosition(player.x - Math.floor((renderWidth - player.width) / 2), player.y - (renderHeight - player.height))
+      .setDisplaySize(renderWidth, renderHeight)
+      .setFlipX(player.facing > 0)
+      .setAlpha(playerBaseAlpha)
+      .setTint(playerDefeatHoldActive ? this.retroPalette.alert : variant.bodyColor);
+    if (playerAnimKey !== this.currentPlayerAnimation) {
+      this.playerSprite.anims.play(playerAnimKey, true);
+      this.currentPlayerAnimation = playerAnimKey;
+    } else if (!this.playerSprite.anims.isPlaying) {
+      this.playerSprite.anims.play(playerAnimKey, true);
+    }
+
+    this.player.setVisible(false);
+    this.playerHelmet.setVisible(false);
+    this.playerVisor.setVisible(false);
+    this.playerChest.setVisible(false);
+    this.playerBelt.setVisible(false);
+    this.playerPack.setVisible(false);
     this.playerArmLeft.setVisible(playerVisible);
     this.playerArmRight.setVisible(playerVisible);
-    this.playerBootLeft.setVisible(playerVisible);
-    this.playerBootRight.setVisible(playerVisible);
-    this.playerKneeLeft.setVisible(playerVisible);
-    this.playerKneeRight.setVisible(playerVisible);
+    this.playerBootLeft.setVisible(false);
+    this.playerBootRight.setVisible(false);
+    this.playerKneeLeft.setVisible(false);
+    this.playerKneeRight.setVisible(false);
     this.player.setPosition(player.x + 5, torsoY).setSize(14, torsoHeight);
-    this.player.setAlpha(playerDefeatHoldActive ? 1 : player.invulnerableMs > 0 && Math.floor(player.invulnerableMs / 90) % 2 === 0 ? 0.45 : 1);
+    this.player.setAlpha(playerBaseAlpha);
     this.player.setFillStyle(variant.bodyColor);
-    this.player.setStrokeStyle(2, variant.detailColor, 0.95);
     this.playerHelmet
       .setPosition(player.x + 4, player.y + 2 + effectivePose.helmetOffsetY)
       .setSize(16, 11)
@@ -758,16 +842,22 @@ export class GameScene extends Phaser.Scene {
       .setSize(6, 14)
       .setFillStyle(variant.detailColor)
       .setAlpha(this.player.alpha);
-    this.playerArmLeft
-      .setPosition(player.x + 2, leftArmY)
-      .setSize(4, effectivePose.state === 'dash' ? 10 : 12)
+    const jumping = effectivePose.state === 'jump';
+    const armLift = jumping ? 14 : effectivePose.state === 'fall' ? 2 : 0;
+    const armLength = jumping ? 11 : effectivePose.state === 'dash' ? 10 : 12;
+    const visibleArm = facing === 1 ? this.playerArmRight : this.playerArmLeft;
+    const hiddenArm = facing === 1 ? this.playerArmLeft : this.playerArmRight;
+    const armX = player.x + player.width / 2 - 2;
+    const armY = player.y + 10 + effectivePose.helmetOffsetY;
+    const armSwingX = jumping ? 0 : armSwing * 2.5 * facing;
+    visibleArm
+      .setPosition(armX + armSwingX, armY - armLift)
+      .setSize(4, armLength)
       .setFillStyle(variant.bodyColor)
-      .setAlpha(this.player.alpha);
-    this.playerArmRight
-      .setPosition(player.x + player.width - 6, rightArmY)
-      .setSize(4, effectivePose.state === 'dash' ? 10 : 12)
-      .setFillStyle(variant.bodyColor)
-      .setAlpha(this.player.alpha);
+      .setAngle(jumping ? -90 : 0)
+      .setAlpha(this.player.alpha)
+      .setVisible(true);
+    hiddenArm.setVisible(false);
     this.playerBootLeft
       .setPosition(player.x + 4, player.y + player.height - 6 + effectivePose.bootLeftOffsetY)
       .setSize(6, 6)
@@ -790,9 +880,13 @@ export class GameScene extends Phaser.Scene {
       .setAlpha(this.player.alpha * 0.85);
     const auraStep = getRetroMotionStep(this.time.now + centerX, 110, 3);
     const auraAlpha = ([0.14, 0.2, 0.28][auraStep] ?? 0.14) + effectivePose.auraAlpha;
+    const fieldPulse = invincibleField ? (Math.sin(this.time.now / 72) + 1) * 0.5 : 0;
+    const fieldColor = variant.auraColor ?? variant.accentColor;
     this.playerAura
       .setPosition(centerX, centerY)
-      .setFillStyle(variant.auraColor ?? variant.accentColor, variant.auraColor ? 0.24 : 0.12)
+      .setFillStyle(fieldColor, variant.auraColor ? 0.24 : 0.12)
+      .setStrokeStyle(0, fieldColor, 0)
+      .setScale(invincibleField ? 1.12 + fieldPulse * 0.18 : 1)
       .setVisible(playerVisible && Boolean(variant.auraColor))
       .setAlpha(variant.auraColor ? auraAlpha : 0);
     const playerHitBlend = getRetroHitFlashBlend(this.time.now, this.playerHitFlashUntilMs, 'player-hit');
@@ -894,9 +988,9 @@ export class GameScene extends Phaser.Scene {
       if (!state.stageRuntime.projectiles.find((projectile) => projectile.id === id && projectile.alive)) {
         sprite.destroy();
         this.projectileSprites.delete(id);
-        const trail = this.projectileBeamTrails.get(id);
-        trail?.destroy();
-        this.projectileBeamTrails.delete(id);
+        const emitter = this.projectileTrailEmitters.get(id);
+        emitter?.stop(true);
+        this.projectileTrailEmitters.delete(id);
       }
     }
 
@@ -911,12 +1005,12 @@ export class GameScene extends Phaser.Scene {
       this.exitTeleportBeamTriggered = false;
       if (this.exitBase && this.exitBaseShadow && this.exitBeacon && this.exitShell && this.exitDoor) {
         this.exitBase
-          .setFillStyle(this.retroPalette.panelAlt, 0.94)
+          .setTint(this.retroPalette.panelAlt)
           .setScale(1, 1)
           .setAlpha(1);
         this.exitBaseShadow.setAlpha(0.26).setScale(1, 1);
         this.exitBeacon
-          .setFillStyle(state.stageRuntime.exitReached ? this.retroPalette.cool : this.retroPalette.bright, state.stageRuntime.exitReached ? 0.86 : 0.78)
+          .setTint(state.stageRuntime.exitReached ? this.retroPalette.cool : this.retroPalette.bright)
           .setScale(1, 1)
           .setAlpha(state.stageRuntime.exitReached ? 0.9 : 0.78);
         this.exitShell
@@ -1148,8 +1242,8 @@ export class GameScene extends Phaser.Scene {
             width: platform.width,
             height: platform.height,
             visible: sprite?.visible ?? false,
-            fillColor: sprite?.fillColor ?? 0,
-            fillAlpha: sprite?.fillAlpha ?? 0,
+            fillColor: this.getVisualPrimaryColor(sprite),
+            fillAlpha: this.getVisualPrimaryAlpha(sprite),
             accentColor: accent?.fillColor ?? 0,
             accentAlpha: accent?.fillAlpha ?? 0,
             detailVisibleCount: detailInfo.filter((d) => d.visible).length,
@@ -1174,7 +1268,7 @@ export class GameScene extends Phaser.Scene {
           visible:
             (this.platformSprites.get(platform.id)?.visible ?? false) ||
             isPlatformVisible(platform, state.stageRuntime.revealedPlatformIds, activeTemporaryBridgeIds),
-          fillColor: this.platformSprites.get(platform.id)?.fillColor ?? 0,
+          fillColor: this.getVisualPrimaryColor(this.platformSprites.get(platform.id)),
           alpha: this.platformSprites.get(platform.id)?.alpha ?? 0,
           markerVisibleCount: this.platformCategoryMarkerSprites.get(platform.id)?.filter((marker) => marker.visible).length ?? 0,
         })),
@@ -1193,8 +1287,8 @@ export class GameScene extends Phaser.Scene {
             width: field.width,
             height: field.height,
             visible: this.gravityFieldSprites.get(field.id)?.visible ?? false,
-            fillColor: this.gravityFieldSprites.get(field.id)?.fillColor ?? 0,
-            fillAlpha: this.gravityFieldSprites.get(field.id)?.fillAlpha ?? 0,
+            fillColor: this.getVisualPrimaryColor(this.gravityFieldSprites.get(field.id)),
+            fillAlpha: this.getVisualPrimaryAlpha(this.gravityFieldSprites.get(field.id)),
             markerVisibleCount:
               this.gravityFieldCategoryMarkerSprites.get(field.id)?.filter((marker) => marker.visible).length ?? 0,
           };
@@ -1212,12 +1306,12 @@ export class GameScene extends Phaser.Scene {
           exitDoorVisible: this.gravityCapsuleExitDoorSprites.get(capsule.id)?.visible ?? false,
           buttonVisible: this.gravityCapsuleButtonSprites.get(capsule.id)?.visible ?? false,
           buttonActivated: capsule.button.activated,
-          shellFillColor: this.gravityCapsuleShellSprites.get(capsule.id)?.fillColor ?? 0,
-          shellFillAlpha: this.gravityCapsuleShellSprites.get(capsule.id)?.fillAlpha ?? 0,
-          entryDoorFillColor: this.gravityCapsuleEntryDoorSprites.get(capsule.id)?.fillColor ?? 0,
-          exitDoorFillColor: this.gravityCapsuleExitDoorSprites.get(capsule.id)?.fillColor ?? 0,
-          buttonFillColor: this.gravityCapsuleButtonSprites.get(capsule.id)?.fillColor ?? 0,
-          buttonCoreFillColor: this.gravityCapsuleButtonCoreSprites.get(capsule.id)?.fillColor ?? 0,
+          shellFillColor: this.getVisualPrimaryColor(this.gravityCapsuleShellSprites.get(capsule.id)),
+          shellFillAlpha: this.getVisualPrimaryAlpha(this.gravityCapsuleShellSprites.get(capsule.id)),
+          entryDoorFillColor: this.getVisualPrimaryColor(this.gravityCapsuleEntryDoorSprites.get(capsule.id)),
+          exitDoorFillColor: this.getVisualPrimaryColor(this.gravityCapsuleExitDoorSprites.get(capsule.id)),
+          buttonFillColor: this.getVisualPrimaryColor(this.gravityCapsuleButtonSprites.get(capsule.id)),
+          buttonCoreFillColor: this.getVisualPrimaryColor(this.gravityCapsuleButtonCoreSprites.get(capsule.id)),
           shellMarkerVisibleCount:
             this.gravityCapsuleShellMarkerSprites.get(capsule.id)?.filter((marker) => marker.visible).length ?? 0,
           buttonMarkerVisibleCount:
@@ -1243,7 +1337,7 @@ export class GameScene extends Phaser.Scene {
           width: node.width,
           height: node.height,
           visible: this.activationNodeSprites.get(node.id)?.visible ?? false,
-          fillColor: this.activationNodeSprites.get(node.id)?.fillColor ?? 0,
+          fillColor: this.getVisualPrimaryColor(this.activationNodeSprites.get(node.id)),
           markerVisibleCount: this.activationNodeMarkerSprites.get(node.id)?.filter((marker) => marker.visible).length ?? 0,
         })),
       magneticPlatformVisuals: this.bridge
@@ -1255,10 +1349,36 @@ export class GameScene extends Phaser.Scene {
           visible:
             (this.platformSprites.get(platform.id)?.visible ?? false) ||
             isPlatformVisible(platform, state.stageRuntime.revealedPlatformIds, activeTemporaryBridgeIds),
-          fillColor: this.platformSprites.get(platform.id)?.fillColor ?? 0,
+          fillColor: this.getVisualPrimaryColor(this.platformSprites.get(platform.id)),
           alpha: this.platformSprites.get(platform.id)?.alpha ?? 0,
         })),
     };
+  }
+
+  private getVisualPrimaryColor(target: any): number {
+    if (!target) {
+      return 0;
+    }
+    if (typeof target.fillColor === 'number') {
+      return target.fillColor;
+    }
+    if (typeof target.tintTopLeft === 'number') {
+      return target.tintTopLeft;
+    }
+    return 0;
+  }
+
+  private getVisualPrimaryAlpha(target: any): number {
+    if (!target) {
+      return 0;
+    }
+    if (typeof target.fillAlpha === 'number') {
+      return target.fillAlpha;
+    }
+    if (typeof target.alpha === 'number') {
+      return target.alpha;
+    }
+    return 0;
   }
 
   private setPauseOverlayVisible(visible: boolean): void {
@@ -1382,9 +1502,12 @@ export class GameScene extends Phaser.Scene {
     syncProjectileRendering(this.getEnemyRenderingContext(), projectile);
 
     if (!projectile.alive) {
-      const trail = this.projectileBeamTrails.get(projectile.id);
-      trail?.destroy();
-      this.projectileBeamTrails.delete(projectile.id);
+      const emitter = this.projectileTrailEmitters.get(projectile.id);
+      if (emitter) {
+        emitter.stop();
+        emitter.destroy();
+      }
+      this.projectileTrailEmitters.delete(projectile.id);
       return;
     }
 
@@ -1395,40 +1518,40 @@ export class GameScene extends Phaser.Scene {
     const speed = Math.hypot(vx, vy);
     const directionX = speed > 0 ? vx / speed : 1;
     const directionY = speed > 0 ? vy / speed : 0;
-    const width = Phaser.Math.Clamp(10 + speed * 0.02, 10, 22);
-    const height = projectile.variant ? 4 : 3;
     const color = projectile.variant ? 0x9dd9ff : this.retroPalette.warm;
 
-    let trail = this.projectileBeamTrails.get(projectile.id);
-    if (!trail) {
-      trail = createWorldLocalRetroRegion(this, {
-        kind: 'palette-ramp',
+    let emitter = this.projectileTrailEmitters.get(projectile.id);
+    if (!emitter) {
+      ensureParticleTexture(this);
+      emitter = createProjectileTrailEmitter(this, {
         x: centerX,
         y: centerY,
-        width,
-        height,
         color,
-        alpha: 0.5,
+        alpha: projectile.variant ? 0.62 : 0.5,
         depth: 8,
+        speed: speed * 0.15,
+        lifespan: 300,
       });
-      if (typeof (trail as any).setBlendMode === 'function') {
-        (trail as any).setBlendMode(Phaser.BlendModes.ADD);
-      }
-      this.applyBeamFiltersToTarget(trail, 'shot');
-      this.projectileBeamTrails.set(projectile.id, trail);
+      this.projectileTrailEmitters.set(projectile.id, emitter);
+
+      const muzzleOffset = projectile.owner === 'enemy' ? 7 : 12;
+      createMuzzleSmokeEffect(this, {
+        x: centerX - directionX * muzzleOffset,
+        y: centerY - directionY * muzzleOffset,
+        directionX,
+        directionY,
+        owner: projectile.owner,
+        depth: 9,
+      });
     }
 
-    trail
-      .setPosition(centerX - directionX * 5, centerY - directionY * 5)
-      .setSize(width, height)
-      .setAngle(Phaser.Math.RadToDeg(Math.atan2(directionY, directionX)))
-      .setFillStyle(color, projectile.variant ? 0.62 : 0.5)
-      .setVisible(true);
-
-    const sprite = this.projectileSprites.get(projectile.id);
-    if (sprite) {
-      this.pulseBeamTarget(`projectile-${projectile.id}`, sprite as any, 'shot', 120);
-    }
+    // Update emitter position and angle
+    updateTrailEmitter(
+      emitter,
+      centerX - directionX * 5,
+      centerY - directionY * 5,
+      Phaser.Math.RadToDeg(Math.atan2(directionY, directionX)),
+    );
   }
 
   private platformColor(platform: PlatformState): number {
@@ -1547,57 +1670,121 @@ export class GameScene extends Phaser.Scene {
   ): void {
     const centerX = player.x + player.width / 2;
     const facingOffset = player.facing === 1 ? 1 : -1;
+    const pulse = (Math.sin(this.time.now / 80) + 1) * 0.5;
+    const accessoryLift = Math.max(8, Math.round(player.height * 0.24));
+    const backX = centerX - facingOffset * 5;
     switch (variantKey) {
       case 'doubleJump':
+        this.playerPack
+          .setPosition(backX, player.y + 12 + pose.accentOffsetY - accessoryLift)
+          .setSize(8, 12)
+          .setFillStyle(variant.detailColor)
+          .setVisible(true);
         this.playerHeadband
-          .setPosition(centerX, player.y + 11 + pose.headbandOffsetY)
-          .setSize(14, 4)
+          .setPosition(backX + 1, player.y + 15 + pose.headbandOffsetY - accessoryLift)
+          .setSize(6, 2)
           .setFillStyle(variant.detailColor)
           .setVisible(true);
         this.playerWingLeft
-          .setPosition(player.x + 3, player.y + 23 + pose.wingLift)
-          .setSize(5, 14)
+          .setPosition(backX - 1, player.y + 18 + pose.wingLift - accessoryLift)
+          .setSize(3, 6)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         this.playerWingRight
-          .setPosition(player.x + player.width - 3, player.y + 23 + pose.wingLift)
-          .setSize(5, 14)
+          .setPosition(backX + 6, player.y + 18 + pose.wingLift - accessoryLift)
+          .setSize(3, 6)
           .setFillStyle(variant.accentColor)
+          .setVisible(true);
+        this.playerAccent
+          .setPosition(backX - 1, player.y + 24 + pose.accentOffsetY - accessoryLift)
+          .setSize(11, 3)
+          .setFillStyle(variant.accentColor)
+          .setAlpha(0.58 + pulse * 0.34)
           .setVisible(true);
         break;
       case 'shooter':
-        this.playerHeadband
-          .setPosition(centerX, player.y + 11 + pose.headbandOffsetY)
-          .setSize(12, 3)
+        this.playerPack
+          .setPosition(centerX - facingOffset * 4, player.y + 13 + pose.accentOffsetY)
+          .setSize(6, 10)
           .setFillStyle(variant.detailColor)
           .setVisible(true);
+        this.playerHeadband
+          .setPosition(centerX + facingOffset * 10, player.y + 20 + pose.headbandOffsetY)
+          .setSize(4, 3)
+          .setFillStyle(this.retroPalette.bright)
+          .setVisible(true);
         this.playerAccent
-          .setPosition(centerX + facingOffset * 11, player.y + 23 + pose.accentOffsetY)
-          .setSize(10, 8)
+          .setPosition(centerX + facingOffset * 9, player.y + 23 + pose.accentOffsetY)
+          .setSize(11, 7)
+          .setFillStyle(variant.detailColor)
+          .setVisible(true);
+        this.playerWingRight
+          .setPosition(centerX + facingOffset * 15, player.y + 23 + pose.wingLift)
+          .setSize(7, 3)
+          .setFillStyle(variant.accentColor)
+          .setVisible(true);
+        this.playerWingLeft
+          .setPosition(centerX + facingOffset * 6, player.y + 21 + pose.wingLift)
+          .setSize(4, 3)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         break;
       case 'invincible':
+        this.playerPack
+          .setPosition(centerX - facingOffset * 4, player.y + 13 + pose.accentOffsetY)
+          .setSize(6, 10)
+          .setFillStyle(variant.detailColor)
+          .setVisible(true);
         this.playerHeadband
           .setPosition(centerX, player.y + 8 + pose.headbandOffsetY)
           .setSize(18, 4)
           .setFillStyle(variant.accentColor)
+          .setAlpha(0.6 + pulse * 0.28)
           .setVisible(true);
         this.playerAccent
-          .setPosition(centerX, player.y + 1 + pose.accentOffsetY)
-          .setSize(8, 6)
+          .setPosition(centerX, player.y + 1 + pose.accentOffsetY - pulse * 2)
+          .setSize(10, 6)
           .setFillStyle(variant.detailColor)
+          .setAlpha(0.45 + pulse * 0.4)
+          .setVisible(true);
+        this.playerWingLeft
+          .setPosition(centerX - 11, player.y + 19 + pose.wingLift)
+          .setSize(3, 11)
+          .setFillStyle(variant.accentColor)
+          .setAlpha(0.35 + pulse * 0.35)
+          .setVisible(true);
+        this.playerWingRight
+          .setPosition(centerX + 11, player.y + 19 + pose.wingLift)
+          .setSize(3, 11)
+          .setFillStyle(variant.accentColor)
+          .setAlpha(0.35 + pulse * 0.35)
           .setVisible(true);
         break;
       case 'dash':
+        this.playerPack
+          .setPosition(backX, player.y + 12 + pose.accentOffsetY - accessoryLift)
+          .setSize(8, 12)
+          .setFillStyle(variant.detailColor)
+          .setVisible(true);
         this.playerHeadband
-          .setPosition(centerX, player.y + 27 + pose.headbandOffsetY)
-          .setSize(12, 4)
+          .setPosition(centerX - facingOffset * 12, player.y + 13 + pose.headbandOffsetY - accessoryLift)
+          .setSize(5, 3)
           .setFillStyle(variant.detailColor)
           .setVisible(true);
         this.playerAccent
-          .setPosition(centerX - facingOffset * 8, player.y + 25 + pose.accentOffsetY)
-          .setSize(player.dashTimerMs > 0 ? 14 : 8, 7)
+          .setPosition(centerX - facingOffset * 17, player.y + 17 + pose.accentOffsetY - accessoryLift)
+          .setSize(player.dashTimerMs > 0 ? 13 : 8, 3)
+          .setFillStyle(variant.accentColor)
+          .setAlpha(player.dashTimerMs > 0 ? 0.9 : 0.62)
+          .setVisible(true);
+        this.playerWingLeft
+          .setPosition(centerX - facingOffset * 13, player.y + 13 + pose.wingLift - accessoryLift)
+          .setSize(6, 3)
+          .setFillStyle(variant.accentColor)
+          .setVisible(true);
+        this.playerWingRight
+          .setPosition(centerX - facingOffset * 13, player.y + 20 + pose.wingLift - accessoryLift)
+          .setSize(6, 3)
           .setFillStyle(variant.accentColor)
           .setVisible(true);
         break;
@@ -1620,10 +1807,18 @@ export class GameScene extends Phaser.Scene {
       this.triggerJumpFeedback(state);
       if (cue === AUDIO_CUES.doubleJump) {
         const packX = state.player.x + state.player.width * 0.5 - state.player.facing * 5;
-        const packY = state.player.y + state.player.height * 0.58;
+        const packY = state.player.y + state.player.height * 0.34;
         spawnRetroParticleBurst(this, packX, packY, this.retroPalette.bright, 'power');
         this.spawnBeamPulse('distortion', packX, packY + 6, this.retroPalette.bright, 18, 24, 160, 12);
-        this.pulseBeamTarget('player-pack-double-jump', this.playerPack as any, 'teleport', 180);
+        ensureParticleTexture(this);
+        createBurstEffect(this, {
+          x: this.playerPack.x,
+          y: this.playerPack.y,
+          color: 0x00ffff,
+          alpha: 0.8,
+          depth: 11,
+          durationMs: 180,
+        });
       }
       return;
     }
@@ -1649,10 +1844,16 @@ export class GameScene extends Phaser.Scene {
           const sprite = this.checkpointSprites.get(event.id);
           if (sprite) {
             playRetroTweenPreset(this, sprite, 'checkpoint');
-            this.pulseBeamTarget(`checkpoint-halo-${event.id}`, sprite as any, 'hit', 220);
           }
-          spawnRetroParticleBurst(this, event.x, event.y, this.retroPalette.safe, 'checkpoint');
-          this.spawnBeamPulse('hit-flash', event.x, event.y, this.retroPalette.safe, 36, 36, 180, 11);
+          ensureParticleTexture(this);
+          const fireworkX = sprite?.x ?? event.x;
+          const fireworkY = sprite ? sprite.y - sprite.displayHeight * 0.45 : event.y;
+          createCheckpointFireworkEffect(this, {
+            x: fireworkX,
+            y: fireworkY,
+            depth: 12,
+          });
+          
           this.recordFeedback('checkpoint');
           break;
         }
@@ -1755,6 +1956,7 @@ export class GameScene extends Phaser.Scene {
 
   private getPlayerVisualTargets(): Phaser.GameObjects.GameObject[] {
     return [
+      this.playerSprite,
       this.player,
       this.playerHelmet,
       this.playerVisor,
@@ -1837,13 +2039,15 @@ export class GameScene extends Phaser.Scene {
     if (sequence.phase !== this.lastStageStartPhase) {
       if (sequence.phase === 'rematerialize') {
         this.spawnBeamPulse('distortion', layout.capsuleCenterX, layout.capsuleCenterY + 2, this.retroPalette.cool, 40, 14, 140, 12);
-        this.pulseBeamTarget('arrival-door-rematerialize', this.arrivalDoor as any, 'teleport', 180);
-        this.pulseBeamTarget('arrival-shell-rematerialize', this.arrivalShell as any, 'teleport', 180);
-        this.pulseBeamTarget('arrival-player-rematerialize', this.arrivalPlayer as any, 'teleport', 140);
+        ensureParticleTexture(this);
+        createBurstEffect(this, { x: this.arrivalDoor.x, y: this.arrivalDoor.y, color: 0x00ff00, alpha: 0.8, depth: 11, durationMs: 180 });
+        createBurstEffect(this, { x: this.arrivalShell.x, y: this.arrivalShell.y, color: 0x00ff00, alpha: 0.8, depth: 11, durationMs: 180 });
+        createBurstEffect(this, { x: this.arrivalPlayer.x, y: this.arrivalPlayer.y, color: 0x00ff00, alpha: 0.8, depth: 11, durationMs: 140 });
       }
       if (sequence.phase === 'closing') {
         this.spawnBeamPulse('distortion', layout.capsuleCenterX, layout.capsuleCenterY + 2, this.retroPalette.warm, 34, 10, 120, 12);
-        this.pulseBeamTarget('arrival-door-closing', this.arrivalDoor as any, 'teleport', 140);
+        ensureParticleTexture(this);
+        createBurstEffect(this, { x: this.arrivalDoor.x, y: this.arrivalDoor.y, color: 0xff6600, alpha: 0.7, depth: 11, durationMs: 140 });
       }
       this.lastStageStartPhase = sequence.phase;
     }
@@ -1862,12 +2066,12 @@ export class GameScene extends Phaser.Scene {
       this.arrivalBase
         .setPosition(layout.capsuleCenterX, layout.baseY)
         .setScale(1, 1)
-        .setFillStyle(this.retroPalette.panelAlt, 0.92)
+        .setTint(this.retroPalette.panelAlt)
         .setAlpha(0.92)
         .setVisible(true);
       this.arrivalBeacon
         .setPosition(layout.capsuleCenterX, layout.beaconY)
-        .setFillStyle(this.retroPalette.cool, 0.34)
+        .setTint(this.retroPalette.cool)
         .setScale(1, 1)
         .setAlpha(0.34)
         .setVisible(true);
@@ -1911,12 +2115,12 @@ export class GameScene extends Phaser.Scene {
     this.arrivalBase
       .setPosition(layout.capsuleCenterX, layout.baseY)
       .setScale(1 + (1 - sequence.doorClosedProgress) * 0.06, 1)
-      .setFillStyle(sequence.phase === 'rematerialize' ? this.retroPalette.cool : this.retroPalette.panelAlt, 0.88)
+      .setTint(sequence.phase === 'rematerialize' ? this.retroPalette.cool : this.retroPalette.panelAlt)
       .setAlpha(0.88)
       .setVisible(true);
     this.arrivalBeacon
       .setPosition(layout.capsuleCenterX, layout.beaconY)
-      .setFillStyle(sequence.phase === 'rematerialize' ? this.retroPalette.cool : this.retroPalette.bright, 0.82)
+      .setTint(sequence.phase === 'rematerialize' ? this.retroPalette.cool : this.retroPalette.bright)
       .setScale(1 + (1 - sequence.overallProgress) * 0.14, 1 + (1 - sequence.overallProgress) * 0.1)
       .setAlpha(0.56 + sequence.revealProgress * 0.22 + Math.sin(this.time.now / 62) * 0.08)
       .setVisible(true);
@@ -1941,6 +2145,8 @@ export class GameScene extends Phaser.Scene {
       .setVisible(sequence.phase !== 'inert' && sequence.doorClosedProgress < 0.98);
     this.arrivalPlayer
       .setPosition(arrivalPlayerX, arrivalPlayerY)
+      .setFrame(sequence.phase === 'walkout' ? '4' : '0')
+      .setFlipX(layout.playerTargetX >= layout.playerStartX)
       .setTint(sequence.phase === 'rematerialize' ? this.retroPalette.bright : this.retroPalette.cool)
       .setAlpha(playerAlpha)
       .setVisible(sequence.phase !== 'closing' && playerAlpha > 0.02);
@@ -1971,9 +2177,10 @@ export class GameScene extends Phaser.Scene {
     if (!this.exitTeleportBeamTriggered && progress >= 0.08) {
       this.spawnBeamPulse('distortion', playerCenterX, playerCenterY, this.retroPalette.cool, 42, 14, 150, 12);
       this.spawnBeamPulse('hit-flash', capsuleCenterX, capsuleCenterY, this.retroPalette.bright, 26, 26, 130, 12);
-      this.pulseBeamTarget('exit-door-teleport', this.exitDoor as any, 'teleport', 190);
-      this.pulseBeamTarget('exit-shell-teleport', this.exitShell as any, 'teleport', 190);
-      this.pulseBeamTarget('player-teleport', this.player as any, 'teleport', 150);
+      ensureParticleTexture(this);
+      createBurstEffect(this, { x: this.exitDoor.x, y: this.exitDoor.y, color: 0xff00ff, alpha: 0.8, depth: 11, durationMs: 190 });
+      createBurstEffect(this, { x: this.exitShell.x, y: this.exitShell.y, color: 0xff00ff, alpha: 0.8, depth: 11, durationMs: 190 });
+      createBurstEffect(this, { x: this.player.x, y: this.player.y, color: 0xff00ff, alpha: 0.8, depth: 11, durationMs: 150 });
       this.exitTeleportBeamTriggered = true;
     }
 
@@ -2000,14 +2207,14 @@ export class GameScene extends Phaser.Scene {
       .setDepth(11);
 
     this.exitBase
-      .setFillStyle(progress > 0.5 ? this.retroPalette.cool : this.retroPalette.panelAlt, 0.92)
+      .setTint(progress > 0.5 ? this.retroPalette.cool : this.retroPalette.panelAlt)
       .setScale(1 + progress * 0.08, 1)
       .setAlpha(0.92 + progress * 0.08);
     this.exitBaseShadow
       .setScale(1 + progress * 0.14, 1)
       .setAlpha(0.24 + progress * 0.12);
     this.exitBeacon
-      .setFillStyle(progress > 0.45 ? this.retroPalette.cool : this.retroPalette.bright, 0.8 + progress * 0.18)
+      .setTint(progress > 0.45 ? this.retroPalette.cool : this.retroPalette.bright)
       .setScale(1 + progress * 0.18, 1 + progress * 0.12)
       .setAlpha(0.82 + progress * 0.16);
 
@@ -2058,9 +2265,10 @@ export class GameScene extends Phaser.Scene {
     playRetroDefeatTweenPreset(this, this.getPlayerVisualTargets(), 'player-death');
     this.spawnBeamPulse('hit-flash', x, y, this.retroPalette.alert, 44, 12, 130, 12);
     this.spawnBeamPulse('distortion', x, y, this.retroPalette.bright, 22, 22, 110, 13);
-    this.pulseBeamTarget('player-death-core', this.player as any, 'death', 180);
-    this.pulseBeamTarget('player-death-helmet', this.playerHelmet as any, 'death', 180);
-    this.pulseBeamTarget('player-death-visor', this.playerVisor as any, 'death', 180);
+    ensureParticleTexture(this);
+    createBurstEffect(this, { x: this.player.x, y: this.player.y, color: 0xff0000, alpha: 0.9, depth: 13, durationMs: 180 });
+    createBurstEffect(this, { x: this.playerHelmet.x, y: this.playerHelmet.y, color: 0xff0000, alpha: 0.8, depth: 13, durationMs: 180 });
+    createBurstEffect(this, { x: this.playerVisor.x, y: this.playerVisor.y, color: 0xff6600, alpha: 0.8, depth: 13, durationMs: 180 });
     this.setPlayerVisualDepths(defeatPreset.depth, defeatPreset.depth + 1);
     this.lastPlayerDefeatFeedbackAtMs = this.time.now;
     this.recordFeedback('playerDefeat');
@@ -2075,9 +2283,10 @@ export class GameScene extends Phaser.Scene {
     this.playerHitFlashUntilMs = Math.max(this.playerHitFlashUntilMs, this.time.now + hitFlash.durationMs);
     this.playerAura.setPosition(x, y);
     this.spawnBeamPulse('hit-flash', x, y, this.retroPalette.bright, 28, 8, 90, 12);
-    this.pulseBeamTarget('player-hit-core', this.player as any, 'hit', 110);
-    this.pulseBeamTarget('player-hit-helmet', this.playerHelmet as any, 'hit', 110);
-    this.pulseBeamTarget('player-hit-visor', this.playerVisor as any, 'hit', 110);
+    ensureParticleTexture(this);
+    createBurstEffect(this, { x: this.player.x, y: this.player.y, color: 0xffff00, alpha: 0.8, depth: 13, durationMs: 110 });
+    createBurstEffect(this, { x: this.playerHelmet.x, y: this.playerHelmet.y, color: 0xffff00, alpha: 0.75, depth: 13, durationMs: 110 });
+    createBurstEffect(this, { x: this.playerVisor.x, y: this.playerVisor.y, color: 0xffff00, alpha: 0.75, depth: 13, durationMs: 110 });
     this.recordFeedback('playerHit');
   }
 
@@ -2102,13 +2311,22 @@ export class GameScene extends Phaser.Scene {
     if (cause === 'stomp') {
       this.spawnBeamPulse('distortion', sprite.x + sprite.displayWidth / 2, sprite.y + sprite.displayHeight / 2 + 4, this.retroPalette.bright, 18, 18, 70, 11);
     }
-    this.pulseBeamTarget(`enemy-defeat-${enemyId}`, sprite as any, cause === 'stomp' ? 'stomp' : 'death', 120);
+    ensureParticleTexture(this);
+    createBurstEffect(this, {
+      x: sprite.x,
+      y: sprite.y,
+      color: cause === 'stomp' ? 0xffaa00 : 0xff0055,
+      alpha: 0.85,
+      depth: 10,
+      durationMs: 120,
+    });
   }
 
   private resetPlayerDefeatPresentation(): void {
     resetRetroPresentationTargets(this, [
       { target: this.playerAura, depth: 5, visible: false, alpha: 0 },
       { target: this.playerPack, depth: 5, visible: true },
+      { target: this.playerSprite, depth: 6, visible: true },
       { target: this.player, depth: 6, visible: true },
       { target: this.playerHelmet, depth: 7, visible: true },
       { target: this.playerVisor, depth: 7, visible: true },
@@ -2130,7 +2348,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnBeamPulse(
-    kind: 'palette-ramp' | 'hit-flash' | 'distortion',
+    // _kind: effect type from old beam system (palette-ramp, hit-flash, distortion)
+    // Currently unused but kept for backwards compatibility with existing call sites
+    _kind: 'palette-ramp' | 'hit-flash' | 'distortion',
     x: number,
     y: number,
     color: number,
@@ -2139,8 +2359,9 @@ export class GameScene extends Phaser.Scene {
     durationMs: number,
     depth: number,
   ): void {
-    const region = createWorldLocalRetroRegion(this, {
-      kind,
+    ensureParticleTexture(this);
+    
+    const effect = createFadingRegionEffect(this, {
       x,
       y,
       width,
@@ -2148,147 +2369,40 @@ export class GameScene extends Phaser.Scene {
       color,
       alpha: 0.72,
       depth,
-    });
-    if (typeof (region as any).setBlendMode === 'function') {
-      (region as any).setBlendMode(Phaser.BlendModes.ADD);
-    }
-    this.applyBeamFiltersToTarget(region, kind === 'distortion' ? 'teleport' : 'hit');
-    const id = `beam-${this.beamSequence++}`;
-    this.transientBeamRegions.set(id, {
-      region,
-      untilMs: this.time.now + durationMs,
       durationMs,
-      maxAlpha: 0.72,
+      lifespan: durationMs,
     });
+
+    const id = `particle-${this.particleSequence++}`;
+    this.transientParticleEffects.set(id, effect);
   }
 
   private updateBeamEffects(): void {
-    for (const [id, effect] of this.transientBeamRegions.entries()) {
-      const remaining = effect.untilMs - this.time.now;
-      if (remaining <= 0) {
-        effect.region.destroy();
-        this.transientBeamRegions.delete(id);
-        continue;
+    // Particle emitters handle their own lifecycle
+    // This is now primarily handled by Phaser's particle system
+    for (const [id, emitter] of this.transientParticleEffects.entries()) {
+      if (emitter.isDestroyed) {
+        this.transientParticleEffects.delete(id);
       }
-
-      const ratio = Phaser.Math.Clamp(remaining / Math.max(effect.durationMs, 1), 0, 1);
-      effect.region.setAlpha(effect.maxAlpha * ratio);
-      effect.region.setScale(1 + (1 - ratio) * 0.45, 1 + (1 - ratio) * 0.12);
-    }
-
-    for (const [id, effect] of this.beamTargetEffects.entries()) {
-      if (this.time.now < effect.untilMs) {
-        continue;
-      }
-
-      this.clearBeamFiltersFromTarget(effect.target);
-      this.beamTargetEffects.delete(id);
     }
   }
 
   private clearBeamEffects(): void {
-    for (const trail of this.projectileBeamTrails.values()) {
-      trail.destroy();
+    for (const emitter of this.projectileTrailEmitters.values()) {
+      emitter.stop();
+      emitter.destroy();
     }
-    this.projectileBeamTrails.clear();
+    this.projectileTrailEmitters.clear();
 
-    for (const effect of this.transientBeamRegions.values()) {
-      effect.region.destroy();
+    for (const emitter of this.transientParticleEffects.values()) {
+      emitter.stop();
+      emitter.destroy();
     }
-    this.transientBeamRegions.clear();
-
-    for (const effect of this.beamTargetEffects.values()) {
-      this.clearBeamFiltersFromTarget(effect.target);
-    }
-    this.beamTargetEffects.clear();
-  }
-
-  private pulseBeamTarget(
-    key: string,
-    target: any,
-    kind: 'shot' | 'hit' | 'stomp' | 'death' | 'teleport',
-    durationMs: number,
-  ): void {
-    if (!target) {
-      return;
-    }
-
-    const existing = this.beamTargetEffects.get(key);
-    if (existing && existing.target === target) {
-      existing.untilMs = Math.max(existing.untilMs, this.time.now + durationMs);
-      return;
-    }
-
-    this.applyBeamFiltersToTarget(target, kind);
-    this.beamTargetEffects.set(key, {
-      target,
-      untilMs: this.time.now + durationMs,
-    });
-  }
-
-  private clearBeamFiltersFromTarget(target: any): void {
-    const filterList = target?.filters?.internal ?? target?.filters?.external;
-    if (!filterList || !target?.__beamShaderOwned) {
-      return;
-    }
-
-    if (typeof filterList.clear === 'function') {
-      filterList.clear();
-    }
-
-    target.__beamShaderOwned = false;
-  }
-
-  private applyBeamFiltersToTarget(
-    target: any,
-    kind: 'shot' | 'hit' | 'stomp' | 'death' | 'teleport',
-  ): void {
-    if (!target) {
-      return;
-    }
-
-    if (typeof target.enableFilters === 'function') {
-      target.enableFilters();
-    }
-
-    const filterList = target?.filters?.internal ?? target?.filters?.external;
-    if (!filterList) {
-      return;
-    }
-
-    if (target.__beamShaderOwned && typeof filterList.clear === 'function') {
-      filterList.clear();
-    }
-
-    switch (kind) {
-      case 'shot':
-        filterList.addGlow?.(this.retroPalette.warm, 3.5, 0.2, 1, false);
-        filterList.addBloom?.(this.retroPalette.warm, 0.28, 1, 0.85, 1, 2, 3);
-        break;
-      case 'hit':
-        filterList.addGlow?.(this.retroPalette.bright, 4.6, 0.8, 1, false);
-        filterList.addBloom?.(this.retroPalette.bright, 0.42, 1, 1.05, 1, 2, 3);
-        break;
-      case 'stomp':
-        filterList.addGlow?.(this.retroPalette.warm, 5.4, 1.1, 1, false);
-        filterList.addBloom?.(this.retroPalette.alert, 0.45, 1, 0.92, 1, 2, 3);
-        break;
-      case 'death':
-        filterList.addGlow?.(this.retroPalette.alert, 6.2, 1.3, 1, false);
-        filterList.addBloom?.(this.retroPalette.alert, 0.55, 1, 1.12, 1, 2, 3);
-        filterList.addWipe?.(0.15, 0, 0, 1);
-        break;
-      case 'teleport':
-        filterList.addGlow?.(this.retroPalette.cool, 4.4, 0.5, 1, false);
-        filterList.addWipe?.(0.12, 0, 0, 1);
-        filterList.addDisplacement?.('__WHITE', 0.004, 0.003);
-        break;
-    }
-
-    target.__beamShaderOwned = true;
+    this.transientParticleEffects.clear();
   }
 
   private setPlayerVisualDepths(baseDepth: number, detailDepth: number): void {
+    this.playerSprite.setDepth(baseDepth);
     this.player.setDepth(baseDepth);
     this.playerHelmet.setDepth(detailDepth);
     this.playerVisor.setDepth(detailDepth);

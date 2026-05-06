@@ -407,9 +407,9 @@ export const PLAYER_POWER_VARIANTS: Record<'base' | PowerType, PlayerPowerVarian
     auraColor: null,
   },
   invincible: {
-    bodyColor: 0x9fdae8,
-    detailColor: 0x173848,
-    accentColor: 0xe9fff7,
+    bodyColor: 0xf7f3d6,
+    detailColor: 0x11141b,
+    accentColor: 0x8fdff2,
     auraColor: 0x8fdff2,
   },
   dash: {

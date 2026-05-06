@@ -14,7 +14,7 @@ export type GameSceneRewardRenderingContext = Phaser.Scene & {
   checkpointSprites: Map<string, Phaser.GameObjects.Sprite>;
   checkpointContactStrips: Map<string, Phaser.GameObjects.Rectangle>;
   collectibleSprites: Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>;
-  rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
   rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
   rewardRevealTexts: Map<string, Phaser.GameObjects.Text>;
   rewardBlockColor(rewardBlock: RewardBlockState): number;
@@ -65,7 +65,7 @@ export function syncCheckpoint(
   }
 
   const tintColor = checkpoint.activated ? scene.retroPalette.safe : scene.retroPalette.cool;
-  const checkpointBottomY = supportTopY ?? checkpoint.rect.y + checkpoint.rect.height;
+  const checkpointBottomY = (supportTopY ?? checkpoint.rect.y + checkpoint.rect.height) + 10;
 
   sprite
     .setOrigin(0.5, 1)
@@ -130,10 +130,19 @@ export function syncRewardBlock(scene: GameSceneRewardRenderingContext, rewardBl
   const bumpOffset = flashProgress > 0 ? Math.round((10 * flashProgress) / 2) * 2 : 0;
   const alpha = rewardBlock.used ? 0.35 : 1;
 
-  sprite.setPosition(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2 - bumpOffset);
-  sprite.setFillStyle(scene.rewardBlockColor(rewardBlock));
-  sprite.setStrokeStyle(2, flashProgress > 0 ? 0xffffff : scene.retroPalette.border, flashProgress > 0 ? 0.8 : 0.55);
-  sprite.setAlpha(alpha);
+  const rewardSprite = sprite as any;
+  rewardSprite.setPosition(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2 - bumpOffset);
+  if (typeof rewardSprite.setDisplaySize === 'function') {
+    rewardSprite.setDisplaySize(rewardBlock.width, rewardBlock.height);
+  }
+  if (typeof rewardSprite.setFillStyle === 'function') {
+    rewardSprite.setFillStyle(scene.rewardBlockColor(rewardBlock));
+    rewardSprite.setStrokeStyle(2, flashProgress > 0 ? 0xffffff : scene.retroPalette.border, flashProgress > 0 ? 0.8 : 0.55);
+  } else {
+    rewardSprite.setTexture(rewardBlock.used ? 'reward-block-used' : 'reward-block');
+    rewardSprite.setTint(scene.rewardBlockColor(rewardBlock));
+  }
+  rewardSprite.setAlpha(alpha);
   label.setPosition(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2 - bumpOffset);
   label.setText(scene.rewardBlockLabel(rewardBlock));
   label.setAlpha(alpha);

@@ -147,7 +147,7 @@ describe('SceneBridge pause flow regression coverage', () => {
 
     const support = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-9010-480');
     const capsule = state.stageRuntime.gravityCapsules.find((entry: any) => entry.id === 'sky-anti-grav-capsule');
-    const activeJumpVy = 640 + state.stage.world.gravity * -0.38 * 0.016;
+    const activeJumpVy = 680 + state.stage.world.gravity * -0.38 * 0.016;
 
     state.player.x = support.x + 20;
     state.player.y = support.y - state.player.height;

@@ -1808,7 +1808,7 @@ describe('GameSession regression coverage', () => {
     expect(next.player.gravityFieldId).toBe('test-anti-grav');
     expect(next.player.gravityFieldKind).toBe('anti-grav-stream');
     expect(next.player.gravityScale).toBeLessThan(0);
-    expect(next.player.vy).toBeLessThan(-640);
+    expect(next.player.vy).toBeLessThan(-680);
 
     next.progress.activePowers.dash = true;
     next.player.x = support.x + 30;
@@ -2738,7 +2738,7 @@ describe('GameSession regression coverage', () => {
     state = getMutableState(session);
     expect(state.player.gravityFieldId).toBe(antiGravField.id);
     expect(state.player.gravityFieldKind).toBe('anti-grav-stream');
-    expect(state.player.vy).toBeCloseTo(640 + state.stage.world.gravity * state.player.gravityScale * 0.016, 4);
+    expect(state.player.vy).toBeCloseTo(680 + state.stage.world.gravity * state.player.gravityScale * 0.016, 4);
     expect(state.stageRuntime.enemies.find((enemy: any) => enemy.id === containedEnemyId).x + 34).toBeLessThan(buttonLaneLeft);
 
     state.player.x = capsule.button.x + capsule.button.width / 2 - state.player.width / 2;
@@ -2860,7 +2860,7 @@ describe('GameSession regression coverage', () => {
 
     state = getMutableState(session);
     expect(state.player.gravityFieldId).toBeNull();
-    expect(state.player.vy).toBeCloseTo(-640 + state.stage.world.gravity * 0.016, 4);
+    expect(state.player.vy).toBeCloseTo(-680 + state.stage.world.gravity * 0.016, 4);
 
     session.forceStartStage(0);
     state = getMutableState(session);
@@ -2996,7 +2996,7 @@ describe('GameSession regression coverage', () => {
     state.stageRuntime.enemies = [];
     state.stageRuntime.hazards = [];
     const support = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-9010-480');
-    const activeJumpVy = 640 + state.stage.world.gravity * -0.38 * 0.016;
+    const activeJumpVy = 680 + state.stage.world.gravity * -0.38 * 0.016;
 
     state.player.x = support.x + 20;
     state.player.y = support.y - state.player.height;
@@ -3195,7 +3195,7 @@ describe('GameSession regression coverage', () => {
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
 
     state = getMutableState(session);
-    const normalJumpVy = -(640 - state.stage.world.gravity * 0.016);
+    const normalJumpVy = -(680 - state.stage.world.gravity * 0.016);
     expect(state.player.vy).toBeLessThan(0);
     expect(state.player.vy).toBeCloseTo(normalJumpVy, 4);
     expect(state.player.gravityFieldId).toBeNull();
@@ -3475,7 +3475,7 @@ describe('GameSession regression coverage', () => {
       }
     }
     state = getMutableState(session);
-    const expectedBufferedJumpVy = -(640 - state.stage.world.gravity * 0.016);
+    const expectedBufferedJumpVy = -(680 - state.stage.world.gravity * 0.016);
     expect(state.player.vy).toBeLessThan(0);
     expect(state.player.vy).toBeCloseTo(expectedBufferedJumpVy, 4);
 
@@ -3537,7 +3537,7 @@ describe('GameSession regression coverage', () => {
     state = getMutableState(session);
     expect(state.player.gravityScale).toBe(lowGravityZone.gravityScale);
     expect(state.player.vy).toBeLessThan(0);
-    expect(state.player.vy).toBeCloseTo(-(640 - state.stage.world.gravity * lowGravityZone.gravityScale * 0.016), 4);
+    expect(state.player.vy).toBeCloseTo(-(680 - state.stage.world.gravity * lowGravityZone.gravityScale * 0.016), 4);
   });
 
   it('launches from spring platforms with authored boost, cooldown, and cue values', () => {

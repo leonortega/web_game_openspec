@@ -28,7 +28,7 @@ const ENEMY_VISUAL_HEIGHTS = {
 
 export type GameSceneEnemyRenderingContext = Phaser.Scene & {
   retroPalette: RetroPresentationPalette;
-  hazardSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  hazardSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
   enemySprites: Map<string, Phaser.GameObjects.Sprite>;
   enemyContactStrips: Map<string, Phaser.GameObjects.Rectangle>;
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
@@ -54,29 +54,17 @@ export const getSpikeHazardToothRects = (
 
 export function drawHazard(scene: GameSceneEnemyRenderingContext, hazard: HazardState): void {
   const base = scene.add
-    .rectangle(
+    .tileSprite(
       hazard.rect.x + hazard.rect.width / 2,
       hazard.rect.y + hazard.rect.height / 2,
       hazard.rect.width,
       hazard.rect.height,
-      scene.retroPalette.alert,
+      'hazard-spikes',
     )
     .setOrigin(0.5)
     .setDepth(4)
-    .setStrokeStyle(2, scene.retroPalette.ink, 1);
-
-  for (const tooth of getSpikeHazardToothRects(hazard.rect)) {
-    scene.add
-      .rectangle(
-        tooth.x,
-        tooth.y,
-        tooth.width,
-        tooth.height,
-        scene.retroPalette.warm,
-      )
-      .setOrigin(0.5, 0)
-      .setDepth(5);
-  }
+    .setTint(scene.retroPalette.alert)
+    .setAlpha(0.98);
 
   scene.hazardSprites.set(hazard.id, base);
 }
