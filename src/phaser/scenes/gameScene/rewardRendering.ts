@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 
 import type { CheckpointState, CollectibleState, RewardBlockState, RewardRevealState } from '../../../game/simulation/state';
 import { getRetroMotionStep, RETRO_FONT_FAMILY } from '../../view/retroPresentation';
+import { drawCheckpointGraphic, drawCollectibleGraphic, drawRewardBlockGraphic } from '../../view/runtimeWorldGraphics';
 
 export type GameSceneRewardRenderingContext = Phaser.Scene & {
   retroPalette: {
@@ -11,10 +12,10 @@ export type GameSceneRewardRenderingContext = Phaser.Scene & {
     border: number;
     shadow: string;
   };
-  checkpointSprites: Map<string, Phaser.GameObjects.Sprite>;
+  checkpointSprites: Map<string, Phaser.GameObjects.Graphics>;
   checkpointContactStrips: Map<string, Phaser.GameObjects.Rectangle>;
-  collectibleSprites: Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>;
-  rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  collectibleSprites: Map<string, Phaser.GameObjects.Graphics>;
+  rewardBlockSprites: Map<string, Phaser.GameObjects.Graphics>;
   rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
   rewardRevealTexts: Map<string, Phaser.GameObjects.Text>;
   rewardBlockColor(rewardBlock: RewardBlockState): number;
@@ -68,54 +69,37 @@ export function syncCheckpoint(
   const checkpointBottomY = (supportTopY ?? checkpoint.rect.y + checkpoint.rect.height) + 10;
 
   sprite
-    .setOrigin(0.5, 1)
-    .setPosition(
-      checkpoint.rect.x + checkpoint.rect.width / 2,
-      checkpointBottomY,
-    )
-    .setDisplaySize(checkpoint.rect.width, checkpoint.rect.height)
+    .setPosition(checkpoint.rect.x, checkpointBottomY - checkpoint.rect.height)
     .setDepth(CHECKPOINT_VISUAL_DEPTH)
-    .setTint(tintColor);
+    .setAlpha(1);
+  drawCheckpointGraphic(sprite, {
+    width: checkpoint.rect.width,
+    height: checkpoint.rect.height,
+    color: tintColor,
+    activated: checkpoint.activated,
+    brightColor: scene.retroPalette.border,
+    borderColor: scene.retroPalette.border,
+  });
 
   syncCheckpointContactStrip(scene, checkpoint, tintColor, checkpointBottomY);
 }
 
 export function syncCollectible(scene: GameSceneRewardRenderingContext, collectible: CollectibleState): void {
-  const mapped = scene.collectibleSprites.get(collectible.id);
-  if (!mapped) return;
-
-  // GPULayer member record
-  if ((mapped as any).layer && typeof (mapped as any).index === 'number') {
-    const rec = mapped as { layer: any; index: number };
-    const layer = rec.layer;
-    const idx = rec.index;
-    if (collectible.collected) {
-      layer.editMember(idx, { alpha: 0 });
-    } else {
-      const step = getRetroMotionStep(scene.time.now + collectible.position.x, 140, 2);
-      const scale = step === 0 ? 1 : 1.12;
-      const alpha = step === 0 ? 1 : 0.86;
-      layer.editMember(idx, {
-        x: collectible.position.x,
-        y: collectible.position.y,
-        scaleX: scale,
-        scaleY: scale,
-        alpha,
-        tintTopLeft: scene.retroPalette.warm,
-      });
-    }
-    return;
-  }
-
-  // Fallback sprite path
-  const sprite = mapped as Phaser.GameObjects.Sprite;
+  const sprite = scene.collectibleSprites.get(collectible.id);
+  if (!sprite) return;
   sprite.setVisible(!collectible.collected);
   if (!collectible.collected) {
     const collectibleStep = getRetroMotionStep(scene.time.now + collectible.position.x, 140, 2);
-    sprite.setPosition(collectible.position.x, collectible.position.y);
-    sprite.setTint(scene.retroPalette.warm);
-    sprite.setScale(collectibleStep === 0 ? 1 : 1.12);
-    sprite.setAlpha(collectibleStep === 0 ? 1 : 0.86);
+    const scale = collectibleStep === 0 ? 1 : 1.12;
+    const alpha = collectibleStep === 0 ? 1 : 0.86;
+    sprite.setPosition(collectible.position.x - 8, collectible.position.y - 8);
+    drawCollectibleGraphic(sprite, {
+      color: scene.retroPalette.warm,
+      brightColor: scene.retroPalette.cool,
+      borderColor: scene.retroPalette.border,
+      alpha,
+      scale,
+    });
   }
 }
 
@@ -130,19 +114,15 @@ export function syncRewardBlock(scene: GameSceneRewardRenderingContext, rewardBl
   const bumpOffset = flashProgress > 0 ? Math.round((10 * flashProgress) / 2) * 2 : 0;
   const alpha = rewardBlock.used ? 0.35 : 1;
 
-  const rewardSprite = sprite as any;
-  rewardSprite.setPosition(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2 - bumpOffset);
-  if (typeof rewardSprite.setDisplaySize === 'function') {
-    rewardSprite.setDisplaySize(rewardBlock.width, rewardBlock.height);
-  }
-  if (typeof rewardSprite.setFillStyle === 'function') {
-    rewardSprite.setFillStyle(scene.rewardBlockColor(rewardBlock));
-    rewardSprite.setStrokeStyle(2, flashProgress > 0 ? 0xffffff : scene.retroPalette.border, flashProgress > 0 ? 0.8 : 0.55);
-  } else {
-    rewardSprite.setTexture(rewardBlock.used ? 'reward-block-used' : 'reward-block');
-    rewardSprite.setTint(scene.rewardBlockColor(rewardBlock));
-  }
-  rewardSprite.setAlpha(alpha);
+  sprite.setPosition(rewardBlock.x, rewardBlock.y - bumpOffset).setAlpha(alpha);
+  drawRewardBlockGraphic(sprite, {
+    rewardBlock,
+    color: scene.rewardBlockColor(rewardBlock),
+    borderColor: scene.retroPalette.border,
+    brightColor: scene.retroPalette.cool,
+    flashProgress,
+    alpha,
+  });
   label.setPosition(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2 - bumpOffset);
   label.setText(scene.rewardBlockLabel(rewardBlock));
   label.setAlpha(alpha);

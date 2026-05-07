@@ -12,10 +12,10 @@ import { runUnlockedAudioAction } from '../../audio/sceneAudio';
 import { EXIT_CAPSULE_ART_BOUNDS, EXIT_CAPSULE_TEXTURE_KEYS } from '../../view/capsulePresentation';
 import { configureCamera } from '../../view/camera/configureCamera';
 import { drawRetroBackdrop, RETRO_FONT_FAMILY, type RetroPresentationPalette } from '../../view/retroPresentation';
-import { createOptimizedSprite } from '../../plugins/enhancedRenderUtils';
 import { createWorldLocalRetroRegion } from '../../retroPostFx';
 import { createRexHud, type RexHudBindings } from '../../ui/rexHud';
 import { drawAstronautGraphic } from '../../view/runtimeCharacterGraphics';
+import { drawCollectibleGraphic } from '../../view/runtimeWorldGraphics';
 
 export type GameSceneHudSetupContext = Phaser.Scene & {
   hud: RexHudBindings;
@@ -54,26 +54,26 @@ export type GameSceneCleanupContext = Phaser.Scene & {
   terrainVariantAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
   terrainVariantDetailSprites: Map<string, Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>>;
   gravityZoneSprites: Phaser.GameObjects.Rectangle[];
-  gravityFieldSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
+  gravityFieldSprites: Map<string, Phaser.GameObjects.Graphics>;
   gravityFieldCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  gravityCapsuleShellSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
-  gravityCapsuleEntryDoorSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
-  gravityCapsuleExitDoorSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
-  gravityCapsuleButtonSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
-  gravityCapsuleButtonCoreSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  gravityCapsuleShellSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleEntryDoorSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleExitDoorSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleButtonSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleButtonCoreSprites: Map<string, Phaser.GameObjects.Graphics>;
   gravityCapsuleShellMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   gravityCapsuleButtonMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  activationNodeSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  activationNodeSprites: Map<string, Phaser.GameObjects.Graphics>;
   activationNodeMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   enemySprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  checkpointSprites: Map<string, Phaser.GameObjects.Sprite>;
-  collectibleSprites: Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>;
-  projectileSprites: Map<string, Phaser.GameObjects.Sprite>;
-  rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  checkpointSprites: Map<string, Phaser.GameObjects.Graphics>;
+  collectibleSprites: Map<string, Phaser.GameObjects.Graphics>;
+  projectileSprites: Map<string, Phaser.GameObjects.Graphics>;
+  rewardBlockSprites: Map<string, Phaser.GameObjects.Graphics>;
   rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
   rewardRevealTexts: Map<string, Phaser.GameObjects.Text>;
-  hazardSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
+  hazardSprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyDefeatVisibleUntilMs: Map<string, number>;
   playerDefeatVisibleUntilMs: number;
   playerDefeatResetPending: boolean;
@@ -86,28 +86,28 @@ export type GameSceneBaseDisplayContext = Phaser.Scene & {
   retroPalette: RetroPresentationPalette;
   bottomMistSprites: Phaser.GameObjects.Shape[];
   gravityZoneSprites: Phaser.GameObjects.Rectangle[];
-  gravityFieldSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
+  gravityFieldSprites: Map<string, Phaser.GameObjects.Graphics>;
   gravityFieldCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  gravityCapsuleShellSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
-  gravityCapsuleEntryDoorSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
-  gravityCapsuleExitDoorSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
-  gravityCapsuleButtonSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
-  gravityCapsuleButtonCoreSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  gravityCapsuleShellSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleEntryDoorSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleExitDoorSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleButtonSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleButtonCoreSprites: Map<string, Phaser.GameObjects.Graphics>;
   gravityCapsuleShellMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   gravityCapsuleButtonMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  activationNodeSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  activationNodeSprites: Map<string, Phaser.GameObjects.Graphics>;
   activationNodeMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  platformSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
+  platformSprites: Map<string, Phaser.GameObjects.Graphics>;
   platformShadowSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   platformDetailSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   platformCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
+  terrainVariantSprites: Map<string, Phaser.GameObjects.Graphics>;
   terrainVariantShadowSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   terrainVariantAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
   terrainVariantDetailSprites: Map<string, Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>>;
-  checkpointSprites: Map<string, Phaser.GameObjects.Sprite>;
-  collectibleSprites: Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>;
-  rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  checkpointSprites: Map<string, Phaser.GameObjects.Graphics>;
+  collectibleSprites: Map<string, Phaser.GameObjects.Graphics>;
+  rewardBlockSprites: Map<string, Phaser.GameObjects.Graphics>;
   rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
   enemySprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
@@ -601,58 +601,17 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
   }
 
   for (const field of state.stageRuntime.gravityFields) {
-    const overlay = scene.add
-      .tileSprite(
-        field.x + field.width / 2,
-        field.y + field.height / 2,
-        field.width,
-        field.height,
-        field.kind === 'anti-grav-stream' ? 'gravity-field-stream' : 'gravity-field-invert',
-      )
-      .setOrigin(0.5)
-      .setTint(scene.gravityFieldColor(field))
-      .setAlpha(scene.gravityFieldAlpha(field))
-      .setDepth(1);
+    const overlay = scene.add.graphics().setDepth(1);
     scene.gravityFieldSprites.set(field.id, overlay);
     scene.gravityFieldCategoryMarkerSprites.set(field.id, scene.createTraversalMarkerRects(4, 1.2));
   }
 
   for (const capsule of state.stageRuntime.gravityCapsules) {
-    const shell = scene.add
-      .image(capsule.shell.x + capsule.shell.width / 2, capsule.shell.y + capsule.shell.height / 2, 'gravity-capsule-shell')
-      .setOrigin(0.5)
-      .setDisplaySize(capsule.shell.width, capsule.shell.height)
-      .setTint(scene.gravityCapsuleShellColor(capsule))
-      .setAlpha(scene.gravityCapsuleShellAlpha(capsule))
-      .setDepth(1.4);
-    const door = scene.add
-      .image(capsule.entryDoor.x + capsule.entryDoor.width / 2, capsule.entryDoor.y + capsule.entryDoor.height / 2, 'gravity-capsule-entry-door')
-      .setOrigin(0.5)
-      .setDisplaySize(capsule.entryDoor.width, capsule.entryDoor.height)
-      .setTint(scene.gravityCapsuleEntryDoorColor(capsule))
-      .setAlpha(scene.gravityCapsuleDoorAlpha(capsule))
-      .setDepth(1.6);
-    const exitDoor = scene.add
-      .image(capsule.exitDoor.x + capsule.exitDoor.width / 2, capsule.exitDoor.y + capsule.exitDoor.height / 2, 'gravity-capsule-exit-door')
-      .setOrigin(0.5)
-      .setDisplaySize(capsule.exitDoor.width, capsule.exitDoor.height)
-      .setTint(scene.gravityCapsuleExitDoorColor(capsule))
-      .setAlpha(scene.gravityCapsuleDoorAlpha(capsule))
-      .setDepth(1.65);
-    const button = scene.add
-      .image(capsule.button.x + capsule.button.width / 2, capsule.button.y + capsule.button.height / 2, 'gravity-capsule-button')
-      .setOrigin(0.5)
-      .setDisplaySize(capsule.button.width, capsule.button.height)
-      .setTint(scene.gravityCapsuleButtonColor(capsule))
-      .setAlpha(0.92)
-      .setDepth(3.1);
-    const buttonCore = scene.add
-      .image(capsule.button.x + capsule.button.width / 2, capsule.button.y + capsule.button.height / 2, 'gravity-capsule-button-core')
-      .setOrigin(0.5)
-      .setDisplaySize(Math.max(8, capsule.button.width - 12), Math.max(8, capsule.button.height - 12))
-      .setTint(scene.gravityCapsuleButtonCoreColor(capsule))
-      .setAlpha(0.95)
-      .setDepth(3.2);
+    const shell = scene.add.graphics().setDepth(1.4);
+    const door = scene.add.graphics().setDepth(1.6);
+    const exitDoor = scene.add.graphics().setDepth(1.65);
+    const button = scene.add.graphics().setDepth(3.1);
+    const buttonCore = scene.add.graphics().setDepth(3.2);
     scene.gravityCapsuleShellSprites.set(capsule.id, shell);
     scene.gravityCapsuleEntryDoorSprites.set(capsule.id, door);
     scene.gravityCapsuleExitDoorSprites.set(capsule.id, exitDoor);
@@ -663,23 +622,14 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
   }
 
   for (const node of state.stageRuntime.activationNodes) {
-    const sprite = scene.add
-      .image(node.x + node.width / 2, node.y + node.height / 2, 'activation-node')
-      .setDisplaySize(node.width, node.height)
-      .setTint(scene.activationNodeColor(node))
-      .setAlpha(0.9)
-      .setOrigin(0.5)
-      .setDepth(3);
+    const sprite = scene.add.graphics().setDepth(3);
     scene.activationNodeSprites.set(node.id, sprite);
     scene.activationNodeMarkerSprites.set(node.id, scene.createTraversalMarkerRects(3, 3.1));
   }
 
   for (const platform of state.stageRuntime.platforms) {
     const topSurfaceHeight = Math.min(platform.height, 8);
-    const sprite = scene.add
-      .tileSprite(platform.x + platform.width / 2, platform.y + platform.height / 2, platform.width, platform.height, 'platform-tiles')
-      .setOrigin(0.5)
-      .setTint(scene.platformColor(platform));
+    const sprite = scene.add.graphics().setDepth(1);
     // Shadow and detail may be GPULayer members when supported; otherwise fallback to rectangles.
     const shadowLayer = (scene as any).platformShadowGPULayer as any | undefined;
     const detailLayer = (scene as any).platformDetailGPULayer as any | undefined;
@@ -762,18 +712,7 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
   }
 
   for (const terrainVariantPlatform of state.stageRuntime.platforms.filter((platform) => platform.surfaceMechanic)) {
-    const sprite = scene.add
-      .tileSprite(
-        terrainVariantPlatform.x + terrainVariantPlatform.width / 2,
-        terrainVariantPlatform.y + terrainVariantPlatform.height / 2,
-        terrainVariantPlatform.width,
-        terrainVariantPlatform.height,
-        terrainVariantPlatform.surfaceMechanic?.kind === 'stickySludge' ? 'terrain-sticky' : 'terrain-brittle',
-      )
-      .setOrigin(0.5)
-      .setTint(scene.terrainVariantColor(terrainVariantPlatform))
-      .setAlpha(scene.terrainVariantAlpha(terrainVariantPlatform))
-      .setDepth(2);
+    const sprite = scene.add.graphics().setDepth(2);
     const shadow = scene.add
       .rectangle(
         terrainVariantPlatform.x + terrainVariantPlatform.width / 2,
@@ -862,57 +801,24 @@ function createPlayerRenderables(scene: GameSceneBaseDisplayContext): void {
 
 function createRewardRenderables(scene: GameSceneBaseDisplayContext, state: Readonly<SessionSnapshot>): void {
   for (const checkpoint of state.stageRuntime.checkpoints) {
-    const sprite = createOptimizedSprite(scene, checkpoint.rect.x, checkpoint.rect.y, 'checkpoint')
-      .setOrigin(0, 0)
-      .setDisplaySize(checkpoint.rect.width, checkpoint.rect.height);
+    const sprite = scene.add.graphics().setDepth(4.2);
     scene.checkpointSprites.set(checkpoint.id, sprite);
   }
 
-  // Attempt to create collectibles in a SpriteGPULayer for high-count performance.
-  let collectibleLayer: any | null = null;
-  try {
-    if ((scene as any).add && typeof (scene as any).add.spriteGPULayer === 'function' && state.stageRuntime.collectibles.length > 0) {
-      const size = Math.max(64, state.stageRuntime.collectibles.length * 2);
-      collectibleLayer = (scene as any).add.spriteGPULayer('collectible', size) as any;
-      collectibleLayer.setDepth(4.05);
-    }
-  } catch (e) {
-    collectibleLayer = null;
-  }
-
   for (const collectible of state.stageRuntime.collectibles) {
-    if (collectibleLayer) {
-      const index = collectibleLayer.memberCount;
-      // uniform frame, animated properties handled via editMember later
-      collectibleLayer.addMember({
-        x: collectible.position.x,
-        y: collectible.position.y,
-        scaleX: 1,
-        scaleY: 1,
-        alpha: collectible.collected ? 0 : 1,
-        tintTopLeft: scene.retroPalette.warm,
-      });
-      scene.collectibleSprites.set(collectible.id, { layer: collectibleLayer, index });
-    } else {
-      const sprite = createOptimizedSprite(scene, collectible.position.x, collectible.position.y, 'collectible');
-      scene.collectibleSprites.set(collectible.id, sprite as any);
-    }
-  }
-
-  if (collectibleLayer) {
-    (scene as any).collectibleGPULayer = collectibleLayer;
+    const sprite = scene.add.graphics().setDepth(4.05);
+    drawCollectibleGraphic(sprite, {
+      color: scene.retroPalette.warm,
+      brightColor: scene.retroPalette.bright,
+      borderColor: scene.retroPalette.border,
+      alpha: collectible.collected ? 0 : 1,
+      scale: 1,
+    });
+    scene.collectibleSprites.set(collectible.id, sprite);
   }
 
   for (const rewardBlock of state.stageRuntime.rewardBlocks) {
-    const blockSprite = scene.add
-      .image(
-        rewardBlock.x + rewardBlock.width / 2,
-        rewardBlock.y + rewardBlock.height / 2,
-        rewardBlock.used ? 'reward-block-used' : 'reward-block',
-      )
-      .setDisplaySize(rewardBlock.width, rewardBlock.height)
-      .setTint(scene.rewardBlockColor(rewardBlock))
-      .setOrigin(0.5);
+    const blockSprite = scene.add.graphics();
     const label = scene.add
       .text(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2, scene.rewardBlockLabel(rewardBlock), {
         fontFamily: RETRO_FONT_FAMILY,

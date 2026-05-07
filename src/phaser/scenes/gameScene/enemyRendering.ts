@@ -7,7 +7,6 @@ import {
   TURRET_TEXTURE_SIZE,
   WALKER_TEXTURE_SIZE,
 } from '../../assets/bootTextures';
-import { createOptimizedSprite } from '../../plugins/enhancedRenderUtils';
 import { TURRET_VARIANT_CONFIG, type EnemyState, type HazardState, type ProjectileState } from '../../../game/simulation/state';
 import {
   getRetroDefeatTweenPreset,
@@ -19,6 +18,7 @@ import {
   type RetroPresentationPalette,
 } from '../../view/retroPresentation';
 import { drawEnemyGraphic } from '../../view/runtimeCharacterGraphics';
+import { drawHazardGraphic, drawProjectileGraphic } from '../../view/runtimeWorldGraphics';
 
 const ENEMY_VISUAL_HEIGHTS = {
   walker: WALKER_TEXTURE_SIZE.height,
@@ -30,11 +30,11 @@ const ENEMY_VISUAL_HEIGHTS = {
 
 export type GameSceneEnemyRenderingContext = Phaser.Scene & {
   retroPalette: RetroPresentationPalette;
-  hazardSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
+  hazardSprites: Map<string, Phaser.GameObjects.Graphics>;
   enemySprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyContactStrips: Map<string, Phaser.GameObjects.Rectangle>;
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  projectileSprites: Map<string, Phaser.GameObjects.Sprite>;
+  projectileSprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyDefeatVisibleUntilMs: Map<string, number>;
   enemyHitFlashUntilMs: Map<string, number>;
 };
@@ -55,18 +55,14 @@ export const getSpikeHazardToothRects = (
 };
 
 export function drawHazard(scene: GameSceneEnemyRenderingContext, hazard: HazardState): void {
-  const base = scene.add
-    .tileSprite(
-      hazard.rect.x + hazard.rect.width / 2,
-      hazard.rect.y + hazard.rect.height / 2,
-      hazard.rect.width,
-      hazard.rect.height,
-      'hazard-spikes',
-    )
-    .setOrigin(0.5)
-    .setDepth(4)
-    .setTint(scene.retroPalette.alert)
-    .setAlpha(0.98);
+  const base = scene.add.graphics().setDepth(4);
+  base.setPosition(hazard.rect.x, hazard.rect.y);
+  drawHazardGraphic(base, {
+    hazard,
+    color: scene.retroPalette.alert,
+    brightColor: scene.retroPalette.warm,
+    borderColor: scene.retroPalette.border,
+  });
 
   scene.hazardSprites.set(hazard.id, base);
 }
@@ -208,12 +204,16 @@ export function syncProjectile(scene: GameSceneEnemyRenderingContext, projectile
   }
 
   if (!sprite) {
-    sprite = createOptimizedSprite(scene, projectile.x, projectile.y, 'projectile').setOrigin(0, 0);
+    sprite = scene.add.graphics();
     scene.projectileSprites.set(projectile.id, sprite);
   }
 
   sprite.setPosition(snapRetroValue(projectile.x), snapRetroValue(projectile.y));
-  sprite.setTint(projectile.variant ? TURRET_VARIANT_CONFIG[projectile.variant].projectileColor : 0xffc15b);
-  sprite.setScale(projectile.variant ? 1.18 : 1.06);
-  sprite.setAlpha(projectile.variant ? 0.96 : 0.9);
+  drawProjectileGraphic(sprite, {
+    projectile,
+    color: projectile.variant ? TURRET_VARIANT_CONFIG[projectile.variant].projectileColor : 0xffc15b,
+    brightColor: scene.retroPalette.bright,
+    borderColor: scene.retroPalette.border,
+    alpha: projectile.variant ? 0.96 : 0.9,
+  });
 }

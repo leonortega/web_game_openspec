@@ -3,6 +3,12 @@ import * as Phaser from 'phaser';
 import type { GravityCapsuleState, GravityFieldState } from '../../../game/simulation/state';
 import type { RetroPresentationPalette } from '../../view/retroPresentation';
 import {
+  drawGravityButtonGraphic,
+  drawGravityCapsuleShellGraphic,
+  drawGravityDoorGraphic,
+  drawGravityFieldGraphic,
+} from '../../view/runtimeWorldGraphics';
+import {
   getGravityCapsuleButtonTraversalVisualCategory,
   getGravityCapsuleShellTraversalVisualCategory,
   getGravityFieldTraversalVisualCategory,
@@ -19,13 +25,13 @@ export type GameSceneGravityRenderingContext = Phaser.Scene & {
     };
   };
   retroPalette: RetroPresentationPalette;
-  gravityFieldSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
+  gravityFieldSprites: Map<string, Phaser.GameObjects.Graphics>;
   gravityFieldCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  gravityCapsuleShellSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
-  gravityCapsuleEntryDoorSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
-  gravityCapsuleExitDoorSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
-  gravityCapsuleButtonSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
-  gravityCapsuleButtonCoreSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
+  gravityCapsuleShellSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleEntryDoorSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleExitDoorSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleButtonSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleButtonCoreSprites: Map<string, Phaser.GameObjects.Graphics>;
   gravityCapsuleShellMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   gravityCapsuleButtonMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   gravityFieldColor(field: GravityFieldState, capsule?: GravityCapsuleState | null): number;
@@ -50,28 +56,16 @@ export function syncGravityField(scene: GameSceneGravityRenderingContext, field:
   const capsule = field.gravityCapsuleId
     ? scene.bridge.getSession().getState().stageRuntime.gravityCapsules.find((entry) => entry.id === field.gravityCapsuleId) ?? null
     : null;
-  const fieldSprite = sprite as any;
-  fieldSprite
-    .setPosition(field.x + field.width / 2, field.y + field.height / 2)
-    .setVisible(true);
-  if (typeof fieldSprite.setDisplaySize === 'function') {
-    fieldSprite.setDisplaySize(field.width, field.height);
-  } else if (typeof fieldSprite.setSize === 'function') {
-    fieldSprite.setSize(field.width, field.height);
-  }
-  if (typeof fieldSprite.setFillStyle === 'function') {
-    fieldSprite
-      .setFillStyle(scene.gravityFieldColor(field, capsule), scene.gravityFieldAlpha(field, capsule))
-      .setStrokeStyle(2, scene.gravityFieldColor(field, capsule), capsule?.enabled ? 0.42 : 0.2);
-  } else {
-    fieldSprite.setTint(scene.gravityFieldColor(field, capsule));
-    fieldSprite.setAlpha(scene.gravityFieldAlpha(field, capsule));
-    if (field.kind === 'anti-grav-stream') {
-      fieldSprite.setTexture?.('gravity-field-stream');
-    } else {
-      fieldSprite.setTexture?.('gravity-field-invert');
-    }
-  }
+  sprite.setPosition(field.x, field.y).setVisible(true);
+  drawGravityFieldGraphic(sprite, {
+    field,
+    color: scene.gravityFieldColor(field, capsule),
+    alpha: scene.gravityFieldAlpha(field, capsule),
+    enabled: capsule ? capsule.enabled : true,
+    brightColor: scene.retroPalette.bright,
+    borderColor: scene.retroPalette.border,
+    time: scene.time.now,
+  });
   syncGravityFieldMarkers(scene, field, capsule, markers);
 }
 
@@ -87,90 +81,56 @@ export function syncGravityCapsule(scene: GameSceneGravityRenderingContext, caps
     return;
   }
 
-  const shellSprite = shell as any;
-  shellSprite
-    .setPosition(capsule.shell.x + capsule.shell.width / 2, capsule.shell.y + capsule.shell.height / 2)
-    .setVisible(true);
-  if (typeof shellSprite.setDisplaySize === 'function') {
-    shellSprite.setDisplaySize(capsule.shell.width, capsule.shell.height);
-  } else if (typeof shellSprite.setSize === 'function') {
-    shellSprite.setSize(capsule.shell.width, capsule.shell.height);
-  }
-  if (typeof shellSprite.setFillStyle === 'function') {
-    shellSprite
-      .setFillStyle(scene.gravityCapsuleShellColor(capsule), scene.gravityCapsuleShellAlpha(capsule))
-      .setStrokeStyle(2, scene.gravityCapsuleShellStrokeColor(capsule), capsule.enabled ? 0.72 : 0.44);
-  } else {
-    shellSprite.setTexture?.('gravity-capsule-shell');
-    shellSprite.setTint(scene.gravityCapsuleShellColor(capsule));
-    shellSprite.setAlpha(scene.gravityCapsuleShellAlpha(capsule));
-  }
-  const entryDoorSprite = entryDoor as any;
-  entryDoorSprite
-    .setPosition(capsule.entryDoor.x + capsule.entryDoor.width / 2, capsule.entryDoor.y + capsule.entryDoor.height / 2)
-    .setVisible(true);
-  if (typeof entryDoorSprite.setDisplaySize === 'function') {
-    entryDoorSprite.setDisplaySize(capsule.entryDoor.width, capsule.entryDoor.height);
-  } else if (typeof entryDoorSprite.setSize === 'function') {
-    entryDoorSprite.setSize(capsule.entryDoor.width, capsule.entryDoor.height);
-  }
-  if (typeof entryDoorSprite.setFillStyle === 'function') {
-    entryDoorSprite.setFillStyle(scene.gravityCapsuleEntryDoorColor(capsule), scene.gravityCapsuleDoorAlpha(capsule));
-  } else {
-    entryDoorSprite.setTexture?.('gravity-capsule-entry-door');
-    entryDoorSprite.setTint(scene.gravityCapsuleEntryDoorColor(capsule));
-    entryDoorSprite.setAlpha(scene.gravityCapsuleDoorAlpha(capsule));
-  }
-  const exitDoorSprite = exitDoor as any;
-  exitDoorSprite
-    .setPosition(capsule.exitDoor.x + capsule.exitDoor.width / 2, capsule.exitDoor.y + capsule.exitDoor.height / 2)
-    .setVisible(true);
-  if (typeof exitDoorSprite.setDisplaySize === 'function') {
-    exitDoorSprite.setDisplaySize(capsule.exitDoor.width, capsule.exitDoor.height);
-  } else if (typeof exitDoorSprite.setSize === 'function') {
-    exitDoorSprite.setSize(capsule.exitDoor.width, capsule.exitDoor.height);
-  }
-  if (typeof exitDoorSprite.setFillStyle === 'function') {
-    exitDoorSprite.setFillStyle(scene.gravityCapsuleExitDoorColor(capsule), scene.gravityCapsuleDoorAlpha(capsule));
-  } else {
-    exitDoorSprite.setTexture?.('gravity-capsule-exit-door');
-    exitDoorSprite.setTint(scene.gravityCapsuleExitDoorColor(capsule));
-    exitDoorSprite.setAlpha(scene.gravityCapsuleDoorAlpha(capsule));
-  }
-  const buttonSprite = button as any;
-  buttonSprite
-    .setPosition(capsule.button.x + capsule.button.width / 2, capsule.button.y + capsule.button.height / 2)
-    .setVisible(true);
-  if (typeof buttonSprite.setDisplaySize === 'function') {
-    buttonSprite.setDisplaySize(capsule.button.width, capsule.button.height);
-  } else if (typeof buttonSprite.setSize === 'function') {
-    buttonSprite.setSize(capsule.button.width, capsule.button.height);
-  }
-  if (typeof buttonSprite.setFillStyle === 'function') {
-    buttonSprite
-      .setFillStyle(scene.gravityCapsuleButtonColor(capsule), 0.94)
-      .setStrokeStyle(2, scene.gravityCapsuleShellStrokeColor(capsule), capsule.enabled ? 0.72 : 0.5);
-  } else {
-    buttonSprite.setTexture?.('gravity-capsule-button');
-    buttonSprite.setTint(scene.gravityCapsuleButtonColor(capsule));
-    buttonSprite.setAlpha(0.94);
-  }
-  const buttonCoreSprite = buttonCore as any;
-  buttonCoreSprite
-    .setPosition(capsule.button.x + capsule.button.width / 2, capsule.button.y + capsule.button.height / 2)
-    .setVisible(true);
-  if (typeof buttonCoreSprite.setDisplaySize === 'function') {
-    buttonCoreSprite.setDisplaySize(Math.max(8, capsule.button.width - 12), Math.max(8, capsule.button.height - 12));
-  } else if (typeof buttonCoreSprite.setSize === 'function') {
-    buttonCoreSprite.setSize(Math.max(8, capsule.button.width - 12), Math.max(8, capsule.button.height - 12));
-  }
-  if (typeof buttonCoreSprite.setFillStyle === 'function') {
-    buttonCoreSprite.setFillStyle(scene.gravityCapsuleButtonCoreColor(capsule), capsule.enabled ? 1 : 0.78);
-  } else {
-    buttonCoreSprite.setTexture?.('gravity-capsule-button-core');
-    buttonCoreSprite.setTint(scene.gravityCapsuleButtonCoreColor(capsule));
-    buttonCoreSprite.setAlpha(capsule.enabled ? 1 : 0.78);
-  }
+  shell.setPosition(capsule.shell.x, capsule.shell.y).setVisible(true);
+  drawGravityCapsuleShellGraphic(shell, {
+    width: capsule.shell.width,
+    height: capsule.shell.height,
+    shellColor: scene.gravityCapsuleShellColor(capsule),
+    strokeColor: scene.gravityCapsuleShellStrokeColor(capsule),
+    alpha: scene.gravityCapsuleShellAlpha(capsule),
+    enabled: capsule.enabled,
+    brightColor: scene.retroPalette.bright,
+  });
+  entryDoor.setPosition(capsule.entryDoor.x, capsule.entryDoor.y).setVisible(true);
+  drawGravityDoorGraphic(entryDoor, {
+    width: capsule.entryDoor.width,
+    height: capsule.entryDoor.height,
+    color: scene.gravityCapsuleEntryDoorColor(capsule),
+    alpha: scene.gravityCapsuleDoorAlpha(capsule),
+    brightColor: scene.retroPalette.bright,
+    borderColor: scene.retroPalette.border,
+  });
+  exitDoor.setPosition(capsule.exitDoor.x, capsule.exitDoor.y).setVisible(true);
+  drawGravityDoorGraphic(exitDoor, {
+    width: capsule.exitDoor.width,
+    height: capsule.exitDoor.height,
+    color: scene.gravityCapsuleExitDoorColor(capsule),
+    alpha: scene.gravityCapsuleDoorAlpha(capsule),
+    brightColor: scene.retroPalette.bright,
+    borderColor: scene.retroPalette.border,
+  });
+  button.setPosition(capsule.button.x, capsule.button.y).setVisible(true);
+  drawGravityButtonGraphic(button, {
+    width: capsule.button.width,
+    height: capsule.button.height,
+    shellColor: scene.gravityCapsuleButtonColor(capsule),
+    coreColor: scene.gravityCapsuleButtonCoreColor(capsule),
+    alpha: 0.94,
+    brightColor: scene.retroPalette.bright,
+    borderColor: scene.retroPalette.border,
+    activated: capsule.button.activated,
+  });
+  buttonCore.setPosition(capsule.button.x, capsule.button.y).setVisible(true);
+  drawGravityButtonGraphic(buttonCore, {
+    width: capsule.button.width,
+    height: capsule.button.height,
+    shellColor: scene.gravityCapsuleButtonColor(capsule),
+    coreColor: scene.gravityCapsuleButtonCoreColor(capsule),
+    alpha: capsule.enabled ? 1 : 0.78,
+    brightColor: scene.retroPalette.bright,
+    borderColor: scene.retroPalette.border,
+    activated: capsule.enabled,
+  });
   syncGravityCapsuleShellMarkers(scene, capsule, shellMarkers);
   syncGravityCapsuleButtonMarkers(scene, capsule, buttonMarkers);
 }

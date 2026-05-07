@@ -218,7 +218,7 @@ export class GameScene extends Phaser.Scene {
 
   private enemyHitFlashUntilMs = new Map<string, number>();
 
-  private platformSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>();
+  private platformSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
   private platformShadowSprites = new Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>();
 
@@ -227,7 +227,7 @@ export class GameScene extends Phaser.Scene {
 
   private platformCategoryMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
-  private terrainVariantSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>();
+  private terrainVariantSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
   private terrainVariantShadowSprites = new Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>();
 
@@ -235,29 +235,29 @@ export class GameScene extends Phaser.Scene {
 
   private terrainVariantDetailSprites = new Map<string, Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>>();
 
-  private hazardSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>();
+  private hazardSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
   private gravityZoneSprites: Phaser.GameObjects.Rectangle[] = [];
 
-  private gravityFieldSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>();
+  private gravityFieldSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
   private gravityFieldCategoryMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
-  private gravityCapsuleShellSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>();
+  private gravityCapsuleShellSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
-  private gravityCapsuleEntryDoorSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>();
+  private gravityCapsuleEntryDoorSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
-  private gravityCapsuleExitDoorSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>();
+  private gravityCapsuleExitDoorSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
-  private gravityCapsuleButtonSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>();
+  private gravityCapsuleButtonSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
-  private gravityCapsuleButtonCoreSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>();
+  private gravityCapsuleButtonCoreSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
   private gravityCapsuleShellMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
   private gravityCapsuleButtonMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
-  private activationNodeSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>();
+  private activationNodeSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
   private activationNodeMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
@@ -267,19 +267,19 @@ export class GameScene extends Phaser.Scene {
 
   private enemyAccentSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
-  private checkpointSprites = new Map<string, Phaser.GameObjects.Sprite>();
+  private checkpointSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
   private checkpointContactStrips = new Map<string, Phaser.GameObjects.Rectangle>();
 
-  private collectibleSprites = new Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>();
+  private collectibleSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
-  private rewardBlockSprites = new Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>();
+  private rewardBlockSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
   private rewardBlockLabels = new Map<string, Phaser.GameObjects.Text>();
 
   private rewardRevealTexts = new Map<string, Phaser.GameObjects.Text>();
 
-  private projectileSprites = new Map<string, Phaser.GameObjects.Sprite>();
+  private projectileSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
   private projectileTrailEmitters = new Map<string, Phaser.GameObjects.Particles.ParticleEmitter>();
 
@@ -1698,7 +1698,7 @@ export class GameScene extends Phaser.Scene {
           }
           ensureParticleTexture(this);
           const fireworkX = sprite?.x ?? event.x;
-          const fireworkY = sprite ? sprite.y - sprite.displayHeight * 0.45 : event.y;
+          const fireworkY = sprite ? sprite.y + 8 : event.y;
           createCheckpointFireworkEffect(this, {
             x: fireworkX,
             y: fireworkY,
