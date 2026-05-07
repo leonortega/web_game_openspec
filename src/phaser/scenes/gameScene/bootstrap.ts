@@ -401,6 +401,15 @@ export function createBaseDisplayObjects(scene: GameSceneBaseDisplayContext, sta
       )
       .setOrigin(0.5)
       .setDepth(0.36);
+    scene.tweens.add({
+      targets: hazeGlow,
+      x: centerX + 28,
+      alpha: 0.19,
+      duration: 6200,
+      ease: 'Sine.InOut',
+      yoyo: true,
+      repeat: -1,
+    });
     const plumeCount = Math.max(4, Math.min(9, Math.floor(stage.world.width / 180)));
     const plumeStep = stage.world.width / plumeCount;
     const plumes = Array.from({ length: plumeCount }, (_, index) => {
@@ -418,6 +427,23 @@ export function createBaseDisplayObjects(scene: GameSceneBaseDisplayContext, sta
         )
         .setOrigin(0.5)
         .setDepth(0.37 + index * 0.001);
+    });
+    plumes.forEach((plume, index) => {
+      const baseX = plume.x;
+      const baseY = plume.y;
+      const driftX = 16 + (index % 3) * 7;
+      const liftY = 5 + (index % 2) * 4;
+      const targetAlpha = 0.18 - (index % 3) * 0.015;
+      scene.tweens.add({
+        targets: plume,
+        x: baseX + (index % 2 === 0 ? driftX : -driftX),
+        y: baseY - liftY,
+        alpha: targetAlpha,
+        duration: 4200 + index * 520,
+        ease: 'Sine.InOut',
+        yoyo: true,
+        repeat: -1,
+      });
     });
     scene.bottomMistSprites.push(hazeBase, hazeGlow, ...plumes);
   }
