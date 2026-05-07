@@ -8,16 +8,16 @@ import type {
   PlatformState,
   RewardBlockState,
 } from '../../../game/simulation/state';
-import { createHud } from '../../../ui/hud/hud';
 import { runUnlockedAudioAction } from '../../audio/sceneAudio';
 import { EXIT_CAPSULE_ART_BOUNDS, EXIT_CAPSULE_TEXTURE_KEYS } from '../../view/capsulePresentation';
 import { configureCamera } from '../../view/camera/configureCamera';
 import { drawRetroBackdrop, RETRO_FONT_FAMILY, type RetroPresentationPalette } from '../../view/retroPresentation';
 import { createOptimizedSprite } from '../../plugins/enhancedRenderUtils';
 import { createWorldLocalRetroRegion } from '../../retroPostFx';
+import { createRexHud, type RexHudBindings } from '../../ui/rexHud';
 
 export type GameSceneHudSetupContext = Phaser.Scene & {
-  hud: ReturnType<typeof createHud>;
+  hud: RexHudBindings;
 };
 
 export type GameSceneInputContext = Phaser.Scene & {
@@ -42,7 +42,8 @@ export type GameSceneInputContext = Phaser.Scene & {
 export type GameSceneCleanupContext = Phaser.Scene & {
   completeTransitionEvent?: Phaser.Time.TimerEvent;
   audio: { stopMusic(): void };
-  hud: ReturnType<typeof createHud>;
+  hud: RexHudBindings;
+  bottomMistSprites: Phaser.GameObjects.Shape[];
   platformSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
   platformShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
   platformDetailSprites: Map<string, Phaser.GameObjects.Rectangle>;
@@ -82,6 +83,7 @@ export type GameSceneCleanupContext = Phaser.Scene & {
 
 export type GameSceneBaseDisplayContext = Phaser.Scene & {
   retroPalette: RetroPresentationPalette;
+  bottomMistSprites: Phaser.GameObjects.Shape[];
   gravityZoneSprites: Phaser.GameObjects.Rectangle[];
   gravityFieldSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
   gravityFieldCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
@@ -164,20 +166,8 @@ export type GameSceneBaseDisplayContext = Phaser.Scene & {
 };
 
 export function setupGameSceneHud(scene: GameSceneHudSetupContext): void {
-  const applyResponsiveHudScale = ({ width }: { width: number }): void => {
-    const baseFontPx = Phaser.Math.Clamp((width / 960) * 8, 5, 10);
-    scene.hud.root.style.setProperty('--hud-font-base', `${baseFontPx.toFixed(2)}px`);
-  };
-
-  const mount = scene.game.canvas.parentElement as HTMLElement;
-  scene.hud.root.remove();
-  scene.hud = createHud(mount);
-
-  applyResponsiveHudScale({ width: scene.scale.displaySize.width || scene.scale.width });
-  scene.scale.on(Phaser.Scale.Events.RESIZE, applyResponsiveHudScale);
-  scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-    scene.scale.off(Phaser.Scale.Events.RESIZE, applyResponsiveHudScale);
-  });
+  scene.hud.root.destroy(true);
+  scene.hud = createRexHud(scene);
 }
 
 export function setupGameSceneInput(scene: GameSceneInputContext): void {
@@ -254,7 +244,7 @@ export function cleanupGameScene(scene: GameSceneCleanupContext): void {
   scene.completeTransitionEvent = undefined;
   scene.audio.stopMusic();
   scene.setPauseOverlayVisible(false);
-  scene.hud.root.remove();
+  scene.hud.root.destroy(true);
   // Destroy any GPU layers created at runtime.
   try {
     (scene as any).tileGPULayer?.destroy?.();
@@ -293,6 +283,7 @@ export function cleanupGameScene(scene: GameSceneCleanupContext): void {
   }
 
   scene.platformSprites.clear();
+  scene.bottomMistSprites = [];
   scene.platformShadowSprites.clear();
   scene.platformDetailSprites.clear();
   scene.platformCategoryMarkerSprites.clear();
@@ -328,6 +319,48 @@ export function cleanupGameScene(scene: GameSceneCleanupContext): void {
   scene.setStageStartArrivalVisible(false);
 }
 
+type BottomAmbientBand = {
+  topY: number;
+  height: number;
+};
+
+const BOTTOM_MIST_CLEARANCE = 18;
+const BOTTOM_MIST_MIN_HEIGHT = 46;
+const BOTTOM_MIST_MAX_HEIGHT = 120;
+
+export function resolveBottomAmbientBand(state: Readonly<SessionSnapshot>): BottomAmbientBand | null {
+  const worldBottom = state.stage.world.height;
+  const ambientFloorY = Math.max(
+    state.player.y + state.player.height,
+    state.stage.exit.y,
+    ...state.stageRuntime.platforms.map((platform) => platform.y),
+    ...state.stageRuntime.hazards.map((hazard) => hazard.rect.y),
+    ...state.stageRuntime.checkpoints.map((checkpoint) => checkpoint.rect.y),
+    ...state.stageRuntime.rewardBlocks.map((rewardBlock) => rewardBlock.y),
+    ...state.stageRuntime.activationNodes.map((node) => node.y),
+    ...state.stageRuntime.gravityCapsules.flatMap((capsule) => [
+      capsule.shell.y,
+      capsule.entryDoor.y,
+      capsule.exitDoor.y,
+      capsule.button.y,
+      capsule.entryRoute.y,
+      capsule.buttonRoute.y,
+      capsule.exitRoute.y,
+    ]),
+    ...state.stageRuntime.collectibles.map((collectible) => collectible.position.y),
+    ...state.stageRuntime.enemies.map((enemy) => enemy.y),
+  );
+  const topY = Math.ceil(ambientFloorY + BOTTOM_MIST_CLEARANCE);
+  const availableHeight = Math.floor(worldBottom - topY);
+  if (availableHeight < BOTTOM_MIST_MIN_HEIGHT) {
+    return null;
+  }
+  return {
+    topY,
+    height: Math.min(BOTTOM_MIST_MAX_HEIGHT, availableHeight),
+  };
+}
+
 export function createBaseDisplayObjects(scene: GameSceneBaseDisplayContext, state: Readonly<SessionSnapshot>): void {
   const { stage } = state;
 
@@ -340,6 +373,54 @@ export function createBaseDisplayObjects(scene: GameSceneBaseDisplayContext, sta
   );
 
   drawRetroBackdrop(scene, 0, 0, stage.world.width, stage.world.height, scene.retroPalette, 'gameplay');
+  scene.bottomMistSprites = [];
+
+  const bottomAmbientBand = resolveBottomAmbientBand(state);
+  if (bottomAmbientBand) {
+    const centerX = stage.world.width / 2;
+    const bandBottomY = bottomAmbientBand.topY + bottomAmbientBand.height;
+    const hazeBase = scene.add
+      .rectangle(
+        centerX,
+        bottomAmbientBand.topY + bottomAmbientBand.height / 2,
+        stage.world.width + 96,
+        bottomAmbientBand.height,
+        scene.retroPalette.border,
+        0.2,
+      )
+      .setOrigin(0.5)
+      .setDepth(0.35);
+    const hazeGlow = scene.add
+      .ellipse(
+        centerX,
+        bandBottomY - Math.max(12, Math.floor(bottomAmbientBand.height * 0.28)),
+        Math.max(260, Math.floor(stage.world.width * 0.92)),
+        Math.max(44, Math.floor(bottomAmbientBand.height * 0.8)),
+        scene.retroPalette.border,
+        0.14,
+      )
+      .setOrigin(0.5)
+      .setDepth(0.36);
+    const plumeCount = Math.max(4, Math.min(9, Math.floor(stage.world.width / 180)));
+    const plumeStep = stage.world.width / plumeCount;
+    const plumes = Array.from({ length: plumeCount }, (_, index) => {
+      const x = plumeStep * index + plumeStep / 2 + ((index % 2 === 0 ? -1 : 1) * plumeStep * 0.12);
+      const width = plumeStep * 1.35;
+      const height = Math.max(34, bottomAmbientBand.height * (0.56 + (index % 3) * 0.08));
+      return scene.add
+        .ellipse(
+          x,
+          bandBottomY - height * 0.42,
+          width,
+          height,
+          scene.retroPalette.border,
+          index % 2 === 0 ? 0.14 : 0.11,
+        )
+        .setOrigin(0.5)
+        .setDepth(0.37 + index * 0.001);
+    });
+    scene.bottomMistSprites.push(hazeBase, hazeGlow, ...plumes);
+  }
 
   // Create a lightweight GPU-backed background tile layer when available.
   try {

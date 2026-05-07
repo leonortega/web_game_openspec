@@ -8,13 +8,24 @@ import { SynthAudio } from '../audio/SynthAudio';
 import { ensureBootTexturesRegistered } from '../assets/bootTextures';
 import { runUnlockedAudioAction } from '../audio/sceneAudio';
 import { applyConfiguredRetroPostFxToCamera } from '../retroPostFx';
-import {
-  RETRO_FONT_FAMILY,
-  createRetroPresentationPalette,
-  drawRetroBackdrop,
-} from '../view/retroPresentation';
+import { bindScaleOuter, createNinePatch, RETRO_TEXT_STYLE, UI_COLORS } from '../ui/rexUiTheme';
 
 const INTRO_DURATION_MS = 2400;
+const describePowerVariant = (value: keyof typeof PLAYER_POWER_VARIANTS): string => {
+  if (value === 'base') {
+    return 'Regular Astronaut';
+  }
+  if (value === 'doubleJump') {
+    return 'Thruster Burst';
+  }
+  if (value === 'shooter') {
+    return 'Plasma Blaster';
+  }
+  if (value === 'invincible') {
+    return 'Shield Field';
+  }
+  return 'Booster Dash';
+};
 
 export class StageIntroScene extends Phaser.Scene {
   private audio?: SynthAudio;
@@ -33,9 +44,9 @@ export class StageIntroScene extends Phaser.Scene {
     const bridge = this.registry.get('bridge') as SceneBridge;
     const state = bridge.getSession().getState();
     const { width, height } = this.scale;
+    const stageOffsetX = 42;
     const stagePresentation = state.stage.presentation;
     const samplesTaken = state.progress.totalCoins;
-    const retro = createRetroPresentationPalette(state.stage.palette);
     const powerVariant = state.player.presentationPower ?? getPrimaryPowerVariant(state.progress.activePowers, state.progress.powerTimers);
     const variantStyle = PLAYER_POWER_VARIANTS[powerVariant];
     this.audio = new SynthAudio(
@@ -45,118 +56,85 @@ export class StageIntroScene extends Phaser.Scene {
     );
     ensureBootTexturesRegistered(this);
     applyConfiguredRetroPostFxToCamera(this.game, this.cameras.main);
+    bindScaleOuter(this);
 
-    drawRetroBackdrop(this, 0, 0, width, height, retro, 'transition');
-    this.add
-      .rectangle(width / 2, height / 2, width - 140, height - 140, retro.panel, 0.95)
-      .setStrokeStyle(4, retro.border, 0.9);
-    this.add.rectangle(width / 2, 106, width - 180, 44, retro.stageAccent, 0.92).setStrokeStyle(2, retro.ink, 1);
-    this.add.rectangle(width / 2, 180, width - 220, 40, retro.panelAlt, 0.94).setStrokeStyle(2, retro.border, 0.78);
-    this.add.rectangle(width / 2, height - 68, width - 180, 34, retro.skyline, 0.9).setStrokeStyle(2, retro.border, 0.55);
+    this.add.rectangle(width / 2 + stageOffsetX, height / 2, width + 24, height + 24, 0x05090d, 1).setDepth(0.5);
+    this.add.rectangle(width / 2 + stageOffsetX, height / 2, width + 24, height + 24, 0x071014, 0.96).setDepth(0.6);
+    [
+      { x: 74, y: 58, size: 3, color: 0xf7f3d6, alpha: 0.95 },
+      { x: 118, y: 96, size: 2, color: 0x8fdff2, alpha: 0.82 },
+      { x: 188, y: 64, size: 2, color: 0xf0b84b, alpha: 0.76 },
+      { x: 246, y: 118, size: 3, color: 0xf7f3d6, alpha: 0.9 },
+      { x: 332, y: 78, size: 2, color: 0x8fdff2, alpha: 0.72 },
+      { x: 406, y: 102, size: 3, color: 0xf7f3d6, alpha: 0.88 },
+      { x: 514, y: 70, size: 2, color: 0xf0b84b, alpha: 0.8 },
+      { x: 612, y: 90, size: 3, color: 0xf7f3d6, alpha: 0.92 },
+      { x: 704, y: 60, size: 2, color: 0x8fdff2, alpha: 0.78 },
+      { x: 812, y: 112, size: 3, color: 0xf7f3d6, alpha: 0.86 },
+      { x: 892, y: 82, size: 2, color: 0xf0b84b, alpha: 0.72 },
+      { x: 948, y: 54, size: 3, color: 0xf7f3d6, alpha: 0.9 },
+      { x: 96, y: 188, size: 2, color: 0x8fdff2, alpha: 0.74 },
+      { x: 214, y: 226, size: 3, color: 0xf7f3d6, alpha: 0.82 },
+      { x: 684, y: 208, size: 2, color: 0xf0b84b, alpha: 0.7 },
+      { x: 826, y: 242, size: 3, color: 0xf7f3d6, alpha: 0.78 },
+    ].forEach(({ x, y, size, color, alpha }) => {
+      this.add.rectangle(x + stageOffsetX, y, size, size, color, alpha).setDepth(0.61);
+    });
+    createNinePatch(this, width / 2 + stageOffsetX, height / 2, Math.min(width - 88, 860), Math.min(height - 92, 430)).setDepth(2);
 
     this.add
-      .text(width / 2, 108, stagePresentation.sectorLabel, {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '16px',
-        color: retro.shadow,
-        letterSpacing: 2,
+      .text(width / 2 + stageOffsetX, 92, stagePresentation.sectorLabel, {
+        ...RETRO_TEXT_STYLE,
+        fontSize: '14px',
+        color: '#f0b84b',
+        letterSpacing: 3,
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setDepth(3);
 
     this.add
-      .text(width / 2, 182, state.stage.name, {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '30px',
-        color: retro.text,
+      .text(width / 2 + stageOffsetX, 136, state.stage.name, {
+        ...RETRO_TEXT_STYLE,
+        fontSize: '28px',
         fontStyle: 'bold',
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setDepth(3);
 
     this.add
-      .text(width / 2, 228, `Muestras tomadas: ${samplesTaken}`, {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '18px',
+      .text(width / 2 - 286 + stageOffsetX, 194, 'Survey Loadout', {
+        ...RETRO_TEXT_STYLE,
+        fontSize: '12px',
         color: '#f0b84b',
-        align: 'center',
       })
-      .setOrigin(0.5);
+      .setOrigin(0, 0)
+      .setDepth(3);
+    this.add
+      .text(
+        width / 2 - 286 + stageOffsetX,
+        222,
+        `Samples: ${samplesTaken}\nBiome: ${stagePresentation.biomeLabel}\nStatus: ${describePowerVariant(powerVariant)}`,
+        {
+          ...RETRO_TEXT_STYLE,
+          fontSize: '11px',
+          color: UI_COLORS.text,
+          lineSpacing: 8,
+          wordWrap: { width: 280, useAdvancedWrap: true },
+        },
+      )
+      .setOrigin(0, 0)
+      .setDepth(3);
 
-    const astronautX = width / 2 + 120;
-    const astronautY = 410;
     const astronaut = this.add
-      .sprite(astronautX, astronautY, 'player-sheet', '0')
-      .setDisplaySize(128, 164)
+      .sprite(width / 2 + 164 + stageOffsetX, 370, 'player-sheet', '0')
+      .setDisplaySize(132, 168)
       .setTint(variantStyle.bodyColor)
-      .setOrigin(0.5, 1);
+      .setOrigin(0.5, 1)
+      .setDepth(3);
 
-    this.add
-      .rectangle(astronautX - 18, astronautY - 70, 12, 28, variantStyle.detailColor, 0.9)
-      .setOrigin(0.5)
-      .setVisible(powerVariant !== 'base');
-
-    this.add
-      .rectangle(astronautX + 18, astronautY - 70, 12, 28, variantStyle.detailColor, 0.9)
-      .setOrigin(0.5)
-      .setVisible(powerVariant === 'dash');
-
-    // Double jump: downward-pointing rocket
-    this.add
-      .rectangle(astronautX + 20, astronautY - 50, 8, 24, variantStyle.accentColor, 0.95)
-      .setOrigin(0.5)
-      .setVisible(powerVariant === 'doubleJump');
-    this.add
-      .rectangle(astronautX + 12, astronautY - 38, 5, 8, variantStyle.accentColor, 0.9)
-      .setOrigin(0.5)
-      .setVisible(powerVariant === 'doubleJump');
-    this.add
-      .rectangle(astronautX + 28, astronautY - 38, 5, 8, variantStyle.accentColor, 0.9)
-      .setOrigin(0.5)
-      .setVisible(powerVariant === 'doubleJump');
-    this.add
-      .triangle(astronautX + 20, astronautY - 26, 0, -8, -5, 8, 5, 8, variantStyle.detailColor, 0.95)
-      .setOrigin(0.5)
-      .setVisible(powerVariant === 'doubleJump');
-
-    this.add
-      .rectangle(astronautX + 48, astronautY - 50, 18, 10, variantStyle.accentColor, 0.95)
-      .setOrigin(0.5)
-      .setVisible(powerVariant === 'shooter');
-
-    this.add
-      .ellipse(astronautX, astronautY - 60, 164, 206, variantStyle.auraColor ?? variantStyle.accentColor, 0.12)
-      .setStrokeStyle(powerVariant === 'invincible' ? 2 : 0, variantStyle.detailColor, powerVariant === 'invincible' ? 0.46 : 0)
-      .setVisible(powerVariant === 'invincible');
-
-    astronaut.setDepth(10);
-
-    const statusLabelMap: Record<string, string> = {
-      base: 'Regular Astronaut',
-      doubleJump: 'Double Jump Power',
-      shooter: 'Plasma Blaster',
-      dash: 'Booster Dash',
-      invincible: 'Invincible Shield',
-    };
-
-    const statusLabel = statusLabelMap[powerVariant] || 'Unknown Status';
-    this.add
-      .text(width / 2 - 120, 280, `Status:\n${statusLabel}`, {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '14px',
-        color: '#ffffff',
-        align: 'left',
-        lineSpacing: 6,
-      })
-      .setOrigin(0, 0.5);
-
-    this.add
-      .text(width / 2, 526, stagePresentation.introLine, {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '14px',
-        color: retro.dimText,
-        align: 'center',
-        wordWrap: { width: width - 240 },
-      })
-      .setOrigin(0.5);
+    this.add.rectangle(astronaut.x - 18, astronaut.y - 70, 12, 28, variantStyle.detailColor, 0.9).setDepth(4);
+    this.add.rectangle(astronaut.x + 18, astronaut.y - 70, 12, 28, variantStyle.detailColor, 0.9).setDepth(4);
+    this.add.ellipse(astronaut.x, astronaut.y - 60, 164, 206, variantStyle.auraColor ?? variantStyle.accentColor, 0.12).setDepth(2);
 
     this.audio.playStageIntro(state.stage);
     const retryIntroAudio = () => {

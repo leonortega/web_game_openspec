@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { AUDIO_CUES, type AudioCue } from '../../audio/audioContract';
 import type { SessionSnapshot } from '../../game/simulation/GameSession';
+import { stageDefinitions } from '../../game/content/stages';
 import { ensureBootTexturesRegistered } from '../assets/bootTextures';
 import {
   PLAYER_POWER_VARIANTS,
@@ -19,7 +20,6 @@ import {
   type RewardBlockState,
   type RewardRevealState,
 } from '../../game/simulation/state';
-import { createHud } from '../../ui/hud/hud';
 import { SceneBridge } from '../adapters/sceneBridge';
 import { SynthAudio } from '../audio/SynthAudio';
 import { applyConfiguredRetroPostFxToCamera } from '../retroPostFx';
@@ -137,6 +137,8 @@ import {
   syncRewardReveal as syncRewardRevealRendering,
   type GameSceneRewardRenderingContext,
 } from './gameScene/rewardRendering';
+import { createRexHud } from '../ui/rexHud';
+import { bindScaleOuter } from '../ui/rexUiTheme';
 
 const COMPLETE_TRANSITION_DELAY_MS = 160;
 const STAGE_START_SEQUENCE_DURATION_MS = getStageStartSequenceTotalMs();
@@ -189,6 +191,8 @@ export class GameScene extends Phaser.Scene {
   private previousFeedbackState!: RetroFeedbackSnapshot;
 
   private feedbackCounts: Record<string, number> = {};
+
+  private bottomMistSprites: Phaser.GameObjects.Shape[] = [];
 
   private currentPlayerPose: ReturnType<typeof getRetroPlayerPose>['state'] = 'idle';
 
@@ -315,7 +319,7 @@ export class GameScene extends Phaser.Scene {
 
   private pauseText!: Phaser.GameObjects.Text;
 
-  private hud = createHud(document.createElement('div'));
+  private hud!: ReturnType<typeof createRexHud>;
 
   private completeTransitionEvent?: Phaser.Time.TimerEvent;
 
@@ -388,6 +392,7 @@ export class GameScene extends Phaser.Scene {
 
   private getBaseDisplayContext(): GameSceneBaseDisplayContext {
     void this.retroPalette;
+    void this.bottomMistSprites;
     void this.gravityZoneSprites;
     void this.gravityFieldSprites;
     void this.gravityFieldCategoryMarkerSprites;
@@ -561,10 +566,12 @@ export class GameScene extends Phaser.Scene {
       () => this.bridge.getSession().getState().progress.runSettings.sfxVolume,
     );
     applyConfiguredRetroPostFxToCamera(this.game, this.cameras.main);
+    bindScaleOuter(this);
     this.completeTransitionEvent = undefined;
     ensureBootTexturesRegistered(this);
     ensureParticleTexture(this);
     this.ensurePlayerAnimations();
+    this.hud = createRexHud(this);
     setupGameSceneHud(this.getHudSetupContext());
 
     const state = this.bridge.getSession().getState();
@@ -652,7 +659,14 @@ export class GameScene extends Phaser.Scene {
     if (!arrivalActive && state.levelJustCompleted && !this.completeTransitionEvent) {
       this.completeTransitionEvent = this.time.delayedCall(COMPLETE_TRANSITION_DELAY_MS, () => {
         this.completeTransitionEvent = undefined;
-        this.scene.start('complete');
+        const session = this.bridge.getSession();
+        if (state.stageIndex >= stageDefinitions.length - 1) {
+          session.advanceToNextStage();
+          this.scene.start('menu');
+          return;
+        }
+        session.advanceToNextStage();
+        this.scene.start('stage-intro');
       });
     }
   }
@@ -1164,7 +1178,7 @@ export class GameScene extends Phaser.Scene {
       runPaused: this.bridge.isRunPaused(),
       pauseOverlayVisible: this.pauseOverlay.visible && this.pauseText.visible,
       pauseText: this.pauseText.visible ? this.pauseText.text : null,
-      hudVisible: this.hud.root.style.visibility !== 'hidden',
+      hudVisible: this.hud.root.visible,
       stageStartArrivalActive: this.isStageStartArrivalActive(),
       stageStartArrivalTimerMs: this.stageStartArrivalTimerMs,
       stageStartArrivalProgress: this.getStageStartArrivalProgress(),
@@ -1384,7 +1398,7 @@ export class GameScene extends Phaser.Scene {
   private setPauseOverlayVisible(visible: boolean): void {
     this.pauseOverlay.setVisible(visible);
     this.pauseText.setVisible(visible);
-    this.hud.root.style.visibility = visible ? 'hidden' : 'visible';
+    this.hud.root.setVisible(!visible);
   }
 
   private syncPlatform(platform: PlatformState): void {

@@ -50,15 +50,18 @@ describe('retroPostFx world-local helpers', () => {
   });
 
   it('applies the configured CRT state from the registry to a camera', () => {
-    const filterList = {
-      addCRT: vi.fn(),
-      addQuantize: vi.fn(),
+    const crtPlugin = {
+      add: vi.fn(),
+      get: vi.fn().mockReturnValue([]),
+      remove: vi.fn(),
     };
     const camera = {
-      filters: { external: filterList },
-      setRenderFilters: vi.fn(),
-      setFiltersForceComposite: vi.fn(),
-      setForceComposite: vi.fn(),
+      scene: {
+        plugins: {
+          get: vi.fn().mockReturnValue(crtPlugin),
+        },
+      },
+      setZoom: vi.fn(),
     } as any;
     const registry = new Map<string, unknown>([['crtFilterEnabled', true]]);
     const game = {
@@ -70,22 +73,33 @@ describe('retroPostFx world-local helpers', () => {
 
     applyConfiguredRetroPostFxToCamera(game, camera);
 
-    expect(camera.setRenderFilters).toHaveBeenCalledWith(true);
-    expect(filterList.addCRT).toHaveBeenCalledTimes(1);
-    expect(filterList.addQuantize).toHaveBeenCalledTimes(1);
+    expect(camera.setZoom).toHaveBeenCalledWith(1.035);
+    expect(crtPlugin.add).toHaveBeenCalledTimes(1);
+    expect(crtPlugin.add).toHaveBeenCalledWith(
+      camera,
+      expect.objectContaining({
+        warpX: 0.18,
+        warpY: 0.14,
+        scanLineStrength: 0.08,
+        scanLineWidth: 768,
+        name: 'rexCrtPostFx',
+      }),
+    );
   });
 
   it('toggles the CRT option and reapplies the camera postfx path', () => {
-    const filterList = {
-      addCRT: vi.fn(),
-      addQuantize: vi.fn(),
-      clear: vi.fn(),
+    const crtPlugin = {
+      add: vi.fn(),
+      get: vi.fn().mockReturnValue([]),
+      remove: vi.fn(),
     };
     const camera = {
-      filters: { external: filterList },
-      setRenderFilters: vi.fn(),
-      setFiltersForceComposite: vi.fn(),
-      setForceComposite: vi.fn(),
+      scene: {
+        plugins: {
+          get: vi.fn().mockReturnValue(crtPlugin),
+        },
+      },
+      setZoom: vi.fn(),
     } as any;
     const registry = new Map<string, unknown>([['crtFilterEnabled', true]]);
     const game = {
@@ -99,7 +113,7 @@ describe('retroPostFx world-local helpers', () => {
 
     expect(nextEnabled).toBe(false);
     expect(getCrtFilterEnabled(game, true)).toBe(false);
-    expect(filterList.addCRT).not.toHaveBeenCalled();
-    expect(filterList.addQuantize).toHaveBeenCalledTimes(1);
+    expect(camera.setZoom).toHaveBeenCalledWith(1);
+    expect(crtPlugin.add).not.toHaveBeenCalled();
   });
 });

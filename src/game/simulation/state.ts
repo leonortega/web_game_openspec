@@ -31,6 +31,7 @@ export type RunSettings = {
   masterVolume: number;
   musicVolume: number;
   sfxVolume: number;
+  crtEnabled: boolean;
   difficulty: DifficultySetting;
   enemyPressure: EnemyPressureSetting;
 };
@@ -566,6 +567,7 @@ export const createDefaultRunSettings = (): RunSettings => ({
   masterVolume: 0.7,
   musicVolume: 0.7,
   sfxVolume: 0.8,
+  crtEnabled: true,
   difficulty: 'standard',
   enemyPressure: 'normal',
 });

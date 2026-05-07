@@ -517,20 +517,13 @@ function createPixelTexture(
   context.imageSmoothingEnabled = false;
   draw(context);
 
-  // If a global GPU postFX quantize is active, skip canvas-side quantization
-  // to avoid double-quantizing/dithering. Otherwise perform a CPU-side
-  // 5-6-5 quantization with Floyd–Steinberg dithering for non-WebGL fallbacks
-  // or when the global postFX is not present.
-  const globalQuantizeEnabled = Boolean((scene as any)?.registry?.get?.('globalQuantizeEnabled'));
-  if (!globalQuantizeEnabled) {
-    try {
-      quantizeCanvasTo565(context, width, height);
-    } catch (err) {
-      // If quantization fails for any reason, fall back to original canvas.
-      // (Don't block game boot for non-critical visual processing.)
-      // eslint-disable-next-line no-console
-      console.warn('16-bit quantization failed for', key, err);
-    }
+  try {
+    quantizeCanvasTo565(context, width, height);
+  } catch (err) {
+    // If quantization fails for any reason, fall back to original canvas.
+    // (Don't block game boot for non-critical visual processing.)
+    // eslint-disable-next-line no-console
+    console.warn('16-bit quantization failed for', key, err);
   }
 
   scene.textures.addCanvas(key, canvas);

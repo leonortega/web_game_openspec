@@ -3,13 +3,24 @@ import { defaultInputState, type InputState } from '../../game/input/actions';
 import { GameSession } from '../../game/simulation/GameSession';
 import type { AudioCue } from '../../audio/audioContract';
 import { DIFFICULTY_LABELS, formatActivePowerSummary, formatHudCollectibleSummary } from '../../game/simulation/state';
-import { updateHud, type HudViewModel } from '../../ui/hud/hud';
+import type { SessionProgress } from '../../game/simulation/state';
+import type { RunProgressStore } from '../persistence/RunProgressStore';
+import type { RexHudBindings } from '../ui/rexHud';
+import type { HudViewModel } from '../../ui/hud/hud';
 
 export class SceneBridge {
   private readonly session = new GameSession();
+  private readonly progressStore?: RunProgressStore;
   private readonly input: InputState = defaultInputState();
   private runPaused = false;
   private resumeFrameSkipsRemaining = 0;
+  private lastSavedProgressJson = '';
+  private saveQueue = Promise.resolve();
+
+  constructor(progressStore?: RunProgressStore) {
+    this.progressStore = progressStore;
+    this.lastSavedProgressJson = this.serializeProgress(this.session.getState().progress);
+  }
 
   setLeft(active: boolean): void {
     this.input.left = active;
@@ -52,6 +63,7 @@ export class SceneBridge {
     this.input.thrusterPressed = false;
     this.input.dashPressed = false;
     this.input.shootPressed = false;
+    this.persistProgressIfChanged();
   }
 
   pauseRun(): boolean {
@@ -83,11 +95,22 @@ export class SceneBridge {
     return this.session;
   }
 
+  async loadPersistedProgress(): Promise<void> {
+    const progress = await this.progressStore?.load();
+    if (!progress) {
+      return;
+    }
+
+    this.session.hydrateProgress(progress);
+    this.lastSavedProgressJson = this.serializeProgress(this.session.getState().progress);
+  }
+
   startStage(index: number): void {
     this.runPaused = false;
     this.resumeFrameSkipsRemaining = 0;
     this.clearGameplayInput();
     this.session.startStage(index);
+    this.persistProgressIfChanged();
   }
 
   forceStartStage(index: number): void {
@@ -95,6 +118,7 @@ export class SceneBridge {
     this.resumeFrameSkipsRemaining = 0;
     this.clearGameplayInput();
     this.session.forceStartStage(index);
+    this.persistProgressIfChanged();
   }
 
   restartStage(): void {
@@ -102,10 +126,12 @@ export class SceneBridge {
     this.resumeFrameSkipsRemaining = 0;
     this.clearGameplayInput();
     this.session.restartStage();
+    this.persistProgressIfChanged();
   }
 
   updateRunSettings(next: Parameters<GameSession['updateRunSettings']>[0]): void {
     this.session.updateRunSettings(next);
+    this.persistProgressIfChanged();
   }
 
   setCameraViewBox(viewBox: { x: number; y: number; width: number; height: number } | null): void {
@@ -133,8 +159,8 @@ export class SceneBridge {
     };
   }
 
-  syncHud(hud: Parameters<typeof updateHud>[0]): void {
-    updateHud(hud, this.getHudModel());
+  syncHud(hud: RexHudBindings): void {
+    hud.sync(this.getHudModel());
   }
 
   drainCues(): AudioCue[] {
@@ -153,5 +179,24 @@ export class SceneBridge {
     this.input.thrusterPressed = false;
     this.input.dashPressed = false;
     this.input.shootPressed = false;
+  }
+
+  private persistProgressIfChanged(): void {
+    if (!this.progressStore) {
+      return;
+    }
+
+    const progress = this.session.getState().progress;
+    const nextJson = this.serializeProgress(progress);
+    if (nextJson === this.lastSavedProgressJson) {
+      return;
+    }
+
+    this.lastSavedProgressJson = nextJson;
+    this.saveQueue = this.saveQueue.then(() => this.progressStore?.save(progress));
+  }
+
+  private serializeProgress(progress: SessionProgress): string {
+    return JSON.stringify(progress);
   }
 }

@@ -675,7 +675,10 @@ const cloneProgress = (progress: SessionProgress): SessionProgress => ({
   totalCoins: progress.totalCoins,
   activePowers: { ...progress.activePowers },
   powerTimers: { ...progress.powerTimers },
-  runSettings: { ...progress.runSettings },
+  runSettings: {
+    ...createDefaultRunSettings(),
+    ...progress.runSettings,
+  },
 });
 
 const getActiveTemporaryBridgeIds = (temporaryBridges: readonly TemporaryBridgeState[]): string[] =>
@@ -963,6 +966,13 @@ export class GameSession {
     this.snapshot = this.createSnapshot(0, createDefaultSessionProgress());
   }
 
+  hydrateProgress(progress: SessionProgress): void {
+    this.checkpointRevealIds = [];
+    this.cameraViewBox = null;
+    this.visibleEnemyIds.clear();
+    this.snapshot = this.createSnapshot(0, cloneProgress(progress));
+  }
+
   getState(): Readonly<SessionSnapshot> {
     return this.snapshot;
   }
@@ -1020,6 +1030,7 @@ export class GameSession {
           : clamp(next.masterVolume, 0, 1)
         : clamp(next.sfxVolume, 0, 1);
     const masterVolume = next.masterVolume == null ? current.masterVolume : clamp(next.masterVolume, 0, 1);
+    const crtEnabled = next.crtEnabled == null ? current.crtEnabled : next.crtEnabled;
 
     this.snapshot.progress.runSettings = {
       ...current,
@@ -1027,6 +1038,7 @@ export class GameSession {
       musicVolume,
       sfxVolume,
       masterVolume,
+      crtEnabled,
     };
   }
 
