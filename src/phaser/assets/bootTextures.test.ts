@@ -17,6 +17,7 @@ import {
   drawCheckpointTextureArt,
   drawFlyerTextureArt,
   drawHopperTextureArt,
+  drawPlayerSheetFrame,
   drawTurretTextureArt,
   drawWalkerTextureArt,
 } from './bootTextures';
@@ -41,6 +42,26 @@ const collectOps = (draw: (artist: {
     outlinedRect: (x, y, width, height, fill) => ops.push({ kind: 'outlined', x, y, width, height, fill }),
     fillRect: (x, y, width, height, fill) => ops.push({ kind: 'fill', x, y, width, height, fill }),
   });
+
+  return ops;
+};
+
+const collectPlayerFrameRects = (frameIndex: number): DrawOp[] => {
+  const ops: DrawOp[] = [];
+  let currentFill = '#000000';
+  const context = {
+    get fillStyle() {
+      return currentFill;
+    },
+    set fillStyle(value: string) {
+      currentFill = value;
+    },
+    fillRect(x: number, y: number, width: number, height: number) {
+      ops.push({ kind: 'fill', x, y, width, height, fill: currentFill });
+    },
+  } as unknown as CanvasRenderingContext2D;
+
+  drawPlayerSheetFrame(context, frameIndex);
 
   return ops;
 };
@@ -111,6 +132,44 @@ describe('floored texture art', () => {
 
     expect(plantedBase).toBeDefined();
     expect(filledBottom).toBe(CHECKPOINT_TEXTURE_SIZE.height);
+  });
+});
+
+describe('drawPlayerSheetFrame', () => {
+  it('gives the run cycle more than a repeated two-pose shuffle', () => {
+    const leftLegTops = [4, 5, 6, 7, 8, 9].map((frameIndex) => {
+      const leftLeg = collectPlayerFrameRects(frameIndex).find(
+        (op) => op.kind === 'fill' && op.fill === '#fff6ee' && op.x === 11 && op.width === 3 && op.height === 10,
+      );
+      return leftLeg?.y;
+    });
+
+    expect(new Set(leftLegTops).size).toBeGreaterThanOrEqual(3);
+  });
+
+  it('separates launch and apex jump silhouettes', () => {
+    const launchOps = collectPlayerFrameRects(10);
+    const apexOps = collectPlayerFrameRects(11);
+    const launchHelmet = launchOps.find((op) => op.kind === 'fill' && op.fill === '#d38a34' && op.width === 7 && op.height === 6);
+    const apexHelmet = apexOps.find((op) => op.kind === 'fill' && op.fill === '#d38a34' && op.width === 7 && op.height === 6);
+    const launchBoot = launchOps.find((op) => op.kind === 'fill' && op.fill === '#17323c' && op.x === 10);
+    const apexBoot = apexOps.find((op) => op.kind === 'fill' && op.fill === '#17323c' && op.x === 10);
+
+    expect(launchHelmet).toBeDefined();
+    expect(apexHelmet).toBeDefined();
+    expect(apexBoot).toBeDefined();
+    expect(launchBoot).toBeDefined();
+    expect(apexHelmet?.y).toBeLessThan(launchHelmet?.y ?? Number.POSITIVE_INFINITY);
+    expect(apexBoot?.y).toBeLessThan(launchBoot?.y ?? Number.POSITIVE_INFINITY);
+  });
+
+  it('uses the new astronaut palette with a warm visor and blue boot trim', () => {
+    const idleOps = collectPlayerFrameRects(0);
+    const goldVisor = idleOps.find((op) => op.kind === 'fill' && op.fill === '#d38a34' && op.width === 7 && op.height === 6);
+    const blueBootTrim = idleOps.filter((op) => op.kind === 'fill' && op.fill === '#67c8ec' && op.width === 5 && op.height === 2);
+
+    expect(goldVisor).toBeDefined();
+    expect(blueBootTrim.length).toBeGreaterThanOrEqual(2);
   });
 });
 

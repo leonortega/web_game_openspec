@@ -63,7 +63,7 @@ const REQUIRED_BOOT_TEXTURE_KEYS = [
   EXIT_CAPSULE_TEXTURE_KEYS.doorOpen,
 ] as const;
 
-const BOOT_TEXTURE_VERSION = 5;
+const BOOT_TEXTURE_VERSION = 6;
 const BOOT_TEXTURE_VERSION_KEY = '__bootTextureVersion';
 
 const PLAYER_SHEET_FRAME_SIZE = {
@@ -226,26 +226,32 @@ export const registerBootTextures = (scene: Phaser.Scene): void => {
 
   createPixelTexture(scene, 'player', 26, 42, (context) => {
     // Legacy single-frame astronaut texture kept side-view (faces right by default).
-    outlinedRect(context, 10, 4, 10, 10, '#f7f3d6');
-    fillRect(context, 14, 6, 4, 4, '#8fdff2');
-    fillRect(context, 11, 7, 3, 2, '#dbe4f0');
-    fillRect(context, 10, 11, 10, 2, '#f5cf64');
+    outlinedRect(context, 9, 4, 12, 12, '#fff6ee');
+    fillRect(context, 10, 5, 10, 2, '#e9edf4');
+    fillRect(context, 12, 7, 7, 6, '#d38a34');
+    fillRect(context, 13, 7, 4, 2, '#f6c777');
+    fillRect(context, 10, 8, 2, 3, '#67c8ec');
+    fillRect(context, 9, 14, 12, 2, '#67c8ec');
 
-    outlinedRect(context, 9, 14, 10, 15, '#f7f3d6');
-    fillRect(context, 10, 16, 8, 4, '#8fdff2');
-    fillRect(context, 10, 21, 8, 3, '#f5cf64');
-    fillRect(context, 10, 24, 8, 2, '#31451d');
+    outlinedRect(context, 10, 16, 10, 14, '#fff6ee');
+    fillRect(context, 11, 17, 8, 2, '#e9edf4');
+    fillRect(context, 10, 19, 10, 3, '#67c8ec');
+    fillRect(context, 11, 24, 8, 3, '#2a8fb8');
+    fillRect(context, 12, 27, 6, 2, '#f6c777');
 
-    fillRect(context, 7, 17, 2, 9, '#31451d');
-    fillRect(context, 19, 16, 3, 8, '#f7f3d6');
-    fillRect(context, 21, 18, 2, 3, '#f5cf64');
+    fillRect(context, 8, 19, 2, 8, '#67c8ec');
+    fillRect(context, 7, 21, 1, 3, '#2a8fb8');
+    fillRect(context, 20, 18, 2, 8, '#fff6ee');
+    fillRect(context, 21, 20, 2, 2, '#67c8ec');
 
-    fillRect(context, 10, 29, 4, 10, '#f5cf64');
-    fillRect(context, 15, 30, 4, 9, '#f5cf64');
-    fillRect(context, 9, 39, 5, 3, '#11141b');
-    fillRect(context, 14, 39, 5, 3, '#11141b');
-
-    fillRect(context, 6, 19, 1, 4, '#11141b');
+    fillRect(context, 11, 30, 3, 9, '#fff6ee');
+    fillRect(context, 16, 31, 3, 8, '#fff6ee');
+    fillRect(context, 10, 35, 5, 2, '#67c8ec');
+    fillRect(context, 15, 36, 5, 2, '#67c8ec');
+    fillRect(context, 10, 39, 5, 3, '#17323c');
+    fillRect(context, 15, 39, 5, 3, '#17323c');
+    fillRect(context, 10, 39, 5, 2, '#67c8ec');
+    fillRect(context, 15, 39, 5, 2, '#67c8ec');
   });
 
   createPixelTexture(scene, 'walker', WALKER_TEXTURE_SIZE.width, WALKER_TEXTURE_SIZE.height, (context) => {
@@ -566,7 +572,16 @@ function createPixelSpriteSheet(
   }
 }
 
-function drawPlayerSheetFrame(context: CanvasRenderingContext2D, frameIndex: number): void {
+export function drawPlayerSheetFrame(context: CanvasRenderingContext2D, frameIndex: number): void {
+  const suit = frameIndex >= 19 ? '#e7a17e' : '#fff6ee';
+  const suitShade = frameIndex >= 19 ? '#d58461' : '#e9edf4';
+  const trim = '#67c8ec';
+  const trimDark = '#2a8fb8';
+  const visor = frameIndex >= 19 ? '#fff0c8' : '#d38a34';
+  const visorGlow = frameIndex >= 19 ? '#ffe1aa' : '#f6c777';
+  const sole = '#17323c';
+  const outline = '#1d252d';
+
   const frameGroup =
     frameIndex <= 3
       ? 'idle'
@@ -582,55 +597,156 @@ function drawPlayerSheetFrame(context: CanvasRenderingContext2D, frameIndex: num
                 ? 'hurt'
                 : 'defeat';
 
-  const step = frameGroup === 'run' ? frameIndex - 4 : frameGroup === 'dash' ? frameIndex - 14 : frameIndex;
-  const bobY = frameGroup === 'run' ? (step % 2 === 0 ? 1 : 0) : frameGroup === 'jump' ? -2 : frameGroup === 'fall' ? 2 : 0;
-  const helmetY = 3 + (frameGroup === 'jump' ? -1 : 0);
-  const bodyY = 15 + bobY;
-  const armOffset = frameGroup === 'run' ? (step % 2 === 0 ? -1 : 1) : frameGroup === 'dash' ? -2 : 0;
-  const legA = frameGroup === 'run' ? (step % 2 === 0 ? -1 : 1) : frameGroup === 'jump' ? -2 : frameGroup === 'fall' ? 1 : 0;
-  const legB = -legA;
-  const hurtShift = frameGroup === 'hurt' ? 1 : 0;
+  const localFrame =
+    frameGroup === 'run'
+      ? frameIndex - 4
+      : frameGroup === 'jump'
+        ? frameIndex - 10
+        : frameGroup === 'fall'
+          ? frameIndex - 12
+          : frameGroup === 'dash'
+            ? frameIndex - 14
+            : frameGroup === 'hurt'
+              ? frameIndex - 17
+              : frameIndex;
+  const runPhase = localFrame % 4;
+  let helmetY = 3;
+  let bodyY = 15;
+  let torsoHeight = 14;
+  let suitStripeY = bodyY + 6;
+  let packY = bodyY + 3;
+  let packHeight = 8;
+  let frontArmX = 20;
+  let frontArmY = bodyY + 2;
+  let frontArmHeight = 8;
+  let handX = 21;
+  let handY = bodyY + 4;
+  let leftLegY = 31;
+  let rightLegY = 31;
+  let leftBootY = 41;
+  let rightBootY = 41;
+  let hurtShift = 0;
+  let dashTrailWidth = 0;
 
-  const suit = frameGroup === 'defeat' ? '#e97652' : '#f7f3d6';
-  const visor = frameGroup === 'defeat' ? '#fff7d8' : '#8fdff2';
+  if (frameGroup === 'idle') {
+    const idlePhase = frameIndex % 4;
+    helmetY += idlePhase === 1 ? -1 : 0;
+    bodyY += idlePhase === 1 ? -1 : 0;
+    suitStripeY = bodyY + 6;
+    packY = bodyY + (idlePhase >= 2 ? 4 : 3);
+  } else if (frameGroup === 'run') {
+    const helmetBob = [1, 0, -1, 0][runPhase] ?? 0;
+    const bodyBob = [1, 0, -1, 0][runPhase] ?? 0;
+    const frontArmLift = [-1, 1, 2, 0][runPhase] ?? 0;
+    const leftLegLift = [-2, 0, 2, 0][runPhase] ?? 0;
+    const rightLegLift = [1, 2, -2, 0][runPhase] ?? 0;
+
+    helmetY += helmetBob;
+    bodyY += bodyBob;
+    suitStripeY = bodyY + 6;
+    packY = bodyY + (runPhase === 1 ? 4 : runPhase === 2 ? 2 : 3);
+    frontArmY = bodyY + 2 + frontArmLift;
+    handY = bodyY + 4 + frontArmLift;
+    leftLegY += leftLegLift;
+    leftBootY += leftLegLift;
+    rightLegY += rightLegLift;
+    rightBootY += rightLegLift;
+  } else if (frameGroup === 'jump') {
+    helmetY += localFrame === 0 ? -1 : -3;
+    bodyY += localFrame === 0 ? -2 : -4;
+    torsoHeight = localFrame === 0 ? 13 : 12;
+    suitStripeY = bodyY + 5;
+    packY = bodyY + 2;
+    frontArmX = 21;
+    frontArmY = bodyY + (localFrame === 0 ? -1 : -2);
+    frontArmHeight = localFrame === 0 ? 7 : 6;
+    handX = 22;
+    handY = bodyY + (localFrame === 0 ? 1 : 0);
+    leftLegY -= localFrame === 0 ? 2 : 4;
+    leftBootY -= localFrame === 0 ? 2 : 4;
+    rightLegY -= localFrame === 0 ? 1 : 3;
+    rightBootY -= localFrame === 0 ? 1 : 3;
+  } else if (frameGroup === 'fall') {
+    bodyY += localFrame === 0 ? 2 : 3;
+    torsoHeight = localFrame === 0 ? 15 : 16;
+    suitStripeY = bodyY + 6;
+    packY = bodyY + (localFrame === 0 ? 4 : 5);
+    frontArmY = bodyY + (localFrame === 0 ? 3 : 4);
+    leftLegY += localFrame === 0 ? 1 : 2;
+    leftBootY += localFrame === 0 ? 1 : 2;
+    rightLegY += localFrame === 0 ? 2 : 3;
+    rightBootY += localFrame === 0 ? 2 : 3;
+  } else if (frameGroup === 'dash') {
+    bodyY += 1;
+    torsoHeight = 13;
+    suitStripeY = bodyY + 5;
+    packY = bodyY + 2;
+    frontArmX = 21;
+    frontArmY = bodyY;
+    frontArmHeight = 7;
+    handX = 22;
+    handY = bodyY + 2;
+    leftLegY -= 2;
+    leftBootY -= 2;
+    rightLegY -= 1;
+    rightBootY -= 1;
+    dashTrailWidth = localFrame === 0 ? 4 : localFrame === 1 ? 6 : 3;
+  } else if (frameGroup === 'hurt') {
+    hurtShift = localFrame === 0 ? 1 : 2;
+    helmetY += localFrame === 0 ? 0 : 1;
+    bodyY += 1;
+    suitStripeY = bodyY + 6;
+    packY = bodyY + 3;
+    frontArmY = bodyY + (localFrame === 0 ? 3 : 4);
+    leftLegY += 1;
+    rightLegY += 2;
+  }
 
   // Side-profile astronaut facing right by default; runtime flips for left.
-  outlinedRect(context, 9 + hurtShift, helmetY, 12, 11, suit);
-  fillRect(context, 13 + hurtShift, helmetY + 2, 5, 5, visor);
-  fillRect(context, 10 + hurtShift, helmetY + 3, 3, 2, '#dbe4f0');
-  fillRect(context, 9 + hurtShift, helmetY + 8, 12, 2, '#f5cf64');
+  outlinedRect(context, 9 + hurtShift, helmetY, 12, 12, suit);
+  fillRect(context, 10 + hurtShift, helmetY + 1, 10, 2, suitShade);
+  fillRect(context, 12 + hurtShift, helmetY + 3, 7, 6, visor);
+  fillRect(context, 13 + hurtShift, helmetY + 3, 4, 2, visorGlow);
+  fillRect(context, 10 + hurtShift, helmetY + 4, 2, 3, trim);
+  fillRect(context, 9 + hurtShift, helmetY + 10, 12, 2, trim);
 
-  outlinedRect(context, 10 + hurtShift, bodyY, 10, frameGroup === 'dash' ? 13 : 14, suit);
-  fillRect(context, 11 + hurtShift, bodyY + 2, 8, 3, '#8fdff2');
-  fillRect(context, 11 + hurtShift, bodyY + 6, 8, 3, '#f5cf64');
-  fillRect(context, 11 + hurtShift, bodyY + 9, 8, 2, '#31451d');
+  outlinedRect(context, 10 + hurtShift, bodyY, 10, torsoHeight, suit);
+  fillRect(context, 11 + hurtShift, bodyY + 1, 8, 2, suitShade);
+  fillRect(context, 10 + hurtShift, bodyY + 3, 10, 3, trim);
+  fillRect(context, 11 + hurtShift, suitStripeY, 8, 3, trimDark);
+  fillRect(context, 12 + hurtShift, bodyY + 8, 6, 2, visorGlow);
+  fillRect(context, 11 + hurtShift, bodyY + 10, 8, 2, outline);
 
   // Backpack on back side (left side of sprite when facing right).
-  fillRect(context, 8 + hurtShift, bodyY + 3, 2, 8, '#31451d');
-  fillRect(context, 7 + hurtShift, bodyY + 5, 1, 3, '#11141b');
+  fillRect(context, 8 + hurtShift, packY, 2, packHeight, trim);
+  fillRect(context, 7 + hurtShift, bodyY + 5, 1, 3, trimDark);
 
   // Front arm (toward movement direction).
-  fillRect(context, 20 + hurtShift, bodyY + 2 + armOffset, 2, frameGroup === 'dash' ? 7 : 8, suit);
-  fillRect(context, 21 + hurtShift, bodyY + 4 + armOffset, 2, 2, '#f5cf64');
+  fillRect(context, frontArmX + hurtShift, frontArmY, 2, frontArmHeight, suit);
+  fillRect(context, handX + hurtShift, handY, 2, 2, trim);
 
   // Legs and boots reach the sprite bottom so the astronaut plants on the floor.
-  fillRect(context, 11 + hurtShift, 31 + legA, 3, 10, '#f5cf64');
-  fillRect(context, 16 + hurtShift, 31 + legB, 3, 10, '#f5cf64');
-  fillRect(context, 10 + hurtShift, 41 + legA, 5, 4, '#11141b');
-  fillRect(context, 15 + hurtShift, 41 + legB, 5, 4, '#11141b');
+  fillRect(context, 11 + hurtShift, leftLegY, 3, 10, suit);
+  fillRect(context, 16 + hurtShift, rightLegY, 3, 10, suit);
+  fillRect(context, 10 + hurtShift, leftLegY + 5, 5, 2, trim);
+  fillRect(context, 15 + hurtShift, rightLegY + 5, 5, 2, trim);
+  fillRect(context, 10 + hurtShift, leftBootY, 5, 4, sole);
+  fillRect(context, 15 + hurtShift, rightBootY, 5, 4, sole);
+  fillRect(context, 10 + hurtShift, leftBootY, 5, 2, trim);
+  fillRect(context, 15 + hurtShift, rightBootY, 5, 2, trim);
 
-  if (frameGroup === 'dash') {
-    fillRect(context, 4, 21, 5, 8, '#fff7d8');
-    fillRect(context, 2, 23, 3, 4, '#f5cf64');
+  if (dashTrailWidth > 0) {
+    fillRect(context, 4, 20, dashTrailWidth, 8, visorGlow);
+    fillRect(context, 2, 22, Math.max(2, dashTrailWidth - 2), 4, trim);
   }
 
   if (frameGroup === 'hurt') {
-    fillRect(context, 21, 9, 4, 4, '#e97652');
+    fillRect(context, 21, 9, 4, 4, '#ef8b69');
   }
 
   if (frameGroup === 'defeat') {
-    fillRect(context, 8, 40, 14, 4, '#e97652');
-    fillRect(context, 11, 42, 8, 2, '#fff7d8');
+    fillRect(context, 8, 40, 14, 4, '#d58461');
+    fillRect(context, 11, 42, 8, 2, '#fff0c8');
   }
 }
 

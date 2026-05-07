@@ -60,6 +60,7 @@ import {
   playRetroDefeatTweenPreset,
   playRetroTweenPreset,
   resetRetroPresentationTargets,
+  snapRetroValue,
   spawnRetroDefeatFlash,
   spawnRetroParticleBurst,
   type RetroFeedbackSnapshot,
@@ -701,13 +702,13 @@ export class GameScene extends Phaser.Scene {
       });
     };
 
-    createIfMissing('player-anim-idle', 0, 3, 8, -1);
-    createIfMissing('player-anim-run', 4, 9, 12, -1);
-    createIfMissing('player-anim-jump', 10, 11, 12, -1);
-    createIfMissing('player-anim-fall', 12, 13, 10, -1);
-    createIfMissing('player-anim-dash', 14, 16, 18, -1);
-    createIfMissing('player-anim-hurt', 17, 18, 12, 0);
-    createIfMissing('player-anim-defeat', 19, 23, 10, 0);
+    createIfMissing('player-anim-idle', 0, 3, 6, -1);
+    createIfMissing('player-anim-run', 4, 9, 8, -1);
+    createIfMissing('player-anim-jump', 10, 11, 6, -1);
+    createIfMissing('player-anim-fall', 12, 13, 6, -1);
+    createIfMissing('player-anim-dash', 14, 16, 10, -1);
+    createIfMissing('player-anim-hurt', 17, 18, 8, 0);
+    createIfMissing('player-anim-defeat', 19, 23, 8, 0);
   }
 
   private resolvePlayerAnimationKey(
@@ -760,8 +761,10 @@ export class GameScene extends Phaser.Scene {
       (!player.dead || playerDefeatHoldActive) && !state.player.suppressPresentation && !this.isStageStartArrivalActive();
     const variantKey = state.player.presentationPower ?? 'base';
     const variant = PLAYER_POWER_VARIANTS[variantKey];
-    const centerX = player.x + player.width / 2;
-    const centerY = player.y + player.height / 2;
+    const snappedPlayerX = snapRetroValue(player.x);
+    const snappedPlayerY = snapRetroValue(player.y);
+    const centerX = snapRetroValue(player.x + player.width / 2);
+    const centerY = snapRetroValue(player.y + player.height / 2);
     const facing = player.facing;
     const pose = getRetroPlayerPose({
       timeMs: this.time.now + centerX,
@@ -785,7 +788,7 @@ export class GameScene extends Phaser.Scene {
     const playerBaseAlpha =
       playerDefeatHoldActive ? 1 : !invincibleField && player.invulnerableMs > 0 && Math.floor(player.invulnerableMs / 90) % 2 === 0 ? 0.45 : 1;
     const torsoHeight = effectivePose.state === 'dash' ? 16 : effectivePose.state === 'fall' ? 18 : 17;
-    const torsoY = player.y + 13 + effectivePose.bodyOffsetY;
+    const torsoY = snapRetroValue(snappedPlayerY + 13 + effectivePose.bodyOffsetY);
     const armSwing =
       effectivePose.state === 'run-a'
         ? -2
@@ -798,9 +801,9 @@ export class GameScene extends Phaser.Scene {
               : effectivePose.state === 'dash'
                 ? 4
                 : 0;
-    const visorX = facing === 1 ? player.x + 8 : player.x + 6;
-    const packX = facing === 1 ? player.x + 2 : player.x + player.width - 8;
-    const chestX = player.x + 8;
+    const visorX = snapRetroValue(facing === 1 ? snappedPlayerX + 8 : snappedPlayerX + 6);
+    const packX = snapRetroValue(facing === 1 ? snappedPlayerX + 2 : snappedPlayerX + player.width - 8);
+    const chestX = snapRetroValue(snappedPlayerX + 8);
     this.playerAnchor.setPosition(player.x, player.y).setSize(player.width, player.height);
     const playerAnimKey = this.resolvePlayerAnimationKey(player, playerDefeatHoldActive);
     const renderScale = 1.28;
@@ -808,7 +811,10 @@ export class GameScene extends Phaser.Scene {
     const renderHeight = Math.round(player.height * renderScale);
     this.playerSprite
       .setVisible(playerVisible)
-      .setPosition(player.x - Math.floor((renderWidth - player.width) / 2), player.y - (renderHeight - player.height))
+      .setPosition(
+        snapRetroValue(snappedPlayerX - Math.floor((renderWidth - player.width) / 2)),
+        snapRetroValue(snappedPlayerY - (renderHeight - player.height)),
+      )
       .setDisplaySize(renderWidth, renderHeight)
       .setFlipX(player.facing > 0)
       .setAlpha(playerBaseAlpha)
@@ -826,33 +832,36 @@ export class GameScene extends Phaser.Scene {
     this.playerChest.setVisible(false);
     this.playerBelt.setVisible(false);
     this.playerPack.setVisible(false);
-    this.playerArmLeft.setVisible(playerVisible);
-    this.playerArmRight.setVisible(playerVisible);
+    this.playerArmLeft.setVisible(false);
+    this.playerArmRight.setVisible(false);
     this.playerBootLeft.setVisible(false);
     this.playerBootRight.setVisible(false);
     this.playerKneeLeft.setVisible(false);
     this.playerKneeRight.setVisible(false);
-    this.player.setPosition(player.x + 5, torsoY).setSize(14, torsoHeight);
+    this.player.setPosition(snapRetroValue(snappedPlayerX + 5), torsoY).setSize(14, torsoHeight);
     this.player.setAlpha(playerBaseAlpha);
     this.player.setFillStyle(variant.bodyColor);
     this.playerHelmet
-      .setPosition(player.x + 4, player.y + 2 + effectivePose.helmetOffsetY)
+      .setPosition(snapRetroValue(snappedPlayerX + 4), snapRetroValue(snappedPlayerY + 2 + effectivePose.helmetOffsetY))
       .setSize(16, 11)
       .setFillStyle(variant.bodyColor)
       .setStrokeStyle(2, variant.detailColor, 0.95);
-    this.playerVisor.setPosition(visorX, player.y + 6 + effectivePose.helmetOffsetY).setSize(8, 5).setFillStyle(variant.accentColor);
+    this.playerVisor
+      .setPosition(visorX, snapRetroValue(snappedPlayerY + 6 + effectivePose.helmetOffsetY))
+      .setSize(8, 5)
+      .setFillStyle(variant.accentColor);
     this.playerChest
-      .setPosition(chestX, player.y + 18 + effectivePose.chestOffsetY)
+      .setPosition(chestX, snapRetroValue(snappedPlayerY + 18 + effectivePose.chestOffsetY))
       .setSize(8, 6)
       .setFillStyle(variant.accentColor)
       .setAlpha(playerDefeatHoldActive ? 1 : this.player.alpha * 0.9);
     this.playerBelt
-      .setPosition(player.x + 6, player.y + 25 + effectivePose.bodyOffsetY)
+      .setPosition(snapRetroValue(snappedPlayerX + 6), snapRetroValue(snappedPlayerY + 25 + effectivePose.bodyOffsetY))
       .setSize(12, 3)
       .setFillStyle(variant.detailColor)
       .setAlpha(this.player.alpha);
     this.playerPack
-      .setPosition(packX, player.y + 13 + effectivePose.packOffsetY)
+      .setPosition(packX, snapRetroValue(snappedPlayerY + 13 + effectivePose.packOffsetY))
       .setSize(6, 14)
       .setFillStyle(variant.detailColor)
       .setAlpha(this.player.alpha);
@@ -861,11 +870,11 @@ export class GameScene extends Phaser.Scene {
     const armLength = jumping ? 11 : effectivePose.state === 'dash' ? 10 : 12;
     const visibleArm = facing === 1 ? this.playerArmRight : this.playerArmLeft;
     const hiddenArm = facing === 1 ? this.playerArmLeft : this.playerArmRight;
-    const armX = player.x + player.width / 2 - 2;
-    const armY = player.y + 10 + effectivePose.helmetOffsetY;
+    const armX = snapRetroValue(snappedPlayerX + player.width / 2 - 2);
+    const armY = snapRetroValue(snappedPlayerY + 10 + effectivePose.helmetOffsetY);
     const armSwingX = jumping ? 0 : armSwing * 2.5 * facing;
     visibleArm
-      .setPosition(armX + armSwingX, armY - armLift)
+      .setPosition(snapRetroValue(armX + armSwingX), snapRetroValue(armY - armLift))
       .setSize(4, armLength)
       .setFillStyle(variant.bodyColor)
       .setAngle(jumping ? -90 : 0)
@@ -873,22 +882,34 @@ export class GameScene extends Phaser.Scene {
       .setVisible(true);
     hiddenArm.setVisible(false);
     this.playerBootLeft
-      .setPosition(player.x + 4, player.y + player.height - 6 + effectivePose.bootLeftOffsetY)
+      .setPosition(
+        snapRetroValue(snappedPlayerX + 4),
+        snapRetroValue(snappedPlayerY + player.height - 6 + effectivePose.bootLeftOffsetY),
+      )
       .setSize(6, 6)
       .setFillStyle(variant.detailColor)
       .setAlpha(this.player.alpha);
     this.playerBootRight
-      .setPosition(player.x + player.width - 10, player.y + player.height - 6 + effectivePose.bootRightOffsetY)
+      .setPosition(
+        snapRetroValue(snappedPlayerX + player.width - 10),
+        snapRetroValue(snappedPlayerY + player.height - 6 + effectivePose.bootRightOffsetY),
+      )
       .setSize(6, 6)
       .setFillStyle(variant.detailColor)
       .setAlpha(this.player.alpha);
     this.playerKneeLeft
-      .setPosition(player.x + 6, player.y + player.height - 12 + effectivePose.kneeLeftOffsetY)
+      .setPosition(
+        snapRetroValue(snappedPlayerX + 6),
+        snapRetroValue(snappedPlayerY + player.height - 12 + effectivePose.kneeLeftOffsetY),
+      )
       .setSize(4, 5)
       .setFillStyle(variant.accentColor)
       .setAlpha(this.player.alpha * 0.85);
     this.playerKneeRight
-      .setPosition(player.x + player.width - 10, player.y + player.height - 12 + effectivePose.kneeRightOffsetY)
+      .setPosition(
+        snapRetroValue(snappedPlayerX + player.width - 10),
+        snapRetroValue(snappedPlayerY + player.height - 12 + effectivePose.kneeRightOffsetY),
+      )
       .setSize(4, 5)
       .setFillStyle(variant.accentColor)
       .setAlpha(this.player.alpha * 0.85);

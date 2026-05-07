@@ -132,8 +132,9 @@ export class StageIntroScene extends Phaser.Scene {
       .setOrigin(0.5, 1)
       .setDepth(3);
 
-    this.add.rectangle(astronaut.x - 18, astronaut.y - 70, 12, 28, variantStyle.detailColor, 0.9).setDepth(4);
-    this.add.rectangle(astronaut.x + 18, astronaut.y - 70, 12, 28, variantStyle.detailColor, 0.9).setDepth(4);
+    this.add.ellipse(astronaut.x, astronaut.y - 8, 132, 20, 0x121a21, 0.3).setDepth(2.5);
+    this.add.rectangle(astronaut.x - 24, astronaut.y - 88, 8, 18, variantStyle.detailColor, 0.88).setDepth(3.5);
+    this.add.rectangle(astronaut.x - 24, astronaut.y - 70, 14, 8, variantStyle.accentColor, 0.92).setDepth(3.6);
     this.add.ellipse(astronaut.x, astronaut.y - 60, 164, 206, variantStyle.auraColor ?? variantStyle.accentColor, 0.12).setDepth(2);
 
     this.audio.playStageIntro(state.stage);

@@ -15,6 +15,7 @@ import {
   getRetroEnemyPose,
   getRetroHitFlashBlend,
   mixColor,
+  snapRetroValue,
   type RetroPresentationPalette,
 } from '../../view/retroPresentation';
 
@@ -98,7 +99,9 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
       enemy.kind === 'flyer'
         ? enemy.y + motion.yOffset
         : enemy.y + enemy.height - visualHeight * motion.scaleY + plantedOffsetY;
-    sprite.setPosition(enemy.x, renderY);
+    const snappedEnemyX = snapRetroValue(enemy.x);
+    const snappedRenderY = snapRetroValue(renderY);
+    sprite.setPosition(snappedEnemyX, snappedRenderY);
     sprite.setFlipX(enemy.direction < 0);
     sprite.setScale(motion.scaleX, motion.scaleY);
     sprite.setAlpha(motion.alpha);
@@ -135,21 +138,21 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
     }
     if (enemy.kind === 'flyer' && accents.length === 2) {
       accents[0]
-        .setPosition(enemy.x + 14, enemy.y + 7 + motion.accentOffsetY)
+        .setPosition(snapRetroValue(snappedEnemyX + 14), snapRetroValue(enemy.y + 7 + motion.accentOffsetY))
         .setFillStyle(scene.retroPalette.cool, motion.accentAlpha)
         .setVisible(true);
       accents[1]
-        .setPosition(enemy.x + 10, enemy.y + 16 + motion.accentOffsetY)
+        .setPosition(snapRetroValue(snappedEnemyX + 10), snapRetroValue(enemy.y + 16 + motion.accentOffsetY))
         .setFillStyle(scene.retroPalette.bright, 0.16 + motion.accentAlpha * 0.5)
         .setVisible(true);
     } else if (ramp && accents.length === 2) {
       accents[0]
-        .setPosition(enemy.x + 4, renderY + 5)
+        .setPosition(snapRetroValue(snappedEnemyX + 4), snapRetroValue(snappedRenderY + 5))
         .setSize(Math.max(10, enemy.width - 8), 4)
         .setFillStyle(ramp.highlightTint, Math.min(0.92, ramp.stripeAlpha + hitFlashBlend * 0.22))
         .setVisible(true);
       accents[1]
-        .setPosition(enemy.x + 6, renderY + enemy.height - 9)
+        .setPosition(snapRetroValue(snappedEnemyX + 6), snapRetroValue(snappedRenderY + enemy.height - 9))
         .setSize(Math.max(8, enemy.width - 12), 3)
         .setFillStyle(ramp.shadowTint, Math.min(0.9, 0.34 + hitFlashBlend * 0.2))
         .setVisible(true);
@@ -193,7 +196,7 @@ export function syncProjectile(scene: GameSceneEnemyRenderingContext, projectile
     scene.projectileSprites.set(projectile.id, sprite);
   }
 
-  sprite.setPosition(projectile.x, projectile.y);
+  sprite.setPosition(snapRetroValue(projectile.x), snapRetroValue(projectile.y));
   sprite.setTint(projectile.variant ? TURRET_VARIANT_CONFIG[projectile.variant].projectileColor : 0xffc15b);
   sprite.setScale(projectile.variant ? 1.18 : 1.06);
   sprite.setAlpha(projectile.variant ? 0.96 : 0.9);

@@ -390,9 +390,9 @@ export const POWER_LABELS: Record<PowerType, string> = Object.fromEntries(
 
 export const PLAYER_POWER_VARIANTS: Record<'base' | PowerType, PlayerPowerVariant> = {
   base: {
-    bodyColor: 0xf7f3d6,
-    detailColor: 0x11141b,
-    accentColor: 0x8fdff2,
+    bodyColor: 0xfff6ee,
+    detailColor: 0x67c8ec,
+    accentColor: 0xd38a34,
     auraColor: null,
   },
   doubleJump: {
@@ -408,10 +408,10 @@ export const PLAYER_POWER_VARIANTS: Record<'base' | PowerType, PlayerPowerVarian
     auraColor: null,
   },
   invincible: {
-    bodyColor: 0xf7f3d6,
-    detailColor: 0x11141b,
-    accentColor: 0x8fdff2,
-    auraColor: 0x8fdff2,
+    bodyColor: 0xfff6ee,
+    detailColor: 0x67c8ec,
+    accentColor: 0xd38a34,
+    auraColor: 0x67c8ec,
   },
   dash: {
     bodyColor: 0xc6d2bf,

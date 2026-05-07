@@ -148,7 +148,8 @@ export const RETRO_FONT_FAMILY = '"Courier New", monospace';
 // Optional analog overlays stay disabled in the required baseline.
 export const RETRO_ANALOG_TREATMENT_ENABLED = false;
 
-export const RETRO_MOTION_STEP_MS = 120;
+export const RETRO_MOTION_STEP_MS = 140;
+export const RETRO_GRID_STEP = 4;
 
 export const createRetroPresentationPalette = (stagePalette: StagePalette): RetroPresentationPalette => {
   const skyTop = stagePalette.skyTop ?? RETRO_FALLBACK_SKY_TOP;
@@ -246,7 +247,7 @@ export const getRetroMotionStep = (
   return Math.floor(timeMs / Math.max(frameMs, 1)) % frameCount;
 };
 
-export const snapRetroValue = (value: number, step = 2): number => {
+export const snapRetroValue = (value: number, step = RETRO_GRID_STEP): number => {
   if (step <= 1) {
     return value;
   }
@@ -348,19 +349,19 @@ export const getRetroPlayerPose = (params: {
   if (params.dashTimerMs > 0) {
     return {
       state: 'dash',
-      bodyOffsetY: 1,
-      bodyHeight: 38,
+      bodyOffsetY: 2,
+      bodyHeight: 37,
       helmetOffsetY: 1,
-      chestOffsetY: 0,
-      packOffsetY: -1,
-      bootLeftOffsetY: -2,
+      chestOffsetY: 1,
+      packOffsetY: -2,
+      bootLeftOffsetY: -3,
       bootRightOffsetY: -2,
-      kneeLeftOffsetY: -2,
+      kneeLeftOffsetY: -3,
       kneeRightOffsetY: -2,
       headbandOffsetY: -1,
-      accentOffsetY: 0,
-      wingLift: -2,
-      auraAlpha: 0.32,
+      accentOffsetY: 1,
+      wingLift: -3,
+      auraAlpha: 0.34,
     };
   }
 
@@ -368,19 +369,19 @@ export const getRetroPlayerPose = (params: {
     const rising = params.velocityY < 0;
     return {
       state: rising ? 'jump' : 'fall',
-      bodyOffsetY: rising ? -2 : 1,
-      bodyHeight: rising ? 39 : 41,
-      helmetOffsetY: rising ? -2 : 0,
-      chestOffsetY: rising ? -1 : 1,
-      packOffsetY: rising ? 1 : 2,
-      bootLeftOffsetY: rising ? -4 : -1,
-      bootRightOffsetY: rising ? -2 : 1,
-      kneeLeftOffsetY: rising ? -4 : 0,
-      kneeRightOffsetY: rising ? -2 : 1,
-      headbandOffsetY: rising ? -2 : 0,
-      accentOffsetY: rising ? -1 : 1,
-      wingLift: rising ? -4 : -1,
-      auraAlpha: rising ? 0.26 : 0.18,
+      bodyOffsetY: rising ? -3 : 2,
+      bodyHeight: rising ? 38 : 42,
+      helmetOffsetY: rising ? -3 : 0,
+      chestOffsetY: rising ? -2 : 2,
+      packOffsetY: rising ? 0 : 3,
+      bootLeftOffsetY: rising ? -6 : 0,
+      bootRightOffsetY: rising ? -3 : 2,
+      kneeLeftOffsetY: rising ? -5 : 1,
+      kneeRightOffsetY: rising ? -3 : 2,
+      headbandOffsetY: rising ? -3 : 0,
+      accentOffsetY: rising ? -2 : 1,
+      wingLift: rising ? -5 : -1,
+      auraAlpha: rising ? 0.28 : 0.2,
     };
   }
 
@@ -389,18 +390,18 @@ export const getRetroPlayerPose = (params: {
     const rightStep = step === 0 ? 1 : -2;
     return {
       state: step === 0 ? 'run-a' : 'run-b',
-      bodyOffsetY: step === 0 ? -1 : 0,
+      bodyOffsetY: step === 0 ? -2 : 1,
       bodyHeight: 40,
-      helmetOffsetY: step === 0 ? -1 : 0,
-      chestOffsetY: step === 0 ? -1 : 0,
-      packOffsetY: step === 0 ? 0 : 1,
-      bootLeftOffsetY: leftStep,
-      bootRightOffsetY: rightStep,
-      kneeLeftOffsetY: leftStep,
-      kneeRightOffsetY: rightStep,
-      headbandOffsetY: step === 0 ? -1 : 0,
-      accentOffsetY: step === 0 ? 0 : -1,
-      wingLift: step === 0 ? -2 : 0,
+      helmetOffsetY: step === 0 ? -2 : 0,
+      chestOffsetY: step === 0 ? -2 : 1,
+      packOffsetY: step === 0 ? -1 : 2,
+      bootLeftOffsetY: step === 0 ? leftStep - 1 : leftStep + 1,
+      bootRightOffsetY: step === 0 ? rightStep + 1 : rightStep - 1,
+      kneeLeftOffsetY: step === 0 ? leftStep - 1 : leftStep,
+      kneeRightOffsetY: step === 0 ? rightStep : rightStep - 1,
+      headbandOffsetY: step === 0 ? -2 : 0,
+      accentOffsetY: step === 0 ? -1 : 1,
+      wingLift: step === 0 ? -3 : 0,
       auraAlpha: 0.18,
     };
   }

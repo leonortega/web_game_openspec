@@ -19,6 +19,7 @@ export const buildGameConfig = (parent: HTMLElement): Phaser.Types.Core.GameConf
   height: 540,
   backgroundColor: '#091310',
   pixelArt: true,
+  roundPixels: true,
   antialias: false,
   antialiasGL: false,
   mipmapFilter: 'NEAREST',
