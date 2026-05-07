@@ -15,6 +15,7 @@ import { drawRetroBackdrop, RETRO_FONT_FAMILY, type RetroPresentationPalette } f
 import { createOptimizedSprite } from '../../plugins/enhancedRenderUtils';
 import { createWorldLocalRetroRegion } from '../../retroPostFx';
 import { createRexHud, type RexHudBindings } from '../../ui/rexHud';
+import { drawAstronautGraphic } from '../../view/runtimeCharacterGraphics';
 
 export type GameSceneHudSetupContext = Phaser.Scene & {
   hud: RexHudBindings;
@@ -64,7 +65,7 @@ export type GameSceneCleanupContext = Phaser.Scene & {
   gravityCapsuleButtonMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   activationNodeSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
   activationNodeMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  enemySprites: Map<string, Phaser.GameObjects.Sprite>;
+  enemySprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   checkpointSprites: Map<string, Phaser.GameObjects.Sprite>;
   collectibleSprites: Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>;
@@ -108,10 +109,10 @@ export type GameSceneBaseDisplayContext = Phaser.Scene & {
   collectibleSprites: Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>;
   rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.Image>;
   rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
-  enemySprites: Map<string, Phaser.GameObjects.Sprite>;
+  enemySprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   playerAnchor: Phaser.GameObjects.Rectangle;
-  playerSprite: Phaser.GameObjects.Sprite;
+  playerSprite: Phaser.GameObjects.Graphics;
   playerAura: Phaser.GameObjects.Ellipse;
   player: Phaser.GameObjects.Rectangle;
   playerHelmet: Phaser.GameObjects.Rectangle;
@@ -140,7 +141,7 @@ export type GameSceneBaseDisplayContext = Phaser.Scene & {
   arrivalShell: Phaser.GameObjects.Image;
   arrivalDoor: Phaser.GameObjects.Image;
   arrivalAura: Phaser.GameObjects.Ellipse;
-  arrivalPlayer: Phaser.GameObjects.Sprite;
+  arrivalPlayer: Phaser.GameObjects.Graphics;
   pauseOverlay: Phaser.GameObjects.Rectangle;
   pauseText: Phaser.GameObjects.Text;
   gravityFieldColor(field: GravityFieldState, capsule?: GravityCapsuleState | null): number;
@@ -826,7 +827,20 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
 
 function createPlayerRenderables(scene: GameSceneBaseDisplayContext): void {
   scene.playerAnchor = scene.add.rectangle(0, 0, 24, 40, scene.retroPalette.ink, 0).setOrigin(0, 0).setVisible(false);
-  scene.playerSprite = createOptimizedSprite(scene, 0, 0, 'player-sheet').setOrigin(0, 0).setDepth(6).setVisible(false);
+  scene.playerSprite = scene.add.graphics().setDepth(6).setVisible(false);
+  drawAstronautGraphic(scene.playerSprite, {
+    variantKey: 'base',
+    width: 24,
+    height: 40,
+    facing: 1,
+    variant: { bodyColor: 0xeff5ff, detailColor: 0x4060cf, accentColor: 0x8fe8ff, auraColor: null },
+    pose: 'idle',
+    alpha: 1,
+    hitFlashBlend: 0,
+    defeat: false,
+    brightColor: scene.retroPalette.bright,
+    alertColor: scene.retroPalette.alert,
+  });
   scene.playerAura = scene.add.ellipse(0, 0, 46, 60, scene.retroPalette.cool, 0.18).setVisible(false).setDepth(5);
   scene.playerPack = scene.add.rectangle(0, 0, 6, 14, scene.retroPalette.ink).setOrigin(0, 0).setDepth(5);
   scene.playerArmLeft = scene.add.rectangle(0, 0, 4, 12, scene.retroPalette.border).setOrigin(0, 0).setDepth(7);
@@ -914,21 +928,9 @@ function createRewardRenderables(scene: GameSceneBaseDisplayContext, state: Read
 
 function createEnemyRenderables(scene: GameSceneBaseDisplayContext, state: Readonly<SessionSnapshot>): void {
   for (const enemy of state.stageRuntime.enemies) {
-    const sprite = createOptimizedSprite(scene, enemy.x, enemy.y, enemy.kind).setOrigin(0, 0);
+    const sprite = scene.add.graphics().setDepth(0);
     scene.enemySprites.set(enemy.id, sprite);
-    if (enemy.kind === 'flyer') {
-      const accents = [
-        createWorldLocalRetroRegion(scene, { kind: 'palette-ramp', x: enemy.x + 14, y: enemy.y + 7, width: 6, height: 2, color: scene.retroPalette.cool, alpha: 0, depth: 10 }).setOrigin(0, 0),
-        createWorldLocalRetroRegion(scene, { kind: 'palette-ramp', x: enemy.x + 10, y: enemy.y + 16, width: 14, height: 2, color: scene.retroPalette.bright, alpha: 0, depth: 10 }).setOrigin(0, 0),
-      ];
-      scene.enemyAccentSprites.set(enemy.id, accents);
-    } else if (enemy.kind === 'turret' && enemy.variant) {
-      const accents = [
-        createWorldLocalRetroRegion(scene, { kind: 'palette-ramp', x: enemy.x + 4, y: enemy.y + 6, width: Math.max(10, enemy.width - 8), height: 4, color: scene.retroPalette.border, alpha: 0, depth: 10 }).setOrigin(0, 0),
-        createWorldLocalRetroRegion(scene, { kind: 'palette-ramp', x: enemy.x + 6, y: enemy.y + 14, width: Math.max(8, enemy.width - 12), height: 3, color: scene.retroPalette.cool, alpha: 0, depth: 10 }).setOrigin(0, 0),
-      ];
-      scene.enemyAccentSprites.set(enemy.id, accents);
-    }
+    scene.enemyAccentSprites.set(enemy.id, []);
   }
 }
 
@@ -1003,18 +1005,7 @@ function createExitAndArrivalRenderables(scene: GameSceneBaseDisplayContext, sta
     .setDepth(9.5)
     .setVisible(false);
   scene.arrivalAura = scene.add.ellipse(0, 0, 46, 62, scene.retroPalette.cool, 0.2).setDepth(9.6).setVisible(false);
-  scene.arrivalPlayer = createOptimizedSprite(scene, 0, 0, 'player-sheet')
-    .setFrame('0')
-    .setDisplaySize(26, 42)
-    .setOrigin(0, 0)
-    .setDepth(9.7)
-    .setTint(scene.retroPalette.cool)
-    .setVisible(false);
-  try {
-    (scene.arrivalPlayer as any).setLighting?.(true, { selfShadow: true });
-  } catch (e) {
-    // ignore
-  }
+  scene.arrivalPlayer = scene.add.graphics().setDepth(9.7).setVisible(false);
 }
 
 function createPauseOverlay(scene: GameSceneBaseDisplayContext): void {

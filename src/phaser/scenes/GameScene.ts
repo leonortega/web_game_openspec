@@ -140,6 +140,7 @@ import {
 } from './gameScene/rewardRendering';
 import { createRexHud } from '../ui/rexHud';
 import { bindScaleOuter } from '../ui/rexUiTheme';
+import { drawAstronautGraphic } from '../view/runtimeCharacterGraphics';
 
 const COMPLETE_TRANSITION_DELAY_MS = 160;
 const STAGE_START_SEQUENCE_DURATION_MS = getStageStartSequenceTotalMs();
@@ -151,7 +152,7 @@ export class GameScene extends Phaser.Scene {
 
   private playerAnchor!: Phaser.GameObjects.Rectangle;
 
-  private playerSprite!: Phaser.GameObjects.Sprite;
+  private playerSprite!: Phaser.GameObjects.Graphics;
 
   private playerAura!: Phaser.GameObjects.Ellipse;
 
@@ -196,8 +197,6 @@ export class GameScene extends Phaser.Scene {
   private bottomMistSprites: Phaser.GameObjects.Shape[] = [];
 
   private currentPlayerPose: ReturnType<typeof getRetroPlayerPose>['state'] = 'idle';
-
-  private currentPlayerAnimation = 'player-anim-idle';
 
   private jumpPoseHoldUntilMs = 0;
 
@@ -262,7 +261,7 @@ export class GameScene extends Phaser.Scene {
 
   private activationNodeMarkerSprites = new Map<string, Phaser.GameObjects.Rectangle[]>();
 
-  private enemySprites = new Map<string, Phaser.GameObjects.Sprite>();
+  private enemySprites = new Map<string, Phaser.GameObjects.Graphics>();
 
   private enemyContactStrips = new Map<string, Phaser.GameObjects.Rectangle>();
 
@@ -314,7 +313,7 @@ export class GameScene extends Phaser.Scene {
 
   private arrivalAura!: Phaser.GameObjects.Ellipse;
 
-  private arrivalPlayer!: Phaser.GameObjects.Sprite;
+  private arrivalPlayer!: Phaser.GameObjects.Graphics;
 
   private pauseOverlay!: Phaser.GameObjects.Rectangle;
 
@@ -581,7 +580,6 @@ export class GameScene extends Phaser.Scene {
     this.previousFeedbackState = this.captureFeedbackSnapshot(state);
     this.feedbackCounts = {};
     this.currentPlayerPose = 'idle';
-    this.currentPlayerAnimation = 'player-anim-idle';
     this.jumpPoseHoldUntilMs = 0;
     this.debugJumpPoseUntilMs = 0;
     this.lastJumpFeedbackAtMs = Number.NEGATIVE_INFINITY;
@@ -711,25 +709,6 @@ export class GameScene extends Phaser.Scene {
     createIfMissing('player-anim-defeat', 19, 23, 8, 0);
   }
 
-  private resolvePlayerAnimationKey(
-    player: Readonly<SessionSnapshot>['player'],
-    playerDefeatHoldActive: boolean,
-  ): string {
-    if (player.dead || playerDefeatHoldActive) {
-      return 'player-anim-defeat';
-    }
-    if (this.playerHitFlashUntilMs > this.time.now) {
-      return 'player-anim-hurt';
-    }
-    if (player.dashTimerMs > 0) {
-      return 'player-anim-dash';
-    }
-    if (!player.onGround) {
-      return player.vy < 0 ? 'player-anim-jump' : 'player-anim-fall';
-    }
-    return Math.abs(player.vx) > 20 ? 'player-anim-run' : 'player-anim-idle';
-  }
-
   private drawHazard(hazard: { id?: string; kind: string; rect: { x: number; y: number; width: number; height: number } }): void {
     drawHazardRendering(this.getEnemyRenderingContext(), hazard as never);
   }
@@ -789,42 +768,29 @@ export class GameScene extends Phaser.Scene {
       playerDefeatHoldActive ? 1 : !invincibleField && player.invulnerableMs > 0 && Math.floor(player.invulnerableMs / 90) % 2 === 0 ? 0.45 : 1;
     const torsoHeight = effectivePose.state === 'dash' ? 16 : effectivePose.state === 'fall' ? 18 : 17;
     const torsoY = snapRetroValue(snappedPlayerY + 13 + effectivePose.bodyOffsetY);
-    const armSwing =
-      effectivePose.state === 'run-a'
-        ? -2
-        : effectivePose.state === 'run-b'
-          ? 2
-          : effectivePose.state === 'jump'
-            ? -3
-            : effectivePose.state === 'fall'
-              ? 1
-              : effectivePose.state === 'dash'
-                ? 4
-                : 0;
     const visorX = snapRetroValue(facing === 1 ? snappedPlayerX + 8 : snappedPlayerX + 6);
     const packX = snapRetroValue(facing === 1 ? snappedPlayerX + 2 : snappedPlayerX + player.width - 8);
     const chestX = snapRetroValue(snappedPlayerX + 8);
     this.playerAnchor.setPosition(player.x, player.y).setSize(player.width, player.height);
-    const playerAnimKey = this.resolvePlayerAnimationKey(player, playerDefeatHoldActive);
-    const renderScale = 1.28;
-    const renderWidth = Math.round(player.width * renderScale);
-    const renderHeight = Math.round(player.height * renderScale);
+    const playerHitBlend = getRetroHitFlashBlend(this.time.now, this.playerHitFlashUntilMs, 'player-hit');
     this.playerSprite
       .setVisible(playerVisible)
-      .setPosition(
-        snapRetroValue(snappedPlayerX - Math.floor((renderWidth - player.width) / 2)),
-        snapRetroValue(snappedPlayerY - (renderHeight - player.height)),
-      )
-      .setDisplaySize(renderWidth, renderHeight)
-      .setFlipX(player.facing > 0)
+      .setPosition(snappedPlayerX, snappedPlayerY)
       .setAlpha(playerBaseAlpha)
-      .setTint(playerDefeatHoldActive ? this.retroPalette.alert : variant.bodyColor);
-    if (playerAnimKey !== this.currentPlayerAnimation) {
-      this.playerSprite.anims.play(playerAnimKey, true);
-      this.currentPlayerAnimation = playerAnimKey;
-    } else if (!this.playerSprite.anims.isPlaying) {
-      this.playerSprite.anims.play(playerAnimKey, true);
-    }
+      .setDepth(playerDefeatHoldActive ? 12 : 6);
+    drawAstronautGraphic(this.playerSprite, {
+      variantKey,
+      width: player.width,
+      height: player.height,
+      facing,
+      variant,
+      pose: effectivePose.state,
+      alpha: playerBaseAlpha,
+      hitFlashBlend: player.dead ? 0 : playerHitBlend,
+      defeat: playerDefeatHoldActive,
+      brightColor: this.retroPalette.bright,
+      alertColor: this.retroPalette.alert,
+    });
 
     this.player.setVisible(false);
     this.playerHelmet.setVisible(false);
@@ -865,22 +831,6 @@ export class GameScene extends Phaser.Scene {
       .setSize(6, 14)
       .setFillStyle(variant.detailColor)
       .setAlpha(this.player.alpha);
-    const jumping = effectivePose.state === 'jump';
-    const armLift = jumping ? 14 : effectivePose.state === 'fall' ? 2 : 0;
-    const armLength = jumping ? 11 : effectivePose.state === 'dash' ? 10 : 12;
-    const visibleArm = facing === 1 ? this.playerArmRight : this.playerArmLeft;
-    const hiddenArm = facing === 1 ? this.playerArmLeft : this.playerArmRight;
-    const armX = snapRetroValue(snappedPlayerX + player.width / 2 - 2);
-    const armY = snapRetroValue(snappedPlayerY + 10 + effectivePose.helmetOffsetY);
-    const armSwingX = jumping ? 0 : armSwing * 2.5 * facing;
-    visibleArm
-      .setPosition(snapRetroValue(armX + armSwingX), snapRetroValue(armY - armLift))
-      .setSize(4, armLength)
-      .setFillStyle(variant.bodyColor)
-      .setAngle(jumping ? -90 : 0)
-      .setAlpha(this.player.alpha)
-      .setVisible(true);
-    hiddenArm.setVisible(false);
     this.playerBootLeft
       .setPosition(
         snapRetroValue(snappedPlayerX + 4),
@@ -924,7 +874,6 @@ export class GameScene extends Phaser.Scene {
       .setScale(invincibleField ? 1.12 + fieldPulse * 0.18 : 1)
       .setVisible(playerVisible && Boolean(variant.auraColor))
       .setAlpha(variant.auraColor ? auraAlpha : 0);
-    const playerHitBlend = getRetroHitFlashBlend(this.time.now, this.playerHitFlashUntilMs, 'player-hit');
     if (playerHitBlend > 0 && !player.dead) {
       this.player.setFillStyle(mixColor(variant.bodyColor, this.retroPalette.bright, playerHitBlend));
       this.playerHelmet.setFillStyle(mixColor(variant.bodyColor, this.retroPalette.bright, playerHitBlend * 0.88));
@@ -967,9 +916,6 @@ export class GameScene extends Phaser.Scene {
     this.playerAccent.setVisible(false);
     this.playerWingLeft.setVisible(false);
     this.playerWingRight.setVisible(false);
-    if (playerVisible) {
-      this.syncPlayerAccessories(variantKey, variant, player, effectivePose);
-    }
     this.applyExitFinishPresentation(state);
     this.applyStageStartArrivalPresentation(state);
 
@@ -1359,7 +1305,7 @@ export class GameScene extends Phaser.Scene {
           id: enemy.id,
           kind: enemy.kind,
           visible: this.enemySprites.get(enemy.id)?.visible ?? false,
-          tint: this.enemySprites.get(enemy.id)?.tintTopLeft ?? 0,
+          tint: this.getVisualPrimaryColor(this.enemySprites.get(enemy.id)),
         })),
       activationNodeVisuals: this.bridge
         .getSession()
@@ -1393,6 +1339,12 @@ export class GameScene extends Phaser.Scene {
   private getVisualPrimaryColor(target: any): number {
     if (!target) {
       return 0;
+    }
+    if (typeof target.getData === 'function') {
+      const dataColor = target.getData('renderTint');
+      if (typeof dataColor === 'number') {
+        return dataColor;
+      }
     }
     if (typeof target.fillColor === 'number') {
       return target.fillColor;
@@ -1695,142 +1647,6 @@ export class GameScene extends Phaser.Scene {
 
   private rewardRevealColor(rewardReveal: RewardRevealState): string {
     return rewardRevealColor(rewardReveal);
-  }
-
-  private syncPlayerAccessories(
-    variantKey: keyof typeof PLAYER_POWER_VARIANTS,
-    variant: (typeof PLAYER_POWER_VARIANTS)[keyof typeof PLAYER_POWER_VARIANTS],
-    player: { x: number; y: number; width: number; height: number; facing: 1 | -1; dashTimerMs: number },
-    pose: { headbandOffsetY: number; accentOffsetY: number; wingLift: number },
-  ): void {
-    const centerX = player.x + player.width / 2;
-    const facingOffset = player.facing === 1 ? 1 : -1;
-    const pulse = (Math.sin(this.time.now / 80) + 1) * 0.5;
-    const accessoryLift = Math.max(8, Math.round(player.height * 0.24));
-    const backX = centerX - facingOffset * 5;
-    switch (variantKey) {
-      case 'doubleJump':
-        this.playerPack
-          .setPosition(backX, player.y + 12 + pose.accentOffsetY - accessoryLift)
-          .setSize(8, 12)
-          .setFillStyle(variant.detailColor)
-          .setVisible(true);
-        this.playerHeadband
-          .setPosition(backX + 1, player.y + 15 + pose.headbandOffsetY - accessoryLift)
-          .setSize(6, 2)
-          .setFillStyle(variant.detailColor)
-          .setVisible(true);
-        this.playerWingLeft
-          .setPosition(backX - 1, player.y + 18 + pose.wingLift - accessoryLift)
-          .setSize(3, 6)
-          .setFillStyle(variant.accentColor)
-          .setVisible(true);
-        this.playerWingRight
-          .setPosition(backX + 6, player.y + 18 + pose.wingLift - accessoryLift)
-          .setSize(3, 6)
-          .setFillStyle(variant.accentColor)
-          .setVisible(true);
-        this.playerAccent
-          .setPosition(backX - 1, player.y + 24 + pose.accentOffsetY - accessoryLift)
-          .setSize(11, 3)
-          .setFillStyle(variant.accentColor)
-          .setAlpha(0.58 + pulse * 0.34)
-          .setVisible(true);
-        break;
-      case 'shooter':
-        this.playerPack
-          .setPosition(centerX - facingOffset * 4, player.y + 13 + pose.accentOffsetY)
-          .setSize(6, 10)
-          .setFillStyle(variant.detailColor)
-          .setVisible(true);
-        this.playerHeadband
-          .setPosition(centerX + facingOffset * 10, player.y + 20 + pose.headbandOffsetY)
-          .setSize(4, 3)
-          .setFillStyle(this.retroPalette.bright)
-          .setVisible(true);
-        this.playerAccent
-          .setPosition(centerX + facingOffset * 9, player.y + 23 + pose.accentOffsetY)
-          .setSize(11, 7)
-          .setFillStyle(variant.detailColor)
-          .setVisible(true);
-        this.playerWingRight
-          .setPosition(centerX + facingOffset * 15, player.y + 23 + pose.wingLift)
-          .setSize(7, 3)
-          .setFillStyle(variant.accentColor)
-          .setVisible(true);
-        this.playerWingLeft
-          .setPosition(centerX + facingOffset * 6, player.y + 21 + pose.wingLift)
-          .setSize(4, 3)
-          .setFillStyle(variant.accentColor)
-          .setVisible(true);
-        break;
-      case 'invincible':
-        this.playerPack
-          .setPosition(centerX - facingOffset * 4, player.y + 13 + pose.accentOffsetY)
-          .setSize(6, 10)
-          .setFillStyle(variant.detailColor)
-          .setVisible(true);
-        this.playerHeadband
-          .setPosition(centerX, player.y + 8 + pose.headbandOffsetY)
-          .setSize(18, 4)
-          .setFillStyle(variant.accentColor)
-          .setAlpha(0.6 + pulse * 0.28)
-          .setVisible(true);
-        this.playerAccent
-          .setPosition(centerX, player.y + 1 + pose.accentOffsetY - pulse * 2)
-          .setSize(10, 6)
-          .setFillStyle(variant.detailColor)
-          .setAlpha(0.45 + pulse * 0.4)
-          .setVisible(true);
-        this.playerWingLeft
-          .setPosition(centerX - 11, player.y + 19 + pose.wingLift)
-          .setSize(3, 11)
-          .setFillStyle(variant.accentColor)
-          .setAlpha(0.35 + pulse * 0.35)
-          .setVisible(true);
-        this.playerWingRight
-          .setPosition(centerX + 11, player.y + 19 + pose.wingLift)
-          .setSize(3, 11)
-          .setFillStyle(variant.accentColor)
-          .setAlpha(0.35 + pulse * 0.35)
-          .setVisible(true);
-        break;
-      case 'dash':
-        this.playerPack
-          .setPosition(backX, player.y + 12 + pose.accentOffsetY - accessoryLift)
-          .setSize(8, 12)
-          .setFillStyle(variant.detailColor)
-          .setVisible(true);
-        this.playerHeadband
-          .setPosition(centerX - facingOffset * 12, player.y + 13 + pose.headbandOffsetY - accessoryLift)
-          .setSize(5, 3)
-          .setFillStyle(variant.detailColor)
-          .setVisible(true);
-        this.playerAccent
-          .setPosition(centerX - facingOffset * 17, player.y + 17 + pose.accentOffsetY - accessoryLift)
-          .setSize(player.dashTimerMs > 0 ? 13 : 8, 3)
-          .setFillStyle(variant.accentColor)
-          .setAlpha(player.dashTimerMs > 0 ? 0.9 : 0.62)
-          .setVisible(true);
-        this.playerWingLeft
-          .setPosition(centerX - facingOffset * 13, player.y + 13 + pose.wingLift - accessoryLift)
-          .setSize(6, 3)
-          .setFillStyle(variant.accentColor)
-          .setVisible(true);
-        this.playerWingRight
-          .setPosition(centerX - facingOffset * 13, player.y + 20 + pose.wingLift - accessoryLift)
-          .setSize(6, 3)
-          .setFillStyle(variant.accentColor)
-          .setVisible(true);
-        break;
-      default:
-        this.playerHeadband
-          .setPosition(centerX, player.y + 28 + pose.headbandOffsetY)
-          .setSize(10, 3)
-          .setFillStyle(variant.detailColor)
-          .setVisible(true);
-        break;
-    }
   }
 
   private handleCueFeedback(cue: AudioCue, state: Readonly<SessionSnapshot>): void {
@@ -2180,11 +1996,26 @@ export class GameScene extends Phaser.Scene {
       .setVisible(sequence.phase !== 'inert' && sequence.doorClosedProgress < 0.98);
     this.arrivalPlayer
       .setPosition(arrivalPlayerX, arrivalPlayerY)
-      .setFrame(sequence.phase === 'walkout' ? '4' : '0')
-      .setFlipX(layout.playerTargetX >= layout.playerStartX)
-      .setTint(sequence.phase === 'rematerialize' ? this.retroPalette.bright : this.retroPalette.cool)
       .setAlpha(playerAlpha)
       .setVisible(sequence.phase !== 'closing' && playerAlpha > 0.02);
+    drawAstronautGraphic(this.arrivalPlayer, {
+      variantKey: 'base',
+      width: 24,
+      height: 40,
+      facing: layout.playerTargetX >= layout.playerStartX ? 1 : -1,
+      variant: {
+        bodyColor: sequence.phase === 'rematerialize' ? this.retroPalette.bright : this.retroPalette.cool,
+        detailColor: this.retroPalette.border,
+        accentColor: this.retroPalette.warm,
+        auraColor: null,
+      },
+      pose: sequence.phase === 'walkout' ? 'run-a' : 'idle',
+      alpha: playerAlpha,
+      hitFlashBlend: 0,
+      defeat: false,
+      brightColor: this.retroPalette.bright,
+      alertColor: this.retroPalette.alert,
+    });
   }
 
   private applyExitFinishPresentation(state: Readonly<SessionSnapshot>): void {
@@ -2330,6 +2161,10 @@ export class GameScene extends Phaser.Scene {
     if (!sprite) {
       return;
     }
+    const visualWidth = Number(sprite.getData('visualWidth') ?? 24);
+    const visualHeight = Number(sprite.getData('visualHeight') ?? 24);
+    const centerX = sprite.x + visualWidth / 2;
+    const centerY = sprite.y + visualHeight / 2;
 
     const presetName = cause === 'plasma-blast' ? 'plasma-blast' : 'stomp';
     const preset = getRetroDefeatTweenPreset(presetName);
@@ -2342,9 +2177,9 @@ export class GameScene extends Phaser.Scene {
     const beamColor = cause === 'plasma-blast' ? this.retroPalette.cool : this.retroPalette.warm;
     const beamWidth = cause === 'plasma-blast' ? 34 : 30;
     const beamHeight = cause === 'plasma-blast' ? 8 : 10;
-    this.spawnBeamPulse('hit-flash', sprite.x + sprite.displayWidth / 2, sprite.y + sprite.displayHeight / 2, beamColor, beamWidth, beamHeight, 90, 11);
+    this.spawnBeamPulse('hit-flash', centerX, centerY, beamColor, beamWidth, beamHeight, 90, 11);
     if (cause === 'stomp') {
-      this.spawnBeamPulse('distortion', sprite.x + sprite.displayWidth / 2, sprite.y + sprite.displayHeight / 2 + 4, this.retroPalette.bright, 18, 18, 70, 11);
+      this.spawnBeamPulse('distortion', centerX, centerY + 4, this.retroPalette.bright, 18, 18, 70, 11);
     }
     ensureParticleTexture(this);
     createBurstEffect(this, {
