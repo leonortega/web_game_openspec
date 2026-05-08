@@ -36,7 +36,6 @@ import {
 import {
   CAPSULE_PRESENTATION,
   EXIT_CAPSULE_ART_BOUNDS,
-  EXIT_CAPSULE_TEXTURE_KEYS,
   getExitFinishDoorOpenProgress,
   getStageStartCapsuleLayout,
   getStageStartSequenceState,
@@ -139,6 +138,7 @@ import {
 import { createRexHud } from '../ui/rexHud';
 import { bindScaleOuter } from '../ui/rexUiTheme';
 import { drawAstronautGraphic } from '../view/runtimeCharacterGraphics';
+import { drawTeleportMachineGraphic, drawTeleportShutterGraphic } from '../view/teleportMachineGraphics';
 
 const COMPLETE_TRANSITION_DELAY_MS = 160;
 const STAGE_START_SEQUENCE_DURATION_MS = getStageStartSequenceTotalMs();
@@ -289,9 +289,9 @@ export class GameScene extends Phaser.Scene {
 
   private exitTeleportBeamTriggered = false;
 
-  private exitShell!: Phaser.GameObjects.Image;
+  private exitShell!: Phaser.GameObjects.Graphics;
 
-  private exitDoor!: Phaser.GameObjects.Image;
+  private exitDoor!: Phaser.GameObjects.Graphics;
 
   private exitBase!: Phaser.GameObjects.Image;
 
@@ -299,15 +299,11 @@ export class GameScene extends Phaser.Scene {
 
   private exitBeacon!: Phaser.GameObjects.Image;
 
-  private arrivalBase!: Phaser.GameObjects.Image;
-
   private arrivalBaseShadow!: Phaser.GameObjects.Rectangle;
 
-  private arrivalBeacon!: Phaser.GameObjects.Image;
+  private arrivalShell!: Phaser.GameObjects.Graphics;
 
-  private arrivalShell!: Phaser.GameObjects.Image;
-
-  private arrivalDoor!: Phaser.GameObjects.Image;
+  private arrivalDoor!: Phaser.GameObjects.Graphics;
 
   private arrivalAura!: Phaser.GameObjects.Ellipse;
 
@@ -441,9 +437,7 @@ export class GameScene extends Phaser.Scene {
     void this.exitBase;
     void this.exitBaseShadow;
     void this.exitBeacon;
-    void this.arrivalBase;
     void this.arrivalBaseShadow;
-    void this.arrivalBeacon;
     void this.arrivalShell;
     void this.arrivalDoor;
     void this.arrivalAura;
@@ -989,15 +983,33 @@ export class GameScene extends Phaser.Scene {
           .setScale(1, 1)
           .setAlpha(state.stageRuntime.exitReached ? 0.9 : 0.78);
         this.exitShell
-          .setAlpha(state.stageRuntime.exitReached ? 0.68 : 1)
-          .setScale(1, 1)
-          .setTint(this.retroPalette.warm);
+          .setAlpha(state.stageRuntime.exitReached ? 0.82 : 0.94);
+        drawTeleportMachineGraphic(this.exitShell, {
+          width: 62,
+          height: 92,
+          ringPhase: (this.time.now / 640) % 1,
+          ringAlpha: state.stageRuntime.exitReached ? 0.32 : 0.08,
+          beamAlpha: state.stageRuntime.exitReached ? 0.3 : 0.1,
+          podAlpha: state.stageRuntime.exitReached ? 0.98 : 0.94,
+          palette: {
+            podDark: 0x4f4843,
+            podMid: 0x7c746e,
+            podLight: 0xb0aaa2,
+            beam: 0x77ebff,
+            beamGlow: 0xd8ffff,
+            indicator: state.stageRuntime.exitReached ? 0xffdc73 : 0x7be7ff,
+          },
+        });
         this.exitDoor
-          .setTexture(EXIT_CAPSULE_TEXTURE_KEYS.door)
-          .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.door.width, EXIT_CAPSULE_ART_BOUNDS.door.height)
-          .setTint(state.stageRuntime.exitReached ? this.retroPalette.border : this.retroPalette.ink)
           .setAlpha(state.stageRuntime.exitReached ? 0.76 : 0.88)
           .setVisible(true);
+        drawTeleportShutterGraphic(this.exitDoor, {
+          width: EXIT_CAPSULE_ART_BOUNDS.door.width,
+          height: 48,
+          closedProgress: 1,
+          color: state.stageRuntime.exitReached ? 0x172d36 : 0x10202b,
+          alpha: state.stageRuntime.exitReached ? 0.76 : 0.88,
+        });
       } else {
         // eslint-disable-next-line no-console
         console.warn('syncView: exit visuals not ready');
@@ -1153,25 +1165,23 @@ export class GameScene extends Phaser.Scene {
       persistentStartCapsuleVisible: !this.isStageStartArrivalActive() && this.arrivalShell.visible,
       arrivalCapsuleCenterX: this.arrivalShell.x,
       arrivalCapsuleCenterY: this.arrivalShell.y,
-      arrivalCapsuleBaseY: this.arrivalBase.y,
-      arrivalCapsuleShellWidth: this.arrivalShell.displayWidth,
-      arrivalCapsuleDoorWidth: this.arrivalDoor.displayWidth,
-      arrivalCapsuleShellTextureKey: this.arrivalShell.texture.key,
-      arrivalCapsuleDoorTextureKey: this.arrivalDoor.texture.key,
-      arrivalCapsuleUsesExitArt:
-        this.arrivalShell.texture.key === EXIT_CAPSULE_TEXTURE_KEYS.shell &&
-        this.arrivalDoor.texture.key === EXIT_CAPSULE_TEXTURE_KEYS.door,
+      arrivalCapsuleBaseY: this.stageStartCapsuleLayout.baseY,
+      arrivalCapsuleShellWidth: this.getDebugRenderableWidth(this.arrivalShell),
+      arrivalCapsuleDoorWidth: this.getDebugRenderableWidth(this.arrivalDoor),
+      arrivalCapsuleShellTextureKey: this.getDebugRenderableKey(this.arrivalShell),
+      arrivalCapsuleDoorTextureKey: this.getDebugRenderableKey(this.arrivalDoor),
+      arrivalCapsuleUsesExitArt: false,
       gameplayMusicStarted: this.gameplayMusicStarted,
       exitFinishActive: state.exitFinish.active,
       exitFinishTimerMs: state.exitFinish.timerMs,
-      exitDoorWidth: this.exitDoor.displayWidth,
-      exitDoorTextureKey: this.exitDoor.texture.key,
+      exitDoorWidth: this.getDebugRenderableWidth(this.exitDoor),
+      exitDoorTextureKey: this.getDebugRenderableKey(this.exitDoor),
       exitDoorVisible: this.exitDoor.visible,
       exitDoorOpenProgress: getExitFinishDoorOpenProgress(this.getExitFinishProgress(state)),
       playerVisualVisibleCount: this.getPlayerVisualTargets().filter(
         (target) => (target as Phaser.GameObjects.GameObject & { visible?: boolean }).visible,
       ).length,
-      exitSpriteTextureKey: this.exitShell.texture.key,
+      exitSpriteTextureKey: this.getDebugRenderableKey(this.exitShell),
       exitSpriteAlpha: this.exitShell.alpha,
       exitBaseVisible: this.exitBase.visible,
       exitBeaconVisible: this.exitBeacon.visible,
@@ -1846,6 +1856,19 @@ export class GameScene extends Phaser.Scene {
     return getStageStartSequenceState(this.stageStartArrivalTimerMs);
   }
 
+  private getDebugRenderableWidth(object: Phaser.GameObjects.GameObject & { displayWidth?: number }): number {
+    const dataWidth = Number((object as any).getData?.('debugWidth'));
+    if (Number.isFinite(dataWidth) && dataWidth > 0) {
+      return dataWidth;
+    }
+
+    return Number(object.displayWidth ?? 0);
+  }
+
+  private getDebugRenderableKey(object: Phaser.GameObjects.GameObject & { texture?: { key?: string } }): string {
+    return String((object as any).getData?.('debugTextureKey') ?? object.texture?.key ?? 'graphics');
+  }
+
   private updateStageStartArrival(deltaMs: number): void {
     this.bridge.resetGameplayInput();
     this.stageStartArrivalTimerMs = Math.max(0, this.stageStartArrivalTimerMs - deltaMs);
@@ -1856,8 +1879,6 @@ export class GameScene extends Phaser.Scene {
 
   private setStageStartArrivalVisible(visible: boolean): void {
     this.arrivalBaseShadow.setVisible(visible);
-    this.arrivalBase.setVisible(visible);
-    this.arrivalBeacon.setVisible(visible);
     this.arrivalShell.setVisible(visible);
     this.arrivalDoor.setVisible(visible);
     this.arrivalAura.setVisible(visible);
@@ -1894,7 +1915,7 @@ export class GameScene extends Phaser.Scene {
       this.lastStageStartPhase = sequence.phase;
     }
     // Defensive guard: arrival visuals may not be created in some startup races.
-    if (!this.arrivalBaseShadow || !this.arrivalBase || !this.arrivalBeacon || !this.arrivalShell || !this.arrivalDoor || !this.arrivalAura || !this.arrivalPlayer) {
+    if (!this.arrivalBaseShadow || !this.arrivalShell || !this.arrivalDoor || !this.arrivalAura || !this.arrivalPlayer) {
       // eslint-disable-next-line no-console
       console.warn('applyStageStartArrivalPresentation: arrival visuals not ready');
       return;
@@ -1905,39 +1926,39 @@ export class GameScene extends Phaser.Scene {
         .setScale(1, 1)
         .setAlpha(0.22)
         .setVisible(true);
-      this.arrivalBase
-        .setPosition(layout.capsuleCenterX, layout.baseY)
-        .setScale(1, 1)
-        .setTint(this.retroPalette.panelAlt)
-        .setAlpha(0.92)
-        .setVisible(true);
-      this.arrivalBeacon
-        .setPosition(layout.capsuleCenterX, layout.beaconY)
-        .setTint(this.retroPalette.cool)
-        .setScale(1, 1)
-        .setAlpha(0.34)
-        .setVisible(true);
       this.arrivalShell
         .setPosition(layout.capsuleCenterX, layout.capsuleCenterY)
-        .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.shell.width, EXIT_CAPSULE_ART_BOUNDS.shell.height)
-        .setTint(this.retroPalette.warm)
-        .setScale(1, 1)
-        .setAlpha(0.78)
+        .setAlpha(0.92)
         .setVisible(true);
       this.arrivalDoor
         .setPosition(layout.capsuleCenterX, layout.capsuleCenterY + 1)
-        .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.door.width, EXIT_CAPSULE_ART_BOUNDS.door.height)
-        .setTint(this.retroPalette.border)
-        .setAlpha(0.82)
+        .setAlpha(0)
         .setVisible(true);
+      drawTeleportMachineGraphic(this.arrivalShell, {
+        width: 62,
+        height: 92,
+        ringPhase: 0,
+        ringAlpha: 0,
+        beamAlpha: 0.12,
+        podAlpha: 0.9,
+        palette: {
+          podDark: 0x4b4643,
+          podMid: 0x78716c,
+          podLight: 0xa59f97,
+          beam: 0x80ecff,
+          beamGlow: 0xc7ffff,
+          indicator: 0x7bdfff,
+        },
+      });
+      this.arrivalDoor.clear();
+      this.arrivalDoor.setData('debugWidth', 0);
       this.arrivalAura.setVisible(false);
       this.arrivalPlayer.setVisible(false);
       return;
     }
 
     const flickerAlpha = sequence.phase === 'rematerialize' && Math.floor(this.time.now / 48) % 2 === 0 ? 0.58 : 1;
-    const shellAlpha = Phaser.Math.Clamp(0.4 + (1 - sequence.overallProgress) * 0.28, 0.32, 0.72);
-    const shellTint = sequence.phase === 'rematerialize' ? this.retroPalette.cool : this.retroPalette.warm;
+    const shellAlpha = Phaser.Math.Clamp(0.58 + (1 - sequence.overallProgress) * 0.16, 0.48, 0.82);
     const doorWidth = Phaser.Math.Linear(
       CAPSULE_PRESENTATION.doorOpenWidth,
       CAPSULE_PRESENTATION.doorClosedWidth,
@@ -1948,37 +1969,44 @@ export class GameScene extends Phaser.Scene {
     const walkoutStrideY = Math.sin(sequence.walkoutProgress * Math.PI * 2) * CAPSULE_PRESENTATION.walkoutLift;
     const arrivalPlayerX = Phaser.Math.Linear(layout.playerStartX, layout.playerTargetX, sequence.walkoutProgress);
     const arrivalPlayerY = layout.playerY + (1 - sequence.revealProgress) * 10 - walkoutStrideY;
+    const ringPhase = ((this.time.now / 520) % 1 + sequence.walkoutProgress * 0.12) % 1;
 
     this.arrivalBaseShadow
       .setPosition(layout.capsuleCenterX, layout.baseShadowY)
       .setScale(1 + (1 - sequence.doorClosedProgress) * 0.08, 1)
       .setAlpha(0.2 + (1 - sequence.overallProgress) * 0.08)
       .setVisible(true);
-    this.arrivalBase
-      .setPosition(layout.capsuleCenterX, layout.baseY)
-      .setScale(1 + (1 - sequence.doorClosedProgress) * 0.06, 1)
-      .setTint(sequence.phase === 'rematerialize' ? this.retroPalette.cool : this.retroPalette.panelAlt)
-      .setAlpha(0.88)
-      .setVisible(true);
-    this.arrivalBeacon
-      .setPosition(layout.capsuleCenterX, layout.beaconY)
-      .setTint(sequence.phase === 'rematerialize' ? this.retroPalette.cool : this.retroPalette.bright)
-      .setScale(1 + (1 - sequence.overallProgress) * 0.14, 1 + (1 - sequence.overallProgress) * 0.1)
-      .setAlpha(0.56 + sequence.revealProgress * 0.22 + Math.sin(this.time.now / 62) * 0.08)
-      .setVisible(true);
     this.arrivalShell
       .setPosition(layout.capsuleCenterX, layout.capsuleCenterY)
-      .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.shell.width, EXIT_CAPSULE_ART_BOUNDS.shell.height)
-      .setTint(shellTint)
-      .setScale(1, 1 - (1 - sequence.revealProgress) * 0.04)
       .setAlpha(shellAlpha)
       .setVisible(true);
+    drawTeleportMachineGraphic(this.arrivalShell, {
+      width: 62,
+      height: 92,
+      ringPhase,
+      ringAlpha: Phaser.Math.Clamp(0.18 + sequence.revealProgress * 0.74 - sequence.doorClosedProgress * 0.36, 0, 0.88),
+      beamAlpha: Phaser.Math.Clamp(0.24 + sequence.revealProgress * 0.58 - sequence.doorClosedProgress * 0.44, 0.08, 0.92),
+      podAlpha: 0.94,
+      palette: {
+        podDark: 0x4f4843,
+        podMid: 0x7c746e,
+        podLight: 0xb0aaa2,
+        beam: 0x77ebff,
+        beamGlow: 0xd8ffff,
+        indicator: sequence.phase === 'closing' ? 0xffdc73 : 0x7be7ff,
+      },
+    });
     this.arrivalDoor
       .setPosition(layout.capsuleCenterX, layout.capsuleCenterY + 1)
-      .setDisplaySize(doorWidth, EXIT_CAPSULE_ART_BOUNDS.door.height)
-      .setTint(sequence.doorClosedProgress > 0.5 ? this.retroPalette.border : this.retroPalette.ink)
       .setAlpha(doorAlpha)
       .setVisible(doorAlpha > 0.02);
+    drawTeleportShutterGraphic(this.arrivalDoor, {
+      width: doorWidth,
+      height: 48,
+      closedProgress: sequence.doorClosedProgress,
+      color: 0x10202b,
+      alpha: 0.82,
+    });
     this.arrivalAura
       .setPosition(Phaser.Math.Linear(layout.capsuleCenterX, playerCenterX, sequence.walkoutProgress * 0.8), playerCenterY - 2)
       .setSize(50 - sequence.overallProgress * 8, 66 - sequence.overallProgress * 10)
@@ -1995,9 +2023,9 @@ export class GameScene extends Phaser.Scene {
       height: 40,
       facing: layout.playerTargetX >= layout.playerStartX ? 1 : -1,
       variant: {
-        bodyColor: sequence.phase === 'rematerialize' ? this.retroPalette.bright : this.retroPalette.cool,
-        detailColor: this.retroPalette.border,
-        accentColor: this.retroPalette.warm,
+        bodyColor: 0xf6ee78,
+        detailColor: 0xe0cd4e,
+        accentColor: 0xfff7b4,
         auraColor: null,
       },
       pose: sequence.phase === 'walkout' ? 'run-a' : 'idle',
@@ -2076,15 +2104,33 @@ export class GameScene extends Phaser.Scene {
       .setAlpha(0.82 + progress * 0.16);
 
     this.exitShell
-      .setTint(progress > 0.55 ? this.retroPalette.cool : this.retroPalette.warm)
-      .setAlpha(0.88 + Math.sin(this.time.now / 55) * 0.12)
-      .setScale(1 + progress * 0.06, 1 - progress * 0.03);
+      .setAlpha(0.88 + Math.sin(this.time.now / 55) * 0.12);
+    drawTeleportMachineGraphic(this.exitShell, {
+      width: 62,
+      height: 92,
+      ringPhase: ((this.time.now / 440) % 1 + progress * 0.22) % 1,
+      ringAlpha: Phaser.Math.Clamp(0.28 + progress * 0.62, 0.28, 0.92),
+      beamAlpha: Phaser.Math.Clamp(0.22 + progress * 0.7, 0.22, 0.96),
+      podAlpha: 0.98,
+      palette: {
+        podDark: 0x4f4843,
+        podMid: 0x7c746e,
+        podLight: 0xb0aaa2,
+        beam: progress > 0.55 ? 0x8cf2ff : 0x77ebff,
+        beamGlow: 0xd8ffff,
+        indicator: progress > 0.42 ? 0xfff4ad : 0x7be7ff,
+      },
+    });
     this.exitDoor
-      .setTexture(doorOpenProgress > 0 ? EXIT_CAPSULE_TEXTURE_KEYS.doorOpen : EXIT_CAPSULE_TEXTURE_KEYS.door)
-      .setDisplaySize(exitDoorWidth, EXIT_CAPSULE_ART_BOUNDS.door.height)
-      .setTint(progress > 0.42 ? this.retroPalette.cool : this.retroPalette.ink)
       .setAlpha(0.82 + doorOpenProgress * 0.12 + Math.sin(this.time.now / 70) * 0.04)
       .setVisible(true);
+    drawTeleportShutterGraphic(this.exitDoor, {
+      width: exitDoorWidth,
+      height: 48,
+      closedProgress: 1,
+      color: progress > 0.42 ? 0x17303a : 0x10202b,
+      alpha: 0.82 + doorOpenProgress * 0.12,
+    });
   }
 
   private recordFeedback(kind: string): void {

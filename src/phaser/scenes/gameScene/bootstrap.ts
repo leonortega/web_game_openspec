@@ -9,7 +9,7 @@ import type {
   RewardBlockState,
 } from '../../../game/simulation/state';
 import { runUnlockedAudioAction } from '../../audio/sceneAudio';
-import { EXIT_CAPSULE_ART_BOUNDS, EXIT_CAPSULE_TEXTURE_KEYS } from '../../view/capsulePresentation';
+import { EXIT_CAPSULE_ART_BOUNDS } from '../../view/capsulePresentation';
 import { configureCamera } from '../../view/camera/configureCamera';
 import { drawRetroBackdrop, RETRO_FONT_FAMILY, type RetroPresentationPalette } from '../../view/retroPresentation';
 import { createWorldLocalRetroRegion } from '../../retroPostFx';
@@ -130,16 +130,14 @@ export type GameSceneBaseDisplayContext = Phaser.Scene & {
   playerAccent: Phaser.GameObjects.Rectangle;
   playerWingLeft: Phaser.GameObjects.Rectangle;
   playerWingRight: Phaser.GameObjects.Rectangle;
-  exitShell: Phaser.GameObjects.Image;
-  exitDoor: Phaser.GameObjects.Image;
+  exitShell: Phaser.GameObjects.Graphics;
+  exitDoor: Phaser.GameObjects.Graphics;
   exitBase: Phaser.GameObjects.Image;
   exitBaseShadow: Phaser.GameObjects.Rectangle;
   exitBeacon: Phaser.GameObjects.Image;
-  arrivalBase: Phaser.GameObjects.Image;
   arrivalBaseShadow: Phaser.GameObjects.Rectangle;
-  arrivalBeacon: Phaser.GameObjects.Image;
-  arrivalShell: Phaser.GameObjects.Image;
-  arrivalDoor: Phaser.GameObjects.Image;
+  arrivalShell: Phaser.GameObjects.Graphics;
+  arrivalDoor: Phaser.GameObjects.Graphics;
   arrivalAura: Phaser.GameObjects.Ellipse;
   arrivalPlayer: Phaser.GameObjects.Graphics;
   pauseOverlay: Phaser.GameObjects.Rectangle;
@@ -862,56 +860,35 @@ function createExitAndArrivalRenderables(scene: GameSceneBaseDisplayContext, sta
     .setOrigin(0.5)
     .setDepth(2.2);
   scene.exitShell = scene.add
-    .image(
+    .graphics()
+    .setPosition(
       stage.exit.x + EXIT_CAPSULE_ART_BOUNDS.shell.x + EXIT_CAPSULE_ART_BOUNDS.shell.width / 2,
       stage.exit.y + EXIT_CAPSULE_ART_BOUNDS.shell.y + EXIT_CAPSULE_ART_BOUNDS.shell.height / 2,
-      EXIT_CAPSULE_TEXTURE_KEYS.shell,
     )
-    .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.shell.width, EXIT_CAPSULE_ART_BOUNDS.shell.height);
+    .setDepth(1.25);
+  scene.exitShell.setData('debugWidth', EXIT_CAPSULE_ART_BOUNDS.shell.width);
+  scene.exitShell.setData('debugTextureKey', 'shared-teleport-machine');
   scene.exitDoor = scene.add
-    .image(
+    .graphics()
+    .setPosition(
       stage.exit.x + EXIT_CAPSULE_ART_BOUNDS.door.x + EXIT_CAPSULE_ART_BOUNDS.door.width / 2,
       stage.exit.y + EXIT_CAPSULE_ART_BOUNDS.door.y + EXIT_CAPSULE_ART_BOUNDS.door.height / 2,
-      EXIT_CAPSULE_TEXTURE_KEYS.door,
     )
-    .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.door.width, EXIT_CAPSULE_ART_BOUNDS.door.height)
-    .setOrigin(0.5)
     .setDepth(1.3);
+  scene.exitDoor.setData('debugWidth', EXIT_CAPSULE_ART_BOUNDS.door.width);
+  scene.exitDoor.setData('debugTextureKey', 'shared-teleport-shutter');
     
-  // Arrival base (start) visuals: create placeholders; positions are set by presentation logic.
   scene.arrivalBaseShadow = scene.add
     .rectangle(0, 0, 12, 6, scene.retroPalette.ink, 0.22)
     .setOrigin(0.5)
     .setDepth(9.1)
     .setVisible(false);
-  scene.arrivalBase = scene.add
-    .image(0, 0, 'arrival-base')
-    .setDisplaySize(14, 8)
-    .setTint(scene.retroPalette.panelAlt)
-    .setAlpha(0.92)
-    .setOrigin(0.5)
-    .setDepth(9.2)
-    .setVisible(false);
-  scene.arrivalBeacon = scene.add
-    .image(0, 0, 'arrival-beacon')
-    .setDisplaySize(14, 8)
-    .setTint(scene.retroPalette.bright)
-    .setAlpha(0.34)
-    .setOrigin(0.5)
-    .setDepth(9.3)
-    .setVisible(false);
-    scene.arrivalShell = scene.add
-      .image(0, 0, EXIT_CAPSULE_TEXTURE_KEYS.shell)
-      .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.shell.width, EXIT_CAPSULE_ART_BOUNDS.shell.height)
-      .setOrigin(0.5)
-      .setDepth(9.4)
-      .setVisible(false);
-  scene.arrivalDoor = scene.add
-    .image(0, 0, EXIT_CAPSULE_TEXTURE_KEYS.door)
-    .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.door.width, EXIT_CAPSULE_ART_BOUNDS.door.height)
-    .setOrigin(0.5)
-    .setDepth(9.5)
-    .setVisible(false);
+  scene.arrivalShell = scene.add.graphics().setDepth(9.4).setVisible(false);
+  scene.arrivalDoor = scene.add.graphics().setDepth(9.5).setVisible(false);
+  scene.arrivalShell.setData('debugWidth', EXIT_CAPSULE_ART_BOUNDS.shell.width);
+  scene.arrivalShell.setData('debugTextureKey', 'arrival-teleport-machine');
+  scene.arrivalDoor.setData('debugWidth', EXIT_CAPSULE_ART_BOUNDS.door.width);
+  scene.arrivalDoor.setData('debugTextureKey', 'arrival-teleport-shutter');
   scene.arrivalAura = scene.add.ellipse(0, 0, 46, 62, scene.retroPalette.cool, 0.2).setDepth(9.6).setVisible(false);
   scene.arrivalPlayer = scene.add.graphics().setDepth(9.7).setVisible(false);
 }

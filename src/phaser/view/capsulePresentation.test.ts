@@ -3,13 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   CAPSULE_PRESENTATION,
   EXIT_CAPSULE_ART_BOUNDS,
-  EXIT_CAPSULE_OPEN_DOOR_ART_BOUNDS,
-  EXIT_CAPSULE_TEXTURE_KEYS,
   EXIT_FINISH_DOOR_OPEN_WINDOW,
   STAGE_START_SEQUENCE,
   getExitFinishDoorOpenProgress,
   getStageStartCapsuleLayout,
-  getExitCapsuleDoorArtBounds,
   getStageStartSequenceState,
   getStageStartSequenceTotalMs,
   resolveStageStartCapsuleAnchor,
@@ -24,19 +21,12 @@ describe('capsulePresentation', () => {
     expect(CAPSULE_PRESENTATION.baseWidth).toBeGreaterThan(CAPSULE_PRESENTATION.shellWidth);
   });
 
-  it('exposes shared exit shell and door textures for exact stage-start art reuse', () => {
-    expect(EXIT_CAPSULE_TEXTURE_KEYS.full).toBe('exit');
-    expect(EXIT_CAPSULE_TEXTURE_KEYS.shell).toBe('exit-shell');
-    expect(EXIT_CAPSULE_TEXTURE_KEYS.door).toBe('exit-door');
-    expect(EXIT_CAPSULE_TEXTURE_KEYS.doorOpen).toBe('exit-door-open');
+  it('keeps shared exit bounds aligned with the unified teleport machine geometry', () => {
     expect(EXIT_CAPSULE_ART_BOUNDS.shell.height).toBe(CAPSULE_PRESENTATION.shellHeight);
     expect(EXIT_CAPSULE_ART_BOUNDS.shell.width).toBeGreaterThanOrEqual(CAPSULE_PRESENTATION.shellWidth);
     expect(EXIT_CAPSULE_ART_BOUNDS.door.width).toBe(CAPSULE_PRESENTATION.doorClosedWidth);
     expect(EXIT_CAPSULE_ART_BOUNDS.door.height).toBe(CAPSULE_PRESENTATION.doorHeight);
-    expect(EXIT_CAPSULE_OPEN_DOOR_ART_BOUNDS.width).toBe(CAPSULE_PRESENTATION.doorOpenWidth);
-    expect(EXIT_CAPSULE_OPEN_DOOR_ART_BOUNDS.height).toBe(CAPSULE_PRESENTATION.doorHeight);
-    expect(EXIT_CAPSULE_OPEN_DOOR_ART_BOUNDS.x).toBeGreaterThan(EXIT_CAPSULE_ART_BOUNDS.door.x);
-    expect(getExitCapsuleDoorArtBounds(CAPSULE_PRESENTATION.doorOpenWidth)).toEqual(EXIT_CAPSULE_OPEN_DOOR_ART_BOUNDS);
+    expect(EXIT_CAPSULE_ART_BOUNDS.door.x + EXIT_CAPSULE_ART_BOUNDS.door.width / 2).toBe(24);
   });
 
   it('opens exit door early in finish window without changing stage-start close timing', () => {

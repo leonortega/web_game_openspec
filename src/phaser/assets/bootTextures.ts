@@ -1,16 +1,5 @@
 import type Phaser from 'phaser';
 
-import {
-  EXIT_CAPSULE_ART_BOUNDS,
-  EXIT_CAPSULE_OPEN_DOOR_ART_BOUNDS,
-  EXIT_CAPSULE_ART_SIZE,
-  EXIT_CAPSULE_TEXTURE_KEYS,
-  drawExitCapsuleArt,
-} from '../view/capsulePresentation';
-import { createRetroPresentationPalette } from '../view/retroPresentation';
-
-type CapsuleSection = 'base' | 'beacon' | 'shell' | 'door';
-
 type PixelTextureArtist = {
   outlinedRect: (x: number, y: number, width: number, height: number, fill: string) => void;
   fillRect: (x: number, y: number, width: number, height: number, fill: string) => void;
@@ -45,8 +34,6 @@ const REQUIRED_BOOT_TEXTURE_KEYS = [
   'activation-node',
   'exit-base',
   'exit-beacon',
-  'arrival-base',
-  'arrival-beacon',
   'walker',
   'hopper',
   'turret',
@@ -57,13 +44,9 @@ const REQUIRED_BOOT_TEXTURE_KEYS = [
   'retro-particle-burst',
   'collectible',
   'checkpoint',
-  EXIT_CAPSULE_TEXTURE_KEYS.full,
-  EXIT_CAPSULE_TEXTURE_KEYS.shell,
-  EXIT_CAPSULE_TEXTURE_KEYS.door,
-  EXIT_CAPSULE_TEXTURE_KEYS.doorOpen,
 ] as const;
 
-const BOOT_TEXTURE_VERSION = 7;
+const BOOT_TEXTURE_VERSION = 8;
 const BOOT_TEXTURE_VERSION_KEY = '__bootTextureVersion';
 
 const PLAYER_SHEET_FRAME_SIZE = {
@@ -189,8 +172,6 @@ export const drawCheckpointTextureArt = (artist: PixelTextureArtist): void => {
 };
 
 export const registerBootTextures = (scene: Phaser.Scene): void => {
-  const retro = createRetroPresentationPalette({ accent: 0x8fdff2 });
-
   createPixelSpriteSheet(
     scene,
     'player-sheet',
@@ -437,60 +418,6 @@ export const registerBootTextures = (scene: Phaser.Scene): void => {
     fillRect(context, 3, 7, 10, 3, '#8fdff2');
     fillRect(context, 6, 7, 4, 3, '#f5cf64');
     fillRect(context, 4, 12, 8, 2, '#5f718b');
-  });
-  createPixelTexture(scene, 'arrival-base', 48, 14, (context) => {
-    outlinedRect(context, 4, 4, 40, 8, '#b9c6d4');
-    fillRect(context, 6, 5, 36, 2, '#eef4fb');
-    fillRect(context, 8, 8, 32, 2, '#65778f');
-    fillRect(context, 12, 2, 4, 2, '#8fdff2');
-    fillRect(context, 32, 2, 4, 2, '#8fdff2');
-  });
-  createPixelTexture(scene, 'arrival-beacon', 14, 14, (context) => {
-    outlinedRect(context, 1, 2, 12, 8, '#d4dde8');
-    fillRect(context, 3, 4, 8, 2, '#eef4fb');
-    fillRect(context, 3, 6, 8, 2, '#9ce2f4');
-    fillRect(context, 5, 6, 4, 2, '#f5cf64');
-    fillRect(context, 4, 10, 6, 2, '#5f718b');
-  });
-
-  const exitWarmHex = `#${retro.warm.toString(16).padStart(6, '0')}`;
-  const drawCapsuleArt = (
-    context: CanvasRenderingContext2D,
-    sections: readonly CapsuleSection[],
-    originX = 0,
-    originY = 0,
-    doorBounds = EXIT_CAPSULE_ART_BOUNDS.door,
-  ) => {
-    drawExitCapsuleArt(
-      {
-        outlinedRect: (x, y, width, height, fill) => outlinedRect(context, x, y, width, height, fill),
-        fillRect: (x, y, width, height, fill) => fillRect(context, x, y, width, height, fill),
-      },
-      exitWarmHex,
-      sections,
-      originX,
-      originY,
-      { doorBounds },
-    );
-  };
-
-  createPixelTexture(scene, EXIT_CAPSULE_TEXTURE_KEYS.full, EXIT_CAPSULE_ART_SIZE.width, EXIT_CAPSULE_ART_SIZE.height, (context) => {
-    drawCapsuleArt(context, ['base', 'shell', 'door', 'beacon']);
-  });
-  createPixelTexture(scene, EXIT_CAPSULE_TEXTURE_KEYS.shell, EXIT_CAPSULE_ART_BOUNDS.shell.width, EXIT_CAPSULE_ART_BOUNDS.shell.height, (context) => {
-    drawCapsuleArt(context, ['shell'], EXIT_CAPSULE_ART_BOUNDS.shell.x, EXIT_CAPSULE_ART_BOUNDS.shell.y);
-  });
-  createPixelTexture(scene, EXIT_CAPSULE_TEXTURE_KEYS.door, EXIT_CAPSULE_ART_BOUNDS.door.width, EXIT_CAPSULE_ART_BOUNDS.door.height, (context) => {
-    drawCapsuleArt(context, ['door'], EXIT_CAPSULE_ART_BOUNDS.door.x, EXIT_CAPSULE_ART_BOUNDS.door.y);
-  });
-  createPixelTexture(scene, EXIT_CAPSULE_TEXTURE_KEYS.doorOpen, EXIT_CAPSULE_OPEN_DOOR_ART_BOUNDS.width, EXIT_CAPSULE_OPEN_DOOR_ART_BOUNDS.height, (context) => {
-    drawCapsuleArt(
-      context,
-      ['door'],
-      EXIT_CAPSULE_OPEN_DOOR_ART_BOUNDS.x,
-      EXIT_CAPSULE_OPEN_DOOR_ART_BOUNDS.y,
-      EXIT_CAPSULE_OPEN_DOOR_ART_BOUNDS,
-    );
   });
 };
 
