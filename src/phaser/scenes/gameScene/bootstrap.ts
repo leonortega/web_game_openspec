@@ -559,7 +559,7 @@ export function createBaseDisplayObjects(scene: GameSceneBaseDisplayContext, sta
       }
       // Terrain variant GPULayers (shadows + details)
       try {
-        const terrainCount = state.stageRuntime.platforms.filter((p) => p.surfaceMechanic).length;
+        const terrainCount = state.stageRuntime.platforms.filter((p) => p.kind === 'magnet' || p.kind === 'crystal').length;
         const terrainSize = Math.max(16, terrainCount * 3);
         try {
           const terrainShadowLayer = (scene as any).add.spriteGPULayer('gpuPixel', terrainSize) as any;
@@ -711,8 +711,8 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
     scene.platformCategoryMarkerSprites.set(platform.id, scene.createTraversalMarkerRects(3, 1.1));
   }
 
-  for (const terrainVariantPlatform of state.stageRuntime.platforms.filter((platform) => platform.surfaceMechanic)) {
-    const sprite = scene.add.graphics().setDepth(2);
+  for (const terrainVariantPlatform of state.stageRuntime.platforms.filter((platform) => platform.kind === 'magnet' || platform.kind === 'crystal')) {
+    const sprite = scene.add.graphics().setDepth(2).setVisible(false);
     const shadow = scene.add
       .rectangle(
         terrainVariantPlatform.x + terrainVariantPlatform.width / 2,
@@ -723,7 +723,8 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
         0.2,
       )
       .setOrigin(0.5)
-      .setDepth(2.5);
+      .setDepth(2.5)
+      .setVisible(false);
     const accent = scene.add
       .rectangle(
         terrainVariantPlatform.x + terrainVariantPlatform.width / 2,
@@ -734,7 +735,8 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
         0.9,
       )
       .setOrigin(0.5)
-      .setDepth(3);
+      .setDepth(3)
+      .setVisible(false);
     const details = Array.from({ length: 3 }, () =>
       createWorldLocalRetroRegion(scene, {
         kind: 'distortion',
@@ -745,13 +747,13 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
         color: scene.retroPalette.bright,
         alpha: 0.5,
         depth: 3.2,
-      }).setOrigin(0.5),
+      }).setOrigin(0.5).setVisible(false),
     );
     const terrainSpriteAny = sprite as any;
     terrainSpriteAny.setStrokeStyle?.(
       2,
       scene.retroPalette.border,
-      terrainVariantPlatform.surfaceMechanic?.kind === 'stickySludge' ? 0.24 : 0.38,
+      terrainVariantPlatform.kind === 'magnet' ? 0.24 : 0.38,
     );
     scene.terrainVariantSprites.set(terrainVariantPlatform.id, sprite);
     scene.terrainVariantShadowSprites.set(terrainVariantPlatform.id, shadow);

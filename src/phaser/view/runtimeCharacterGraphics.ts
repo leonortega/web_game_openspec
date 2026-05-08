@@ -142,10 +142,10 @@ export const drawAstronautGraphic = (
       roundedRect(graphics, mirroredX(forwardFacing ? 1 : width - 8, 7, width, params.facing), backpackY + 3, 7, 8, 3, trim.base, 0.94);
       break;
     case 'invincible':
-      roundedRect(graphics, 2, helmetY - 1, 20, 2, 1, visor.glow, 0.75);
-      roundedRect(graphics, 2, torsoY + 18, 20, 2, 1, visor.glow, 0.4);
-      roundedRect(graphics, mirroredX(2, 2, width, params.facing), torsoY + 4, 2, 20, 1, visor.glow, 0.36);
-      roundedRect(graphics, mirroredX(20, 2, width, params.facing), torsoY + 4, 2, 20, 1, visor.glow, 0.36);
+      roundedRect(graphics, mirroredX(1, 3, width, params.facing), torsoY + 7, 3, 8, 2, visor.glow, 0.26);
+      roundedRect(graphics, mirroredX(20, 3, width, params.facing), torsoY + 7, 3, 8, 2, visor.glow, 0.26);
+      roundedRect(graphics, 5, 11, 3, 3, 2, visor.glow, 0.7);
+      roundedRect(graphics, 16, 11, 3, 3, 2, visor.glow, 0.7);
       break;
     case 'dash':
       roundedRect(graphics, mirroredX(1, 7, width, params.facing), backpackY + 2, 7, 11, 3, trim.base, 0.96);

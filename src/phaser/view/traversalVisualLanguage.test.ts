@@ -10,8 +10,8 @@ import {
 
 describe('traversalVisualLanguage', () => {
   it('maps terrain variants to terrain category', () => {
-    expect(getTerrainTraversalVisualCategory({ surfaceMechanic: { kind: 'brittleCrystal' } })).toBe('terrain');
-    expect(getTerrainTraversalVisualCategory({ surfaceMechanic: { kind: 'stickySludge' } })).toBe('terrain');
+    expect(getTerrainTraversalVisualCategory({ kind: 'crystal' })).toBe('terrain');
+    expect(getTerrainTraversalVisualCategory({ kind: 'magnet' })).toBe('terrain');
   });
 
   it('maps assisted-movement supports to assisted movement category', () => {

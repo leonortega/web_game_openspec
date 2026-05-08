@@ -83,9 +83,20 @@ type CapsuleArtPrimitive = {
 };
 
 const EXIT_CAPSULE_ART_PRIMITIVES: CapsuleArtPrimitive[] = [
-  { section: 'base', kind: 'outlinedRect', x: 10, y: 68, width: 28, height: 8, fill: '#c6d2bf' },
-  { section: 'base', kind: 'fillRect', x: 14, y: 70, width: 20, height: 4, fill: '#31451d' },
-  { section: 'shell', kind: 'outlinedRect', x: 8, y: 26, width: CAPSULE_PRESENTATION.shellWidth, height: CAPSULE_PRESENTATION.shellHeight, fill: '#c6d2bf' },
+  { section: 'base', kind: 'outlinedRect', x: 7, y: 68, width: 34, height: 8, fill: '#b9c6d4' },
+  { section: 'base', kind: 'fillRect', x: 10, y: 70, width: 28, height: 2, fill: '#e8eef5' },
+  { section: 'base', kind: 'fillRect', x: 11, y: 73, width: 26, height: 2, fill: '#5f718b' },
+  { section: 'base', kind: 'fillRect', x: 14, y: 66, width: 4, height: 3, fill: '#89d8f0' },
+  { section: 'base', kind: 'fillRect', x: 30, y: 66, width: 4, height: 3, fill: '#89d8f0' },
+  { section: 'shell', kind: 'outlinedRect', x: 8, y: 26, width: CAPSULE_PRESENTATION.shellWidth, height: CAPSULE_PRESENTATION.shellHeight, fill: '#cfd7e0' },
+  { section: 'shell', kind: 'fillRect', x: 10, y: 28, width: 28, height: 4, fill: '#f4f8fc' },
+  { section: 'shell', kind: 'fillRect', x: 10, y: 33, width: 4, height: 28, fill: '#617086' },
+  { section: 'shell', kind: 'fillRect', x: 34, y: 33, width: 4, height: 28, fill: '#617086' },
+  { section: 'shell', kind: 'fillRect', x: 14, y: 58, width: 20, height: 4, fill: '#516177' },
+  { section: 'shell', kind: 'fillRect', x: 17, y: 34, width: 14, height: 18, fill: '#9be5f7' },
+  { section: 'shell', kind: 'fillRect', x: 19, y: 36, width: 10, height: 4, fill: '#f3fbff' },
+  { section: 'shell', kind: 'fillRect', x: 20, y: 42, width: 8, height: 6, fill: '#ffd56c' },
+  { section: 'shell', kind: 'fillRect', x: 15, y: 49, width: 18, height: 2, fill: '#f5fbff' },
   {
     section: 'door',
     kind: 'fillRect',
@@ -95,15 +106,15 @@ const EXIT_CAPSULE_ART_PRIMITIVES: CapsuleArtPrimitive[] = [
     height: CAPSULE_PRESENTATION.doorHeight,
     fill: '#11141b',
   },
-  { section: 'beacon', kind: 'outlinedRect', x: 12, y: 10, width: 24, height: 18, fill: 'warm' },
-  { section: 'beacon', kind: 'fillRect', x: 16, y: 14, width: 16, height: 10, fill: '#8fdff2' },
-  { section: 'beacon', kind: 'fillRect', x: 20, y: 18, width: 8, height: 4, fill: '#fff7d8' },
-  { section: 'shell', kind: 'fillRect', x: 18, y: 36, width: 12, height: 18, fill: '#f5cf64' },
-  { section: 'shell', kind: 'fillRect', x: 16, y: 58, width: 16, height: 4, fill: '#fff7d8' },
-  { section: 'shell', kind: 'fillRect', x: 6, y: 46, width: 4, height: 18, fill: '#11141b' },
-  { section: 'shell', kind: 'fillRect', x: 38, y: 46, width: 4, height: 18, fill: '#11141b' },
-  { section: 'shell', kind: 'fillRect', x: 9, y: 30, width: 2, height: 30, fill: '#fff7d8' },
-  { section: 'shell', kind: 'fillRect', x: 37, y: 30, width: 2, height: 30, fill: '#fff7d8' },
+  { section: 'door', kind: 'fillRect', x: 14, y: 33, width: 20, height: 3, fill: '#2b3440' },
+  { section: 'door', kind: 'fillRect', x: 14, y: 39, width: 20, height: 3, fill: '#2b3440' },
+  { section: 'door', kind: 'fillRect', x: 14, y: 45, width: 20, height: 3, fill: '#2b3440' },
+  { section: 'door', kind: 'fillRect', x: 16, y: 52, width: 16, height: 6, fill: '#455462' },
+  { section: 'beacon', kind: 'outlinedRect', x: 11, y: 10, width: 26, height: 16, fill: '#d4dde8' },
+  { section: 'beacon', kind: 'fillRect', x: 13, y: 12, width: 22, height: 3, fill: '#f4f8fd' },
+  { section: 'beacon', kind: 'fillRect', x: 14, y: 16, width: 20, height: 6, fill: '#7fe0f5' },
+  { section: 'beacon', kind: 'fillRect', x: 20, y: 17, width: 8, height: 4, fill: 'warm' },
+  { section: 'beacon', kind: 'fillRect', x: 17, y: 23, width: 14, height: 2, fill: '#5e7187' },
 ];
 
 const resolveCapsuleArtFill = (fill: CapsuleArtPrimitive['fill'], warmHex: string): string =>

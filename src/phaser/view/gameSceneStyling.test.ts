@@ -82,8 +82,7 @@ function createTerrainVariantPlatform(overrides: Partial<PlatformState> = {}): P
     prevY: 20,
     width: 90,
     height: 18,
-    kind: 'static',
-    surfaceMechanic: { kind: 'brittleCrystal' },
+    kind: 'crystal',
     brittle: { phase: 'intact', warningMs: 0, unsupportedGapMs: 0 },
     startX: 10,
     startY: 20,
@@ -128,29 +127,29 @@ describe('gameSceneStyling', () => {
     const warning = createTerrainVariantPlatform({ brittle: { phase: 'warning', warningMs: 200, unsupportedGapMs: 0 } });
     const ready = createTerrainVariantPlatform({ brittle: { phase: 'ready', warningMs: 0, unsupportedGapMs: 0 } });
     const broken = createTerrainVariantPlatform({ brittle: { phase: 'broken', warningMs: 0, unsupportedGapMs: 0 } });
-    const sticky = createTerrainVariantPlatform({ surfaceMechanic: { kind: 'stickySludge' }, brittle: undefined, height: 24 });
+    const sticky = createTerrainVariantPlatform({ kind: 'magnet', brittle: undefined, height: 24 });
 
-    expect(terrainVariantColor(palette, warning)).toBe(palette.warm);
-    expect(terrainVariantAccentColor(palette, warning)).toBe(palette.bright);
-    expect(terrainVariantAlpha(warning)).toBe(0.96);
-    expect(terrainVariantColor(palette, ready)).toBe(palette.alert);
-    expect(terrainVariantAccentColor(palette, ready)).toBe(palette.warm);
-    expect(terrainVariantAlpha(ready)).toBe(0.99);
+    expect(terrainVariantColor(palette, warning)).toBe(0x7d74b6);
+    expect(terrainVariantAccentColor(palette, warning)).toBe(0xa887f0);
+    expect(terrainVariantAlpha(warning)).toBe(0.64);
+    expect(terrainVariantColor(palette, ready)).toBe(0x8a7cc7);
+    expect(terrainVariantAccentColor(palette, ready)).toBe(0xb494ff);
+    expect(terrainVariantAlpha(ready)).toBe(0.68);
     expect(terrainVariantStrokeColor(palette, ready)).toBe(palette.alert);
-    expect(terrainVariantStrokeAlpha(ready)).toBe(0.8);
+    expect(terrainVariantStrokeAlpha(ready)).toBe(0.18);
     expect(terrainVariantAccentWidth(ready)).toBe(Math.max(18, Math.floor(ready.width * 0.9)));
     expect(terrainVariantAccentHeight(ready)).toBe(Math.min(ready.height, Math.max(5, Math.floor(ready.height * 0.4))));
-    expect(terrainVariantAccentAlpha(ready)).toBe(1);
+    expect(terrainVariantAccentAlpha(ready)).toBe(0.94);
     expect(terrainVariantStrokeColor(palette, broken)).toBe(palette.border);
-    expect(terrainVariantStrokeAlpha(broken)).toBe(0.18);
-    expect(terrainVariantShadowAlpha(broken)).toBe(0.08);
+    expect(terrainVariantStrokeAlpha(broken)).toBe(0.08);
+    expect(terrainVariantShadowAlpha(broken)).toBe(0.04);
     expect(terrainVariantAccentWidth(broken)).toBe(Math.max(14, Math.floor(broken.width * 0.62)));
     expect(terrainVariantAccentHeight(sticky)).toBe(Math.min(sticky.height, Math.max(5, Math.floor(sticky.height * 0.36))));
     expect(terrainVariantAccentY(sticky)).toBe(sticky.y + Math.max(3, Math.floor(sticky.height * 0.34)));
-    expect(terrainVariantAccentAlpha(sticky)).toBe(0.72);
-    expect(terrainVariantColor(palette, sticky)).toBe(palette.panelAlt);
-    expect(terrainVariantAccentColor(palette, sticky)).toBe(palette.warm);
-    expect(terrainVariantAlpha(sticky)).toBe(0.88);
+    expect(terrainVariantAccentAlpha(sticky)).toBe(0.82);
+    expect(terrainVariantColor(palette, sticky)).toBe(0x76808d);
+    expect(terrainVariantAccentColor(palette, sticky)).toBe(0xff5c5c);
+    expect(terrainVariantAlpha(sticky)).toBe(0.42);
   });
 
   it('dims gated gravity visuals until capsules are enabled', () => {

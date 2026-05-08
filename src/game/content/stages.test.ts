@@ -16,8 +16,8 @@ import {
   rewardBlockNeedsSupportSnap,
 } from './stages/builders';
 
-const terrainVariantPlatforms = (stage: StageDefinition, kind: 'brittleCrystal' | 'stickySludge') =>
-  stage.platforms.filter((platform) => platform.surfaceMechanic?.kind === kind);
+const terrainVariantPlatforms = (stage: StageDefinition, kind: 'crystal' | 'magnet') =>
+  stage.platforms.filter((platform) => platform.kind === kind);
 
 const springPlatforms = (stage: StageDefinition) => stage.platforms.filter((platform) => platform.kind === 'spring');
 
@@ -64,7 +64,7 @@ const gravityRoomFlowSummary = (stage: StageDefinition, roomId: string) => {
   };
 };
 
-const terrainBeatSummary = (stage: StageDefinition, kind: 'brittleCrystal' | 'stickySludge') =>
+const terrainBeatSummary = (stage: StageDefinition, kind: 'crystal' | 'magnet') =>
   new Set(
     terrainVariantPlatforms(stage, kind)
       .map((platform) => stage.segments.find((segment) => platform.x + platform.width / 2 >= segment.startX && platform.x + platform.width / 2 <= segment.endX)?.id ?? 'unmapped'),
@@ -73,8 +73,8 @@ const terrainBeatSummary = (stage: StageDefinition, kind: 'brittleCrystal' | 'st
 const terrainKindsPresent = (stage: StageDefinition) =>
   new Set(
     stage.platforms.flatMap((platform) =>
-      platform.surfaceMechanic?.kind === 'brittleCrystal' || platform.surfaceMechanic?.kind === 'stickySludge'
-        ? [platform.surfaceMechanic.kind]
+      platform.kind === 'crystal' || platform.kind === 'magnet'
+        ? [platform.kind]
         : [],
     ),
   );
@@ -134,7 +134,7 @@ describe('spring stage validation', () => {
     ) as typeof stage.platforms;
 
     expect(() => validateStageDefinition(stage as StageDefinition)).toThrow(
-      'Platform surface mechanics only support brittle crystal and sticky sludge on static platforms',
+      'Platform surface mechanics only support crystal and magnet on static platforms',
     );
   });
 
@@ -467,46 +467,46 @@ describe('gravity field stage validation', () => {
     const amber = validateStageDefinition(cloneAmberStage());
     const sky = validateStageDefinition(cloneSkyStage());
 
-    expect(terrainVariantPlatforms(forest, 'stickySludge')).toHaveLength(1);
-    expect(terrainBeatSummary(forest, 'stickySludge').size).toBeGreaterThanOrEqual(1);
-    expect(terrainKindsPresent(forest)).toEqual(new Set(['stickySludge']));
+    expect(terrainVariantPlatforms(forest, 'magnet')).toHaveLength(1);
+    expect(terrainBeatSummary(forest, 'magnet').size).toBeGreaterThanOrEqual(1);
+    expect(terrainKindsPresent(forest)).toEqual(new Set(['magnet']));
     expect(forest.gravityFields.length).toBeGreaterThan(0);
 
-    expect(terrainVariantPlatforms(amber, 'brittleCrystal')).toHaveLength(1);
-    expect(terrainBeatSummary(amber, 'brittleCrystal').size).toBeGreaterThanOrEqual(1);
-    expect(terrainKindsPresent(amber)).toEqual(new Set(['brittleCrystal']));
+    expect(terrainVariantPlatforms(amber, 'crystal')).toHaveLength(1);
+    expect(terrainBeatSummary(amber, 'crystal').size).toBeGreaterThanOrEqual(1);
+    expect(terrainKindsPresent(amber)).toEqual(new Set(['crystal']));
     expect(amber.gravityFields.length).toBeGreaterThan(0);
     expect(springPlatforms(amber)).toHaveLength(4);
 
-    expect(terrainVariantPlatforms(sky, 'stickySludge')).toHaveLength(1);
-    expect(terrainBeatSummary(sky, 'stickySludge').size).toBeGreaterThanOrEqual(1);
-    expect(terrainKindsPresent(sky)).toEqual(new Set(['stickySludge']));
+    expect(terrainVariantPlatforms(sky, 'magnet')).toHaveLength(1);
+    expect(terrainBeatSummary(sky, 'magnet').size).toBeGreaterThanOrEqual(1);
+    expect(terrainKindsPresent(sky)).toEqual(new Set(['magnet']));
     expect(sky.gravityFields.length).toBeGreaterThan(0);
     expect(springPlatforms(sky)).toHaveLength(4);
 
     expect(springPlatforms(forest)).toHaveLength(5);
 
     const combinedKinds = new Set([...terrainKindsPresent(forest), ...terrainKindsPresent(amber), ...terrainKindsPresent(sky)]);
-    expect(combinedKinds).toEqual(new Set(['brittleCrystal', 'stickySludge']));
+    expect(combinedKinds).toEqual(new Set(['crystal', 'magnet']));
 
     const forestWithoutTerrain = cloneStage();
     forestWithoutTerrain.platforms = forestWithoutTerrain.platforms.map((platform) =>
-      platform.id === 'platform-9920-540' ? { ...platform, surfaceMechanic: undefined } : platform,
+      platform.id === 'platform-9920-540-magnet' ? { ...platform, kind: 'static' as const } : platform,
     );
     expect(() => validateStageDefinition(forestWithoutTerrain)).toThrow(
-      'Main stages must author at least one readable brittle crystal or sticky sludge terrain variant: forest-ruins',
+      'Main stages must author at least one readable crystal or magnet terrain variant: forest-ruins',
     );
 
     const stickyOnlyCatalog = stageDefinitions.map((stage) => ({
       ...stage,
       platforms: stage.platforms.map((platform) =>
-        platform.surfaceMechanic?.kind === 'brittleCrystal'
-          ? { ...platform, surfaceMechanic: { kind: 'stickySludge' as const } }
+        platform.kind === 'crystal'
+          ? { ...platform, kind: 'magnet' as const }
           : platform,
       ),
     }));
     expect(() => validateStageCatalogTerrainRollout(stickyOnlyCatalog)).toThrow(
-      'Main stage terrain rollout must include both brittle crystal and sticky sludge across Verdant Impact Crater, Ember Rift Warrens, and Halo Spire Array: missing brittleCrystal',
+      'Main stage terrain rollout must include both crystal and magnet across Verdant Impact Crater, Ember Rift Warrens, and Halo Spire Array: missing crystal',
     );
 
     const amberWithoutGravity = cloneAmberStage();
@@ -525,31 +525,31 @@ describe('gravity field stage validation', () => {
     );
     sideStage.platforms = sideStage.platforms.map((platform) => {
       if (platform.id === 'platform-8160-520') {
-        return { ...platform, surfaceMechanic: { kind: 'stickySludge' } };
+        return { ...platform, kind: 'magnet' };
       }
 
       if (platform.id === 'platform-9460-420') {
-        return { ...platform, surfaceMechanic: { kind: 'brittleCrystal' } };
+        return { ...platform, kind: 'crystal' };
       }
 
       return platform;
     });
 
-    expect(terrainVariantPlatforms(validateStageDefinition(sideStage), 'stickySludge')).toHaveLength(1);
-    expect(terrainVariantPlatforms(validateStageDefinition(sideStage), 'brittleCrystal')).toHaveLength(1);
-    expect(terrainBeatSummary(validateStageDefinition(sideStage), 'stickySludge').size).toBeGreaterThanOrEqual(1);
-    expect(terrainBeatSummary(validateStageDefinition(sideStage), 'brittleCrystal').size).toBeGreaterThanOrEqual(1);
+    expect(terrainVariantPlatforms(validateStageDefinition(sideStage), 'magnet')).toHaveLength(1);
+    expect(terrainVariantPlatforms(validateStageDefinition(sideStage), 'crystal')).toHaveLength(1);
+    expect(terrainBeatSummary(validateStageDefinition(sideStage), 'magnet').size).toBeGreaterThanOrEqual(1);
+    expect(terrainBeatSummary(validateStageDefinition(sideStage), 'crystal').size).toBeGreaterThanOrEqual(1);
   });
 
   it('rejects legacy brittle and sticky terrain overlays and non-static platform variant usage', () => {
     const legacyOverlayStage = cloneStage() as ReturnType<typeof cloneStage> & { terrainSurfaces?: unknown[] };
-    legacyOverlayStage.platforms = legacyOverlayStage.platforms.map((platform) => ({ ...platform, surfaceMechanic: undefined }));
+    legacyOverlayStage.platforms = legacyOverlayStage.platforms.map((platform) => ({ ...platform }));
     legacyOverlayStage.terrainSurfaces = [
-      { id: 'legacy-sticky', kind: 'stickySludge', x: 8350, y: 520, width: 132, height: 12 },
+      { id: 'legacy-sticky', kind: 'magnet', x: 8350, y: 520, width: 132, height: 12 },
     ];
 
     expect(() => validateStageDefinition(legacyOverlayStage)).toThrow(
-      'Brittle crystal and sticky sludge must be authored on platform terrainVariant instead of terrain surfaces',
+      'Crystal and magnet routes must be authored as platform kinds instead of terrain surfaces',
     );
 
     const mixedAuthoringStage = cloneStage();
@@ -571,7 +571,7 @@ describe('gravity field stage validation', () => {
 
     const movingVariantStage = cloneStage();
     movingVariantStage.platforms = movingVariantStage.platforms.map((platform) =>
-      platform.kind === 'moving' ? { ...platform, surfaceMechanic: { kind: 'stickySludge' } } : platform,
+      platform.kind === 'moving' ? { ...platform, kind: 'magnet' as const } : platform,
     );
 
     expect(() => validateStageDefinition(movingVariantStage)).toThrow(

@@ -13,8 +13,8 @@ export type Rect = {
 export type HazardKind = 'spikes';
 export type EnemyKind = 'walker' | 'hopper' | 'turret' | 'charger' | 'flyer';
 export type TurretVariantId = 'resinBurst' | 'ionPulse';
-export type PlatformKind = 'static' | 'moving' | 'falling' | 'spring';
-export type PlatformSurfaceTerrainKind = 'brittleCrystal' | 'stickySludge';
+export type PlatformKind = 'static' | 'moving' | 'falling' | 'spring' | 'magnet' | 'crystal';
+export type PlatformSurfaceTerrainKind = 'magnet' | 'crystal';
 export type PlatformSurfaceKind = PlatformSurfaceTerrainKind;
 export type PlatformSurfaceMechanic = {
   kind: PlatformSurfaceTerrainKind;
@@ -440,14 +440,18 @@ export function createPlayerStateWithMachine(
         return snapshot?.matches?.('dead') ?? false;
       }
       if (prop === 'onGround') {
-        const snapshot = machineActor.getSnapshot?.() || machineActor.state;
-        return (snapshot?.matches?.('idle') || snapshot?.matches?.('run')) ?? false;
+        return target.onGround;
       }
       return Reflect.get(target, prop);
     },
     set(target, prop, value) {
       if (prop === 'onGround' || prop === 'dead') {
         const nextValue = Boolean(value);
+        const previousValue = Boolean(Reflect.get(target, prop));
+        Reflect.set(target, prop, nextValue);
+        if (previousValue === nextValue) {
+          return true;
+        }
         if (prop === 'onGround') {
           machineActor.send?.({ type: nextValue ? 'GROUND_CONTACT' : 'LEAVE_GROUND' });
         } else {
@@ -510,7 +514,7 @@ export const TURRET_VARIANT_CONFIG: Record<
 };
 
 export const GRAVITY_FIELD_KINDS: GravityFieldKind[] = ['anti-grav-stream', 'gravity-inversion-column'];
-export const PLATFORM_SURFACE_TERRAIN_KINDS: PlatformSurfaceTerrainKind[] = ['brittleCrystal', 'stickySludge'];
+export const PLATFORM_SURFACE_TERRAIN_KINDS: PlatformSurfaceTerrainKind[] = ['magnet', 'crystal'];
 export const BRITTLE_WARNING_MS = 420;
 export const BRITTLE_READY_BREAK_DELAY_MS = 220;
 export const SLUDGE_GROUND_ACCEL_MULTIPLIER = 0.48;
@@ -726,19 +730,19 @@ export const createInactiveTemporaryBridgeState = (
 });
 
 export const isBrittlePlatformBroken = (
-  platform: Pick<PlatformState, 'surfaceMechanic' | 'brittle'>,
-): boolean => platform.surfaceMechanic?.kind === 'brittleCrystal' && platform.brittle?.phase === 'broken';
+  platform: Pick<PlatformState, 'kind' | 'brittle'>,
+): boolean => platform.kind === 'crystal' && platform.brittle?.phase === 'broken';
 
 export const isBrittlePlatformWarning = (
-  platform: Pick<PlatformState, 'surfaceMechanic' | 'brittle'>,
-): boolean => platform.surfaceMechanic?.kind === 'brittleCrystal' && platform.brittle?.phase === 'warning';
+  platform: Pick<PlatformState, 'kind' | 'brittle'>,
+): boolean => platform.kind === 'crystal' && platform.brittle?.phase === 'warning';
 
 export const isBrittlePlatformReady = (
-  platform: Pick<PlatformState, 'surfaceMechanic' | 'brittle'>,
-): boolean => platform.surfaceMechanic?.kind === 'brittleCrystal' && platform.brittle?.phase === 'ready';
+  platform: Pick<PlatformState, 'kind' | 'brittle'>,
+): boolean => platform.kind === 'crystal' && platform.brittle?.phase === 'ready';
 
 export const isPlatformTerrainSupportActive = (
-  platform: Pick<PlatformState, 'surfaceMechanic' | 'brittle'>,
+  platform: Pick<PlatformState, 'kind' | 'brittle'>,
 ): boolean => !isBrittlePlatformBroken(platform);
 
 export const formatActivePowerSummary = (powers: PowerInventory, timers: PowerTimers): string => {

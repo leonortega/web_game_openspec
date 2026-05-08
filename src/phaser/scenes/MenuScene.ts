@@ -14,7 +14,6 @@ import {
   setCrtFilterEnabled,
 } from '../retroPostFx';
 import { bindScaleOuter, createNinePatch, RETRO_TEXT_STYLE, UI_COLORS } from '../ui/rexUiTheme';
-import { createMenuAstronautGraphics } from '../view/menuAstronautGraphics';
 
 type MenuView = 'root' | 'options' | 'help';
 type RootOptionId = 'primary' | 'options' | 'help';
@@ -188,17 +187,6 @@ export class MenuScene extends Phaser.Scene {
         align: 'center',
         wordWrap: { width: 700 },
         lineSpacing: 8,
-      })
-      .setOrigin(0.5)
-      .setDepth(3);
-
-    createMenuAstronautGraphics(this, width / 2 - 258 + menuOffsetX, 418, 1);
-    this.add
-      .text(width / 2 - 258 + menuOffsetX, 566, 'GRAPHICS-ONLY PROTOTYPE', {
-        ...RETRO_TEXT_STYLE,
-        fontSize: '9px',
-        color: '#8fdff2',
-        letterSpacing: 1,
       })
       .setOrigin(0.5)
       .setDepth(3);

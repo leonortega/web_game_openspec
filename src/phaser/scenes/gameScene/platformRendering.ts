@@ -21,6 +21,10 @@ export type GameScenePlatformRenderingContext = Phaser.Scene & {
   bridge: {
     getSession(): {
       getState(): {
+        player: {
+          supportPlatformId: string | null;
+          springContactPlatformId: string | null;
+        };
         stageRuntime: {
           revealedPlatformIds: string[];
           temporaryBridges: Array<{ id: string; active: boolean }>;
@@ -159,7 +163,29 @@ export function syncPlatform(scene: GameScenePlatformRenderingContext, platform:
     tintBottomRight: scene.platformDetailColor(platform),
   });
 
-  if (platform.kind === 'falling' && platform.fall) {
+  if (platform.kind === 'magnet' || platform.kind === 'crystal') {
+    sprite.setAlpha(scene.terrainVariantAlpha(platform));
+    setShadowMember(shadowRec, { alpha: scene.terrainVariantShadowAlpha(platform) });
+    setDetailMember(detailRec, { alpha: 0 });
+    drawTerrainVariantGraphic(sprite, {
+      platform,
+      baseColor: scene.terrainVariantColor(platform),
+      accentColor: scene.terrainVariantAccentColor(platform),
+      strokeColor: scene.terrainVariantStrokeColor(platform),
+      alpha: sprite.alpha,
+      brightColor: scene.retroPalette.bright,
+      timeMs: scene.time.now,
+      playerTouching: state.player.supportPlatformId === platform.id,
+    });
+    syncPlatformCategoryMarkers(scene, platform, markers, active);
+    return;
+  }
+
+  if (platform.brittle?.phase === 'broken') {
+    sprite.setAlpha(0.16);
+    setShadowMember(shadowRec, { alpha: 0.06 });
+    setDetailMember(detailRec, { alpha: 0.12 });
+  } else if (platform.kind === 'falling' && platform.fall) {
     const alpha = platform.fall.falling ? 0.45 : platform.fall.triggered ? 0.7 : 1;
     sprite.setAlpha(alpha);
     setShadowMember(shadowRec, { alpha: alpha * 0.28 });
@@ -185,6 +211,9 @@ export function syncPlatform(scene: GameScenePlatformRenderingContext, platform:
     borderColor: scene.retroPalette.border,
     alpha: sprite.alpha,
     active,
+    timeMs: scene.time.now,
+    playerTouching: state.player.supportPlatformId === platform.id,
+    springEngaged: state.player.springContactPlatformId === platform.id,
   });
 
   syncPlatformCategoryMarkers(scene, platform, markers, active);
@@ -217,6 +246,7 @@ export function syncTerrainVariantPlatform(scene: GameScenePlatformRenderingCont
   if (!sprite || !shadow || !accent || !details) {
     return;
   }
+  const state = scene.bridge.getSession().getState();
 
   sprite.setPosition(platform.x, platform.y).setVisible(true);
   drawTerrainVariantGraphic(sprite, {
@@ -226,6 +256,8 @@ export function syncTerrainVariantPlatform(scene: GameScenePlatformRenderingCont
     strokeColor: scene.terrainVariantStrokeColor(platform),
     alpha: scene.terrainVariantAlpha(platform),
     brightColor: scene.retroPalette.bright,
+    timeMs: scene.time.now,
+    playerTouching: state.player.supportPlatformId === platform.id,
   });
   const setShadowMember = (rec: any, opts: any) => {
     if (!rec) return;
@@ -261,12 +293,12 @@ export function syncTerrainVariantPlatform(scene: GameScenePlatformRenderingCont
     .setFillStyle(scene.terrainVariantAccentColor(platform), scene.terrainVariantAccentAlpha(platform))
     .setVisible(true);
 
-  if (platform.surfaceMechanic?.kind === 'stickySludge') {
+  if (platform.kind === 'magnet') {
     scene.syncStickyTerrainVariantDetails(platform, details);
     return;
   }
 
-  if (platform.surfaceMechanic?.kind === 'brittleCrystal') {
+  if (platform.kind === 'crystal') {
     scene.syncBrittleTerrainVariantDetails(platform, details);
     return;
   }
@@ -311,30 +343,13 @@ function syncPlatformCategoryMarkers(
   const pulse = getRetroMotionStep(scene.time.now + centerX, 120, 3);
 
   if (category === 'assistedMovement') {
-    if (platform.kind === 'spring') {
-      const alpha = 0.82;
-      const heights = [Math.max(8, platform.height - 8), Math.max(12, platform.height - 2), Math.max(8, platform.height - 8)];
-      const xOffsets = [-0.24, 0, 0.24];
-      markers.forEach((marker, index) => {
-        marker
-          .setPosition(centerX + platform.width * xOffsets[index], centerY + (index === 1 ? -2 : 0))
-          .setSize(Math.max(6, Math.floor(platform.width * 0.08)), heights[index])
-          .setFillStyle(index === 1 ? scene.retroPalette.bright : scene.retroPalette.border, alpha)
-          .setVisible(true);
-      });
-      return;
-    }
-
-    if (platform.kind === 'falling' && platform.fall) {
-      const alpha = platform.fall.falling ? 0.36 : platform.fall.triggered ? 0.72 : 0.58;
-      const yOffsets = [-0.16, 0.04, 0.2];
-      markers.forEach((marker, index) => {
-        marker
-          .setPosition(centerX + (index - 1) * Math.max(10, platform.width * 0.12), centerY + platform.height * yOffsets[index])
-          .setSize(Math.max(10, Math.floor(platform.width * (index === 1 ? 0.18 : 0.14))), Math.max(3, Math.floor(platform.height * 0.18)))
-          .setFillStyle(index === 1 ? scene.retroPalette.bright : scene.retroPalette.warm, alpha)
-          .setVisible(true);
-      });
+    if (
+      platform.kind === 'spring' ||
+      platform.kind === 'moving' ||
+      platform.kind === 'falling' ||
+      platform.kind === 'crystal'
+    ) {
+      hideTraversalMarkers(markers);
       return;
     }
 
@@ -350,13 +365,7 @@ function syncPlatformCategoryMarkers(
   }
 
   if (platform.magnetic) {
-    markers.forEach((marker, index) => {
-      marker
-        .setPosition(centerX + (index - 1) * Math.max(14, platform.width * 0.18), platform.y + Math.max(5, Math.floor(platform.height * 0.26)))
-        .setSize(Math.max(8, Math.floor(platform.width * 0.1)), Math.max(3, Math.floor(platform.height * 0.16)))
-        .setFillStyle(platform.magnetic?.powered ? scene.retroPalette.bright : scene.retroPalette.cool, platform.magnetic?.powered ? 0.82 : 0.34)
-        .setVisible(true);
-    });
+    hideTraversalMarkers(markers);
     return;
   }
 

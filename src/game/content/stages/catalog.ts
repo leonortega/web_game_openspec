@@ -1,10 +1,12 @@
 import { STAGE_AUDIO_METADATA } from '../../../audio/musicThemes';
 import {
   activationNode,
+  crystal,
   falling,
   gravityCapsule,
   gravityField,
   ground,
+  magnet,
   magneticPlatform,
   moving,
   revealPlatform,
@@ -14,7 +16,6 @@ import {
   spring,
   startCabin,
   temporaryBridgePlatform,
-  withSurfaceMechanic,
 } from './builders';
 import type { StageDefinition, StageExtension } from './types';
 import {
@@ -593,7 +594,7 @@ const forestRuinsExtension: StageExtension = {
     ground(9390, 400, 180),
     ground(9650, 470, 190),
     magneticPlatform('forest-magnetic-platform-1', 'forest-magnetic-node-1', 9928, 356, 132),
-    withSurfaceMechanic(ground(9920, 540, 210), 'stickySludge'),
+    magnet(9920, 540, 210),
     ground(10010, 320, 160),
     spring(10210, 610, 200, 32, 920),
     ground(10310, 260, 150),
@@ -772,7 +773,7 @@ const amberCavernExtension: StageExtension = {
     moving(8970, 190, 140, 32, 'x', 90, 70),
     ground(9200, 340, 180),
     ground(9220, 260, 160),
-    withSurfaceMechanic(ground(9460, 420, 200), 'brittleCrystal'),
+    crystal(9460, 420, 200),
     ground(9680, 420, 140),
     falling(9730, 500, 180),
     ground(9990, 570, 220),
@@ -987,7 +988,7 @@ const skySanctumExtension: StageExtension = {
     moving(10900, 400, 180, 32, 'y', 110, 84),
     ground(10970, 250, 150),
     revealPlatform('sky-reveal-bridge-1', 'sky-hidden-bridge-1', 11150, 250, 120),
-    withSurfaceMechanic(ground(11160, 320, 180), 'stickySludge'),
+    magnet(11160, 320, 180),
     ground(11240, 190, 140),
     revealPlatform('sky-reveal-bridge-2', 'sky-hidden-bridge-2', 11390, 220, 110),
     ground(11420, 390, 180),

@@ -119,6 +119,25 @@ const CUE_PROFILES: Record<AudioCue, CueProfile> = {
   [AUDIO_CUES.power]: { family: 'power', signature: 'power gain anthem', tones: [{ frequency: 493.88, durationMs: 100, type: 'square', volume: 0.024 }, { frequency: 659.25, durationMs: 130, type: 'triangle', volume: 0.02, offsetMs: 40 }, { frequency: 880, durationMs: 180, type: 'square', volume: 0.018, offsetMs: 84 }] },
   [AUDIO_CUES.block]: { family: 'interactive', signature: 'reward block thunk', tones: [{ frequency: 311.13, durationMs: 80, type: 'square', volume: 0.02 }] },
   [AUDIO_CUES.collapse]: { family: 'interactive', signature: 'crumbling platform drop', tones: [{ frequency: 233.08, durationMs: 110, type: 'sawtooth', volume: 0.024 }, { frequency: 174.61, durationMs: 150, type: 'triangle', volume: 0.018, offsetMs: 34 }] },
+  [AUDIO_CUES.crystalTouch]: {
+    family: 'interactive',
+    signature: 'glass contact shimmer',
+    tones: [
+      { frequency: 1046.5, durationMs: 42, type: 'sine', volume: 0.896 },
+      { frequency: 1318.51, durationMs: 68, type: 'triangle', volume: 0.768, offsetMs: 10 },
+      { frequency: 1567.98, durationMs: 92, type: 'sine', volume: 0.512, offsetMs: 20 },
+    ],
+  },
+  [AUDIO_CUES.crystalBreak]: {
+    family: 'interactive',
+    signature: 'crystal shatter sparkle',
+    tones: [
+      { frequency: 987.77, durationMs: 52, type: 'triangle', volume: 0.02 },
+      { frequency: 1318.51, durationMs: 76, type: 'sine', volume: 0.016, offsetMs: 10 },
+      { frequency: 783.99, durationMs: 118, type: 'triangle', volume: 0.014, offsetMs: 26 },
+      { frequency: 587.33, durationMs: 148, type: 'sine', volume: 0.012, offsetMs: 48 },
+    ],
+  },
   [AUDIO_CUES.spring]: { family: 'interactive', signature: 'spring launch pop', tones: [{ frequency: 659.25, durationMs: 70, type: 'square', volume: 0.025 }, { frequency: 783.99, durationMs: 100, type: 'triangle', volume: 0.018, offsetMs: 28 }] },
   [AUDIO_CUES.movingPlatform]: { family: 'interactive', signature: 'removed moving platform cue', tones: [] },
   [AUDIO_CUES.menuNavigate]: { family: 'menu-ui', signature: 'cursor tick', tones: [{ frequency: 659.25, durationMs: 70, type: 'square', volume: 0.02 }] },
@@ -803,6 +822,7 @@ export class SynthAudio {
 }
 
 export const getSharedSynthAudioDebugStateForTests = (): AudioDebugState => getDebugState();
+export const getSharedSynthAudioDebugState = (): AudioDebugState => getDebugState();
 
 export const getAuthoredMusicThemesForTests = () => getAllAuthoredThemes();
 

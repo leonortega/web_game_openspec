@@ -18,8 +18,8 @@ const GRAVITY_ROOM_SHELL_COLOR = 0x2f6f91;
 const GRAVITY_ROOM_SHELL_OUTLINE_COLOR = 0x8fdff2;
 const GRAVITY_ROOM_BUTTON_COLOR = 0xf2c94c;
 
-const surfaceKind = (platform: PlatformState): NonNullable<PlatformState['surfaceMechanic']>['kind'] | undefined =>
-  platform.surfaceMechanic?.kind;
+const surfaceKind = (platform: PlatformState): 'magnet' | 'crystal' | undefined =>
+  platform.kind === 'magnet' || platform.kind === 'crystal' ? platform.kind : undefined;
 
 export function platformColor(retroPalette: RetroPresentationPalette, platform: PlatformState): number {
   if (platform.magnetic) {
@@ -75,57 +75,57 @@ export function activationNodeColor(retroPalette: RetroPresentationPalette, node
   return node.activated ? retroPalette.safe : retroPalette.muted;
 }
 
-export function terrainVariantColor(retroPalette: RetroPresentationPalette, platform: PlatformState): number {
-  if (surfaceKind(platform) === 'stickySludge') {
-    return retroPalette.panelAlt;
+export function terrainVariantColor(_retroPalette: RetroPresentationPalette, platform: PlatformState): number {
+  if (surfaceKind(platform) === 'magnet') {
+    return 0x76808d;
   }
 
   if (isBrittlePlatformBroken(platform)) {
-    return retroPalette.muted;
+    return 0x686f79;
   }
 
   if (isBrittlePlatformReady(platform)) {
-    return retroPalette.alert;
+    return 0x8a7cc7;
   }
 
   if (isBrittlePlatformWarning(platform)) {
-    return retroPalette.warm;
+    return 0x7d74b6;
   }
 
-  return retroPalette.cool;
+  return 0x808895;
 }
 
-export function terrainVariantAccentColor(retroPalette: RetroPresentationPalette, platform: PlatformState): number {
-  if (surfaceKind(platform) === 'stickySludge') {
-    return retroPalette.warm;
+export function terrainVariantAccentColor(_retroPalette: RetroPresentationPalette, platform: PlatformState): number {
+  if (surfaceKind(platform) === 'magnet') {
+    return 0xff5c5c;
   }
 
   if (isBrittlePlatformBroken(platform)) {
-    return retroPalette.ink;
+    return 0xd5d8e0;
   }
 
   if (isBrittlePlatformReady(platform)) {
-    return retroPalette.warm;
+    return 0xb494ff;
   }
 
   if (isBrittlePlatformWarning(platform)) {
-    return retroPalette.bright;
+    return 0xa887f0;
   }
 
-  return retroPalette.border;
+  return 0x9f88ef;
 }
 
 export function terrainVariantAlpha(platform: PlatformState): number {
-  if (surfaceKind(platform) === 'stickySludge') {
-    return 0.88;
+  if (surfaceKind(platform) === 'magnet') {
+    return 0.42;
   }
 
-  return isBrittlePlatformBroken(platform) ? 0.34 : isBrittlePlatformReady(platform) ? 0.99 : isBrittlePlatformWarning(platform) ? 0.96 : 0.82;
+  return isBrittlePlatformBroken(platform) ? 0.16 : isBrittlePlatformReady(platform) ? 0.68 : isBrittlePlatformWarning(platform) ? 0.64 : 0.58;
 }
 
 export function terrainVariantStrokeColor(retroPalette: RetroPresentationPalette, platform: PlatformState): number {
-  if (surfaceKind(platform) === 'stickySludge') {
-    return retroPalette.alert;
+  if (surfaceKind(platform) === 'magnet') {
+    return 0xffd4d4;
   }
 
   return isBrittlePlatformBroken(platform)
@@ -138,23 +138,23 @@ export function terrainVariantStrokeColor(retroPalette: RetroPresentationPalette
 }
 
 export function terrainVariantStrokeAlpha(platform: PlatformState): number {
-  if (surfaceKind(platform) === 'stickySludge') {
-    return 0.42;
+  if (surfaceKind(platform) === 'magnet') {
+    return 0.18;
   }
 
-  return isBrittlePlatformBroken(platform) ? 0.18 : isBrittlePlatformReady(platform) ? 0.8 : isBrittlePlatformWarning(platform) ? 0.62 : 0.42;
+  return isBrittlePlatformBroken(platform) ? 0.08 : isBrittlePlatformReady(platform) ? 0.18 : isBrittlePlatformWarning(platform) ? 0.16 : 0.14;
 }
 
 export function terrainVariantShadowAlpha(platform: PlatformState): number {
-  if (surfaceKind(platform) === 'stickySludge') {
-    return 0.2;
+  if (surfaceKind(platform) === 'magnet') {
+    return 0.1;
   }
 
-  return isBrittlePlatformBroken(platform) ? 0.08 : 0.2;
+  return isBrittlePlatformBroken(platform) ? 0.04 : 0.08;
 }
 
 export function terrainVariantAccentY(platform: PlatformState): number {
-  if (surfaceKind(platform) === 'stickySludge') {
+  if (surfaceKind(platform) === 'magnet') {
     return platform.y + Math.max(3, Math.floor(platform.height * 0.34));
   }
 
@@ -166,7 +166,7 @@ export function terrainVariantAccentY(platform: PlatformState): number {
 }
 
 export function terrainVariantAccentWidth(platform: PlatformState): number {
-  if (surfaceKind(platform) === 'stickySludge') {
+  if (surfaceKind(platform) === 'magnet') {
     return Math.max(18, platform.width - 10);
   }
 
@@ -178,7 +178,7 @@ export function terrainVariantAccentWidth(platform: PlatformState): number {
 }
 
 export function terrainVariantAccentHeight(platform: PlatformState): number {
-  if (surfaceKind(platform) === 'stickySludge') {
+  if (surfaceKind(platform) === 'magnet') {
     return Math.min(platform.height, Math.max(5, Math.floor(platform.height * 0.36)));
   }
 
@@ -190,17 +190,17 @@ export function terrainVariantAccentHeight(platform: PlatformState): number {
 }
 
 export function terrainVariantAccentAlpha(platform: PlatformState): number {
-  if (surfaceKind(platform) === 'stickySludge') {
-    return 0.72;
+  if (surfaceKind(platform) === 'magnet') {
+    return 0.82;
   }
 
   return isBrittlePlatformBroken(platform)
-    ? 0.22
+    ? 0.1
     : isBrittlePlatformReady(platform)
-      ? 1
+      ? 0.94
       : isBrittlePlatformWarning(platform)
-        ? 0.96
-        : 0.82;
+        ? 0.88
+        : 0.76;
 }
 
 export function gravityFieldColor(

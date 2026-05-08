@@ -8,11 +8,6 @@ import {
   drawGravityDoorGraphic,
   drawGravityFieldGraphic,
 } from '../../view/runtimeWorldGraphics';
-import {
-  getGravityCapsuleButtonTraversalVisualCategory,
-  getGravityCapsuleShellTraversalVisualCategory,
-  getGravityFieldTraversalVisualCategory,
-} from '../../view/traversalVisualLanguage';
 
 export type GameSceneGravityRenderingContext = Phaser.Scene & {
   bridge: {
@@ -145,31 +140,10 @@ function syncGravityFieldMarkers(
   capsule: GravityCapsuleState | null,
   markers: Phaser.GameObjects.Rectangle[],
 ): void {
-  const category = getGravityFieldTraversalVisualCategory(field, capsule);
-  const centerX = field.x + field.width / 2;
-  const centerY = field.y + field.height / 2;
-
-  if (category === 'routeToggle') {
-    markers.forEach((marker, index) => {
-      marker
-        .setPosition(centerX + (index - 1.5) * Math.max(18, field.width * 0.16), centerY)
-        .setSize(Math.max(10, Math.floor(field.width * 0.09)), Math.max(10, Math.floor(field.height * 0.14)))
-        .setFillStyle(scene.retroPalette.border, 0.18 + index * 0.04)
-        .setVisible(true);
-    });
-    return;
-  }
-
-  const drift = Math.sin((scene.time.now + field.x) / 180);
-  markers.forEach((marker, index) => {
-    const width = Math.max(8, Math.floor(field.width * 0.08));
-    const height = Math.max(18, Math.floor(field.height * (index % 2 === 0 ? 0.44 : 0.6)));
-    marker
-      .setPosition(centerX + (index - 1.5) * Math.max(16, field.width * 0.14), centerY + drift * (index % 2 === 0 ? 6 : -6))
-      .setSize(width, height)
-      .setFillStyle(field.kind === 'anti-grav-stream' ? scene.retroPalette.bright : scene.retroPalette.ink, 0.24 + index * 0.06)
-      .setVisible(true);
-  });
+  void scene;
+  void field;
+  void capsule;
+  hideTraversalMarkers(markers);
 }
 
 function syncGravityCapsuleShellMarkers(
@@ -177,21 +151,9 @@ function syncGravityCapsuleShellMarkers(
   capsule: GravityCapsuleState,
   markers: Phaser.GameObjects.Rectangle[],
 ): void {
-  const category = getGravityCapsuleShellTraversalVisualCategory(capsule);
-  if (category !== 'routeToggle') {
-    hideTraversalMarkers(markers);
-    return;
-  }
-
-  const centerX = capsule.shell.x + capsule.shell.width / 2;
-  const topY = capsule.shell.y + Math.max(8, Math.floor(capsule.shell.height * 0.18));
-  markers.forEach((marker, index) => {
-    marker
-      .setPosition(centerX + (index - 1) * Math.max(12, capsule.shell.width * 0.16), topY)
-      .setSize(Math.max(8, Math.floor(capsule.shell.width * 0.1)), Math.max(4, Math.floor(capsule.shell.height * 0.08)))
-      .setFillStyle(index === 1 ? scene.retroPalette.bright : scene.retroPalette.cool, capsule.enabled ? 0.84 : 0.42)
-      .setVisible(true);
-  });
+  void scene;
+  void capsule;
+  hideTraversalMarkers(markers);
 }
 
 function syncGravityCapsuleButtonMarkers(
@@ -199,20 +161,7 @@ function syncGravityCapsuleButtonMarkers(
   capsule: GravityCapsuleState,
   markers: Phaser.GameObjects.Rectangle[],
 ): void {
-  const category = getGravityCapsuleButtonTraversalVisualCategory(capsule);
-  if (category !== 'routeToggle') {
-    hideTraversalMarkers(markers);
-    return;
-  }
-
-  const centerX = capsule.button.x + capsule.button.width / 2;
-  const centerY = capsule.button.y + capsule.button.height / 2;
-  const alpha = capsule.button.activated ? 0.9 : 0.5;
-  markers.forEach((marker, index) => {
-    marker
-      .setPosition(centerX, centerY + (index - 1) * Math.max(4, capsule.button.height * 0.18))
-      .setSize(Math.max(8, Math.floor(capsule.button.width * (index === 1 ? 0.62 : 0.38))), Math.max(2, Math.floor(capsule.button.height * 0.1)))
-      .setFillStyle(index === 1 ? scene.retroPalette.bright : scene.retroPalette.cool, alpha)
-      .setVisible(true);
-  });
+  void scene;
+  void capsule;
+  hideTraversalMarkers(markers);
 }

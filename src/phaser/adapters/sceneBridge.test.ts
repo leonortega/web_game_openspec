@@ -197,7 +197,7 @@ describe('SceneBridge pause flow regression coverage', () => {
 
     const support = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-9010-480');
     const capsule = state.stageRuntime.gravityCapsules.find((entry: any) => entry.id === 'sky-anti-grav-capsule');
-    support.surfaceMechanic = { kind: 'stickySludge' };
+    support.kind = 'magnet';
 
     capsule.enabled = false;
     capsule.button.activated = true;

@@ -113,6 +113,7 @@ const EMPTY_PLATFORM_MOVING_SPEED = 72;
 const EMPTY_PLATFORM_SPRING_BOOST = 860;
 const EMPTY_PLATFORM_SPRING_COOLDOWN_MS = 350;
 const EMPTY_PLATFORM_FALL_TRIGGER_DELAY_MS = 650;
+const CRYSTAL_TOUCH_REPEAT_MS = 260;
 const INCLUDE_OVERLAPPING_AUTHORED_OCCUPANTS = true;
 const PLAYER_PRESENTATION_ORDER: PowerType[] = ['invincible', 'shooter', 'doubleJump', 'dash'];
 const DEFAULT_TURRET_PROJECTILE_SPEED = 260;
@@ -687,7 +688,8 @@ const getActiveTemporaryBridgeIds = (temporaryBridges: readonly TemporaryBridgeS
 const createSolidSurfaceList = (runtime: StageRuntime): SolidSurface[] => [
   ...runtime.platforms
     .filter((platform) =>
-      isPlatformActive(platform, runtime.revealedPlatformIds, getActiveTemporaryBridgeIds(runtime.temporaryBridges)),
+      isPlatformActive(platform, runtime.revealedPlatformIds, getActiveTemporaryBridgeIds(runtime.temporaryBridges)) &&
+      isPlatformTerrainSupportActive(platform),
     )
     .map<SolidSurface>((platform) => ({
     id: platform.id,
@@ -960,6 +962,8 @@ export class GameSession {
 
   private checkpointRevealIds: string[] = [];
 
+  private crystalTouchLoopMs = 0;
+
   constructor() {
     this.playerActor = createActor(playerStateMachine);
     this.playerActor.start();
@@ -1069,7 +1073,8 @@ export class GameSession {
     const deltaSec = deltaMs / 1000;
     const { player, stage, stageRuntime } = this.snapshot;
     const wasOnGround = player.onGround;
-    const hadSupportAtFrameStart = player.supportPlatformId != null;
+    const supportPlatformIdAtFrameStart = player.supportPlatformId;
+    const hadSupportAtFrameStart = supportPlatformIdAtFrameStart != null;
     const direction = (input.right ? 1 : 0) - (input.left ? 1 : 0);
 
     this.syncPlayerContextToMachine(direction as -1 | 0 | 1);
@@ -1110,6 +1115,11 @@ export class GameSession {
         ? this.findSupportingTerrainPlatform(supportSurface.platform.id, player.x, player.y)
         : null;
     if (supportSurface && (wasOnGround || hadSupportAtFrameStart)) {
+      if (supportTerrainPlatform && !isPlatformTerrainSupportActive(supportTerrainPlatform)) {
+        player.supportPlatformId = null;
+        player.onGround = false;
+        detachedFromSupportThisFrame = true;
+      } else {
       const priorSupportX = supportSurface.prevX;
       const priorSupportY = supportSurface.prevY;
       const platformFrameDeltaX = supportSurface.x - supportSurface.prevX;
@@ -1144,6 +1154,7 @@ export class GameSession {
         }
         player.supportPlatformId = null;
         detachedFromSupportThisFrame = true;
+      }
       }
     }
 
@@ -1195,7 +1206,7 @@ export class GameSession {
 
     if (player.dashTimerMs <= 0) {
       const groundedForMotion = hadSupportAtFrameStart && !detachedFromSupportThisFrame;
-      const groundedOnSticky = groundedForMotion && supportTerrainPlatform?.surfaceMechanic?.kind === 'stickySludge';
+      const groundedOnSticky = groundedForMotion && supportTerrainPlatform?.kind === 'magnet';
       const groundAccel = groundedOnSticky ? GROUND_ACCEL * SLUDGE_GROUND_ACCEL_MULTIPLIER : GROUND_ACCEL;
       const groundMaxSpeed = groundedOnSticky ? MAX_MOVE_SPEED * SLUDGE_MAX_SPEED_MULTIPLIER : MAX_MOVE_SPEED;
       const accel = groundedForMotion ? groundAccel : AIR_ACCEL;
@@ -1391,19 +1402,40 @@ export class GameSession {
       }
     }
 
+    const ridingCrystalPlatform = ridingSurface?.kind === 'platform' && ridingSurface.platform.kind === 'crystal';
+    const freshCrystalContact = ridingCrystalPlatform && supportPlatformIdAtFrameStart !== (ridingSurface?.id ?? null);
+
     if (ridingSurface) {
-      if (!wasOnGround) {
-        this.playerActor.send({ type: 'GROUND_CONTACT' });
-        this.emitCue(AUDIO_CUES.land);
+      player.onGround = true;
+
+      if (ridingCrystalPlatform) {
+        if (!wasOnGround || freshCrystalContact) {
+          this.emitCue(AUDIO_CUES.crystalTouch);
+          this.crystalTouchLoopMs = CRYSTAL_TOUCH_REPEAT_MS;
+        } else {
+          this.crystalTouchLoopMs = Math.max(0, this.crystalTouchLoopMs - deltaMs);
+          if (this.crystalTouchLoopMs <= 0) {
+            this.emitCue(AUDIO_CUES.crystalTouch);
+            this.crystalTouchLoopMs = CRYSTAL_TOUCH_REPEAT_MS;
+          }
+        }
+      } else {
+        this.crystalTouchLoopMs = 0;
+        if (!wasOnGround) {
+          this.emitCue(AUDIO_CUES.land);
+        }
       }
       player.coyoteMs = COYOTE_TIME_MS;
       player.airJumpsRemaining = this.snapshot.progress.activePowers.doubleJump ? 1 : 0;
       player.thrusterPulseFuel = THRUSTER_PULSE_MAX_FUEL;
     } else if (wasOnGround) {
-      this.playerActor.send({ type: 'LEAVE_GROUND' });
+      this.crystalTouchLoopMs = 0;
+      player.onGround = false;
       if (hadSupportAtFrameStart && !detachedFromSupportThisFrame) {
         player.coyoteMs = Math.max(0, player.coyoteMs - deltaMs);
       }
+    } else {
+      this.crystalTouchLoopMs = 0;
     }
 
     this.handleActivationNodes();
@@ -1641,7 +1673,7 @@ export class GameSession {
     const supportedPlatformId = player.supportPlatformId;
 
     for (const platform of stageRuntime.platforms) {
-      if (platform.surfaceMechanic?.kind !== 'brittleCrystal' || !platform.brittle) {
+      if (platform.kind !== 'crystal' || !platform.brittle) {
         continue;
       }
 
@@ -1702,6 +1734,12 @@ export class GameSession {
         brittle.phase = 'broken';
         brittle.readyRemainingMs = 0;
         brittle.unsupportedGapMs = 0;
+        if (player.supportPlatformId === platform.id) {
+          player.supportPlatformId = null;
+          player.onGround = false;
+          player.springContactPlatformId = null;
+        }
+        this.emitCue(AUDIO_CUES.crystalBreak);
         continue;
       }
 
@@ -1878,7 +1916,7 @@ export class GameSession {
   }
 
   private armBrittlePlatform(platform: PlatformState | null): void {
-    if (!platform || platform.surfaceMechanic?.kind !== 'brittleCrystal' || !platform.brittle) {
+    if (!platform || platform.kind !== 'crystal' || !platform.brittle) {
       return;
     }
 
@@ -1892,7 +1930,6 @@ export class GameSession {
     platform.brittle.readyBreakDelayMs = BRITTLE_READY_BREAK_DELAY_MS;
     platform.brittle.readyElapsedMs = 0;
     platform.brittle.readyRemainingMs = BRITTLE_READY_BREAK_DELAY_MS;
-    this.emitCue(AUDIO_CUES.danger);
   }
 
   private updateEnemies(deltaMs: number, deltaSec: number): void {
@@ -2422,7 +2459,6 @@ export class GameSession {
     if (turret.timerMs <= 0) {
       turret.telegraphMs = turret.telegraphDurationMs;
       turret.pendingShots = Math.max(0, variantConfig.burstShots - 1);
-      this.emitCue(AUDIO_CUES.danger);
     }
   }
 
@@ -2747,7 +2783,7 @@ export class GameSession {
       this.snapshot.stageRuntime.platforms.find(
         (platform) =>
           platform.id === platformId &&
-          (platform.surfaceMechanic?.kind === 'brittleCrystal' || platform.surfaceMechanic?.kind === 'stickySludge') &&
+          (platform.kind === 'crystal' || platform.kind === 'magnet') &&
           supportPoint.x >= platform.x &&
           supportPoint.x <= platform.x + platform.width &&
           supportPoint.y >= platform.y - TERRAIN_SURFACE_TOP_EPSILON &&
@@ -2948,9 +2984,9 @@ export class GameSession {
       return {
         id: platform.id,
         kind: runtimeAuthoring.kind,
-        surfaceMechanic: platform.surfaceMechanic ? { kind: platform.surfaceMechanic.kind } : undefined,
+        surfaceMechanic: undefined,
         brittle:
-          platform.surfaceMechanic?.kind === 'brittleCrystal'
+          platform.kind === 'crystal'
             ? {
                 phase: 'intact',
                 warningMs: BRITTLE_WARNING_MS,

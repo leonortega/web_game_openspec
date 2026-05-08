@@ -68,6 +68,54 @@ const triangle = (
   graphics.fillTriangle(...points);
 };
 
+const line = (
+  graphics: Phaser.GameObjects.Graphics,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  width: number,
+  color: number,
+  alpha = 1,
+): void => {
+  graphics.lineStyle(width, color, alpha);
+  graphics.beginPath();
+  graphics.moveTo(x1, y1);
+  graphics.lineTo(x2, y2);
+  graphics.strokePath();
+};
+
+const cartoonMagnet = (
+  graphics: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  scale: number,
+  params: {
+    bodyColor: number;
+    capColor: number;
+    innerColor: number;
+    alpha: number;
+    glowColor?: number;
+    glowAlpha?: number;
+  },
+): void => {
+  const outerRadius = 5 * scale;
+  const innerRadius = 2.6 * scale;
+  const legHeight = 8 * scale;
+  const legWidth = 3.2 * scale;
+  const capHeight = 2.6 * scale;
+  if ((params.glowAlpha ?? 0) > 0 && params.glowColor !== undefined) {
+    circle(graphics, x, y + 3 * scale, outerRadius + 2.2 * scale, params.glowColor, params.glowAlpha);
+  }
+  circle(graphics, x, y + 3 * scale, outerRadius, params.bodyColor, params.alpha);
+  circle(graphics, x, y + 3 * scale, innerRadius, params.innerColor, params.alpha);
+  rect(graphics, x - outerRadius - 1, y - outerRadius - 1, outerRadius * 2 + 2, outerRadius, params.innerColor, params.alpha);
+  roundedRect(graphics, x - outerRadius, y - outerRadius, legWidth, legHeight, 1.4 * scale, params.bodyColor, params.alpha);
+  roundedRect(graphics, x + outerRadius - legWidth, y - outerRadius, legWidth, legHeight, 1.4 * scale, params.bodyColor, params.alpha);
+  rect(graphics, x - outerRadius, y - outerRadius, legWidth, capHeight, params.capColor, params.alpha);
+  rect(graphics, x + outerRadius - legWidth, y - outerRadius, legWidth, capHeight, params.capColor, params.alpha);
+};
+
 const colorPair = (base: number, bright: number, border = OUTLINE) => ({
   base,
   light: Phaser.Display.Color.Interpolate.ColorWithColor(
@@ -100,6 +148,9 @@ export const drawPlatformGraphic = (
     borderColor: number;
     alpha: number;
     active: boolean;
+    timeMs: number;
+    playerTouching: boolean;
+    springEngaged: boolean;
   },
 ): void => {
   const { platform } = params;
@@ -115,27 +166,78 @@ export const drawPlatformGraphic = (
   roundedRect(graphics, 3, 2, Math.max(10, width - 6), Math.max(3, topBand - 1), 3, trim.light, 0.9);
   rect(graphics, 4, topBand + 1, Math.max(8, width - 8), 2, trim.base, 0.65);
   const ribCount = Math.max(2, Math.floor(width / 20));
-  for (let index = 0; index < ribCount; index += 1) {
-    const ribX = 6 + index * Math.max(10, Math.floor((width - 12) / ribCount));
-    rect(graphics, ribX, topBand + 5, 3, Math.max(4, height - topBand - 9), panel.deep, 0.38);
+  if (platform.kind !== 'falling' && !platform.magnetic) {
+    for (let index = 0; index < ribCount; index += 1) {
+      const ribX = 6 + index * Math.max(10, Math.floor((width - 12) / ribCount));
+      rect(graphics, ribX, topBand + 5, 3, Math.max(4, height - topBand - 9), panel.deep, 0.38);
+    }
   }
   if (platform.kind === 'spring') {
-    rect(graphics, 6, height - 10, Math.max(10, width - 12), 3, trim.glow, 0.82);
-    for (let x = 8; x < width - 10; x += 10) {
-      triangle(graphics, [x, height - 7, x + 4, height - 13, x + 8, height - 7], trim.glow, 0.8);
+    const springRatio = platform.spring ? Phaser.Math.Clamp(platform.spring.timerMs / Math.max(platform.spring.cooldownMs, 1), 0, 1) : 0;
+    const boingLift = params.springEngaged ? 7 : Math.max(0, 5 - Math.round(springRatio * 6));
+    const compression = params.springEngaged ? 4 : Math.round(springRatio * 3);
+    const springTop = height - 13 + compression - boingLift;
+    rect(graphics, 6, height - 7, Math.max(10, width - 12), 3, trim.glow, 0.9);
+    rect(graphics, 8, height - 16 + compression - boingLift, Math.max(6, width - 16), 2, trim.light, params.springEngaged ? 0.92 : 0.72);
+    const springStartX = 10;
+    const springEndX = width - 10;
+    const segments = Math.max(4, Math.floor((springEndX - springStartX) / 6));
+    const step = (springEndX - springStartX) / segments;
+    for (let index = 0; index < segments; index += 1) {
+      const x1 = springStartX + index * step;
+      const x2 = springStartX + (index + 1) * step;
+      const y1 = index % 2 === 0 ? springTop : height - 8;
+      const y2 = index % 2 === 0 ? height - 8 : springTop;
+      line(graphics, x1, y1, x2, y2, 2, trim.base, 0.96);
+    }
+    if (params.springEngaged) {
+      triangle(graphics, [width / 2 - 6, springTop - 2, width / 2, springTop - 10, width / 2 + 6, springTop - 2], trim.glow, 0.88);
+      rect(graphics, width / 2 - 2, springTop - 14, 4, 6, params.brightColor, 0.72);
     }
   } else if (platform.kind === 'moving') {
-    rect(graphics, 6, height - 8, Math.max(12, width - 12), 2, trim.base, 0.82);
-    triangle(graphics, [width - 14, height / 2, width - 6, height / 2 - 4, width - 6, height / 2 + 4], trim.glow, 0.88);
+    const spin = (params.timeMs / 280) % (Math.PI * 2);
+    const gearCenters = [Math.max(10, Math.floor(width * 0.28)), Math.min(width - 10, Math.floor(width * 0.72))];
+    gearCenters.forEach((centerX, index) => {
+      const radius = index === 0 ? 5 : 6;
+      circle(graphics, centerX, height - 11, radius + 2, trim.deep, 0.95);
+      circle(graphics, centerX, height - 11, radius, trim.base, 1);
+      for (let tooth = 0; tooth < 6; tooth += 1) {
+        const angle = spin + tooth * (Math.PI / 3) * (index === 0 ? 1 : -1);
+        const toothX = centerX + Math.cos(angle) * (radius + 3);
+        const toothY = height - 11 + Math.sin(angle) * (radius + 3);
+        rect(graphics, toothX - 1, toothY - 1, 2, 2, trim.light, 0.84);
+      }
+      circle(graphics, centerX, height - 11, 2, trim.glow, 0.9);
+    });
   } else if (platform.kind === 'falling') {
-    rect(graphics, 4, 2, Math.max(10, width - 8), 2, trim.glow, 0.72);
-    for (let x = 10; x < width - 4; x += 12) {
-      rect(graphics, x, height - 9, 2, 5, trim.deep, 0.66);
-    }
+    const rocketCenters = [10, width / 2, width - 10].map((centerX) =>
+      Phaser.Math.Clamp(centerX, 8, Math.max(8, width - 8)),
+    );
+    const rocketsOffline = Boolean(params.playerTouching || platform.fall?.triggered || platform.fall?.falling);
+    const flameAlpha = rocketsOffline ? 0 : 0.72;
+    rocketCenters.forEach((centerX, index) => {
+      roundedRect(graphics, centerX - 4, height - 15, 8, 9, 3, trim.deep, 0.96);
+      roundedRect(graphics, centerX - 3, height - 14, 6, 6, 2, trim.base, 1);
+      triangle(graphics, [centerX - 4, height - 7, centerX, height - 2, centerX + 4, height - 7], trim.light, 0.86);
+      rect(graphics, centerX - 2, height - 17, 4, 2, rocketsOffline ? trim.base : trim.glow, rocketsOffline ? 0.38 : 0.74);
+      if (flameAlpha > 0.1) {
+        triangle(graphics, [centerX - 3, height - 4, centerX, height + 4 + index % 2, centerX + 3, height - 4], trim.glow, flameAlpha);
+        triangle(graphics, [centerX - 2, height - 4, centerX, height + 1 + index % 2, centerX + 2, height - 4], params.brightColor, flameAlpha * 0.9);
+      }
+    });
   }
   if (platform.magnetic) {
-    rect(graphics, 2, 4, 3, Math.max(6, height - 8), params.borderColor, platform.magnetic.powered ? 0.7 : 0.34);
-    rect(graphics, width - 5, 4, 3, Math.max(6, height - 8), params.borderColor, platform.magnetic.powered ? 0.7 : 0.34);
+    const pulse = params.playerTouching ? 0.8 + Math.sin(params.timeMs / 90) * 0.18 : 0.34;
+    const magnetColor = platform.magnetic.powered ? trim.glow : trim.base;
+    const magnets = [Math.max(12, Math.floor(width * 0.28)), Math.min(width - 12, Math.floor(width * 0.72))];
+    magnets.forEach((centerX) => {
+      roundedRect(graphics, centerX - 5, 7, 4, 10, 2, magnetColor, pulse);
+      roundedRect(graphics, centerX + 1, 7, 4, 10, 2, magnetColor, pulse);
+      rect(graphics, centerX - 1, 13, 2, 4, trim.light, pulse);
+      if (params.playerTouching) {
+        circle(graphics, centerX, 11, 2, trim.glow, 0.7);
+      }
+    });
   }
   if (platform.temporaryBridge && !params.active) {
     rect(graphics, 2, 2, width - 4, Math.max(4, height - 6), params.brightColor, 0.14);
@@ -151,27 +253,74 @@ export const drawTerrainVariantGraphic = (
     strokeColor: number;
     alpha: number;
     brightColor: number;
+    timeMs: number;
+    playerTouching: boolean;
   },
 ): void => {
   const { platform } = params;
   const width = platform.width;
   const height = platform.height;
   clearGraphics(graphics, params.alpha);
-  if (platform.surfaceMechanic?.kind === 'stickySludge') {
-    roundedRect(graphics, 3, Math.max(2, Math.floor(height * 0.28)), Math.max(12, width - 6), Math.max(5, Math.floor(height * 0.42)), 4, params.baseColor, 0.86);
-    rect(graphics, 5, Math.max(2, Math.floor(height * 0.32)), Math.max(10, width - 10), 3, params.accentColor, 0.88);
-    for (let x = 8; x < width - 6; x += 12) {
-      rect(graphics, x, height - 5, 3, 5, params.strokeColor, 0.42);
-    }
+  if (platform.kind === 'magnet') {
+    const shellColor = 0x57606b;
+    const panelColor = 0x818b96;
+    const trimColor = 0x444b55;
+    const topFill = 0xff7066;
+    const topLight = 0xffb08a;
+    const innerBody = 0x6c0e10;
+    const magnetBody = 0xff3e31;
+    const magnetCap = 0xd6d8de;
+    const activeGlow = 0xffd2d2;
+    const topBand = Math.max(7, Math.floor(height * 0.34));
+    roundedRect(graphics, 0, 4, width, Math.max(10, height - 8), 7, shellColor, 0.26);
+    roundedRect(graphics, 3, 1, Math.max(10, width - 6), Math.max(12, height - 10), 6, panelColor, 0.34);
+    roundedRect(graphics, 3, 1, Math.max(10, width - 6), Math.max(4, topBand - 1), 5, topFill, 0.96);
+    rect(graphics, 4, topBand - 1, Math.max(8, width - 8), 2, topLight, 0.82);
+    rect(graphics, 4, topBand + 1, Math.max(8, width - 8), 2, trimColor, 0.22);
+    const magnetPulse = params.playerTouching ? 0.78 + Math.sin(params.timeMs / 85) * 0.14 : 0;
+    const magnetCenters = [10, width / 2, width - 10].map((centerX) =>
+      Phaser.Math.Clamp(centerX, 8, Math.max(8, width - 8)),
+    );
+    magnetCenters.forEach((centerX, index) => {
+      const pulseScale = params.playerTouching ? 1.08 + Math.sin(params.timeMs / 110 + index * 0.8) * 0.08 : 1.08;
+      const sparkAlpha = params.playerTouching ? 0.34 + Math.sin(params.timeMs / 100 + index) * 0.1 : 0;
+      cartoonMagnet(graphics, centerX, height - 13, pulseScale * 1.12, {
+        bodyColor: magnetBody,
+        capColor: magnetCap,
+        innerColor: innerBody,
+        alpha: 0.98,
+        glowColor: activeGlow,
+        glowAlpha: 0.08 + magnetPulse * 0.22,
+      });
+      circle(graphics, centerX, height - 8, 2.2, 0xfff0ec, 0.26 + magnetPulse * 0.18);
+      if (params.playerTouching) {
+        circle(graphics, centerX, height - 8, 1.8, params.brightColor, 0.56);
+        circle(graphics, centerX - 7, height - 4, 1.2, activeGlow, sparkAlpha);
+        circle(graphics, centerX + 7, height - 4, 1.2, activeGlow, sparkAlpha);
+      }
+    });
     return;
   }
 
-  roundedRect(graphics, 3, 2, Math.max(12, width - 6), Math.max(6, height - 4), 4, params.baseColor, 0.72);
-  rect(graphics, 5, 4, Math.max(10, width - 10), 2, params.brightColor, 0.34);
-  const shardAlpha = isBrittlePlatformBroken(platform) ? 0.24 : isBrittlePlatformReady(platform) ? 0.9 : isBrittlePlatformWarning(platform) ? 0.66 : 0.48;
-  const crackColor = params.strokeColor;
-  for (let x = 8; x < width - 10; x += 14) {
-    triangle(graphics, [x, 7, x + 4, height - 6, x + 8, 8], crackColor, shardAlpha);
+  const isBroken = isBrittlePlatformBroken(platform);
+  const isReady = isBrittlePlatformReady(platform);
+  const isWarning = isBrittlePlatformWarning(platform);
+  const bodyAlpha = isBroken ? 0.18 : isReady ? 0.7 : isWarning ? 0.66 : 0.62;
+  const topBand = Math.max(7, Math.floor(height * 0.34));
+  roundedRect(graphics, 0, 4, width, Math.max(10, height - 8), 7, 0x535a64, bodyAlpha * 0.78);
+  roundedRect(graphics, 3, 1, Math.max(10, width - 6), Math.max(12, height - 10), 6, params.baseColor, bodyAlpha);
+  roundedRect(graphics, 3, 1, Math.max(10, width - 6), Math.max(4, topBand - 1), 5, params.accentColor, isBroken ? 0.3 : 0.96);
+  rect(graphics, 4, topBand - 1, Math.max(8, width - 8), 2, 0xe3dcff, isBroken ? 0.12 : isReady ? 0.8 : 0.68);
+  rect(graphics, 4, topBand + 1, Math.max(8, width - 8), 2, 0x5f6670, isBroken ? 0.08 : 0.34);
+  const shimmer = isBroken ? 0 : 0.28 + (Math.sin((params.timeMs + width) / 120) + 1) * 0.14;
+  const shineColumns = [0.22, 0.54, 0.8];
+  if (!isBroken) {
+    shineColumns.forEach((ratio, index) => {
+      const shineX = Math.floor(width * ratio);
+      const pulse = shimmer * (index === 1 ? 1 : 0.82);
+      roundedRect(graphics, shineX - 3, 6, 6, Math.max(6, height - 14), 3, 0xf6f1ff, pulse);
+      circle(graphics, shineX, 7, index === 1 ? 2.4 : 2, params.brightColor, pulse * 0.88);
+    });
   }
 };
 
@@ -201,12 +350,14 @@ export const drawGravityFieldGraphic = (
   for (let i = 0; i < 4; i += 1) {
     const offset = ((params.time / 120) + i * 9) % Math.max(16, height + 18);
     if (field.kind === 'anti-grav-stream') {
-      rect(graphics, 8 + i * Math.max(12, Math.floor(width / 5)), Math.max(-6, offset - 14), 4, Math.max(18, Math.floor(height * 0.4)), fieldColors.glow, params.enabled ? 0.22 + i * 0.04 : 0.08);
+      circle(graphics, 10 + i * Math.max(12, Math.floor(width / 5)), Math.max(8, offset - 8), 4, fieldColors.glow, params.enabled ? 0.28 + i * 0.05 : 0.1);
+      circle(graphics, 10 + i * Math.max(12, Math.floor(width / 5)), Math.max(18, offset + 8), 2, fieldColors.light, params.enabled ? 0.32 : 0.12);
     } else {
-      rect(graphics, 6, Math.max(-4, offset - 12), Math.max(10, width - 12), 3, fieldColors.glow, params.enabled ? 0.18 + i * 0.04 : 0.08);
+      circle(graphics, 10 + i * Math.max(10, Math.floor(width / 5)), Math.max(6, offset - 4), 3, fieldColors.glow, params.enabled ? 0.24 + i * 0.05 : 0.1);
+      triangle(graphics, [width / 2, Math.max(6, offset), width / 2 - 5, Math.max(14, offset + 8), width / 2 + 5, Math.max(14, offset + 8)], fieldColors.light, params.enabled ? 0.16 : 0.08);
     }
   }
-  rect(graphics, 2, 2, width - 4, 2, fieldColors.light, 0.36);
+  circle(graphics, width / 2, height / 2, Math.max(6, Math.floor(Math.min(width, height) * 0.08)), fieldColors.light, 0.16);
 };
 
 export const drawGravityCapsuleShellGraphic = (
@@ -217,7 +368,8 @@ export const drawGravityCapsuleShellGraphic = (
   clearGraphics(graphics, params.alpha);
   roundedRect(graphics, 0, 4, params.width, Math.max(12, params.height - 8), 10, shell.deep, 0.86);
   roundedRect(graphics, 3, 0, Math.max(10, params.width - 6), Math.max(12, params.height - 10), 8, shell.base, 0.92);
-  roundedRect(graphics, 6, 5, Math.max(8, params.width - 12), Math.max(6, Math.floor(params.height * 0.2)), 4, shell.light, 0.42);
+  circle(graphics, Math.floor(params.width * 0.28), Math.floor(params.height * 0.24), 3, shell.light, 0.42);
+  circle(graphics, Math.floor(params.width * 0.72), Math.floor(params.height * 0.24), 3, shell.light, 0.42);
   roundedRect(graphics, 8, Math.floor(params.height * 0.28), Math.max(6, params.width - 16), Math.max(10, Math.floor(params.height * 0.46)), 6, shell.glow, params.enabled ? 0.16 : 0.08);
 };
 

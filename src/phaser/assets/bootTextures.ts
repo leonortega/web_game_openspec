@@ -63,7 +63,7 @@ const REQUIRED_BOOT_TEXTURE_KEYS = [
   EXIT_CAPSULE_TEXTURE_KEYS.doorOpen,
 ] as const;
 
-const BOOT_TEXTURE_VERSION = 6;
+const BOOT_TEXTURE_VERSION = 7;
 const BOOT_TEXTURE_VERSION_KEY = '__bootTextureVersion';
 
 const PLAYER_SHEET_FRAME_SIZE = {
@@ -333,37 +333,32 @@ export const registerBootTextures = (scene: Phaser.Scene): void => {
     fillRect(context, 2, 11, 12, 2, '#2a3440');
   });
   createPixelTexture(scene, 'terrain-sticky', 16, 16, (context) => {
-    outlinedRect(context, 1, 2, 14, 12, '#4e6535');
-    fillRect(context, 2, 3, 12, 3, '#8fae58');
-    fillRect(context, 3, 8, 10, 4, '#67863d');
-    fillRect(context, 5, 12, 6, 2, '#2f4520');
+    fillRect(context, 2, 4, 12, 9, 'rgba(94, 16, 26, 0.58)');
+    fillRect(context, 2, 3, 12, 2, 'rgba(255, 92, 92, 0.92)');
+    fillRect(context, 4, 6, 3, 5, 'rgba(255, 244, 244, 0.22)');
+    fillRect(context, 9, 6, 3, 5, 'rgba(255, 244, 244, 0.22)');
   });
   createPixelTexture(scene, 'terrain-brittle', 16, 16, (context) => {
-    outlinedRect(context, 1, 2, 14, 12, '#7c6d99');
-    fillRect(context, 2, 3, 12, 3, '#b9a6e2');
-    fillRect(context, 4, 8, 3, 3, '#f0e8ff');
-    fillRect(context, 9, 8, 3, 3, '#d6c6ff');
-    fillRect(context, 6, 11, 4, 2, '#5d4b7f');
+    fillRect(context, 2, 3, 12, 10, 'rgba(137, 245, 255, 0.34)');
+    fillRect(context, 4, 4, 8, 2, 'rgba(237, 255, 255, 0.82)');
+    fillRect(context, 5, 7, 3, 4, 'rgba(255, 255, 255, 0.24)');
+    fillRect(context, 9, 7, 2, 4, 'rgba(255, 255, 255, 0.18)');
   });
   createPixelTexture(scene, 'terrain-brittle-warning', 16, 16, (context) => {
-    outlinedRect(context, 1, 2, 14, 12, '#7f5a30');
-    fillRect(context, 2, 3, 12, 3, '#f4cc6a');
-    fillRect(context, 4, 8, 3, 3, '#fff1bc');
-    fillRect(context, 9, 8, 3, 3, '#f7dc8a');
-    fillRect(context, 6, 11, 4, 2, '#6b4a22');
+    fillRect(context, 2, 3, 12, 10, 'rgba(255, 210, 120, 0.36)');
+    fillRect(context, 4, 4, 8, 2, 'rgba(255, 249, 212, 0.88)');
+    fillRect(context, 5, 7, 3, 4, 'rgba(255, 255, 255, 0.28)');
+    fillRect(context, 9, 7, 2, 4, 'rgba(255, 249, 212, 0.2)');
   });
   createPixelTexture(scene, 'terrain-brittle-ready', 16, 16, (context) => {
-    outlinedRect(context, 1, 2, 14, 12, '#7a3a2f');
-    fillRect(context, 2, 3, 12, 3, '#ef8a62');
-    fillRect(context, 4, 8, 3, 3, '#ffd0b9');
-    fillRect(context, 9, 8, 3, 3, '#f5ab87');
-    fillRect(context, 6, 11, 4, 2, '#5f281e');
+    fillRect(context, 2, 3, 12, 10, 'rgba(255, 152, 128, 0.42)');
+    fillRect(context, 4, 4, 8, 2, 'rgba(255, 232, 222, 0.92)');
+    fillRect(context, 5, 7, 3, 4, 'rgba(255, 255, 255, 0.3)');
+    fillRect(context, 9, 7, 2, 4, 'rgba(255, 214, 194, 0.22)');
   });
   createPixelTexture(scene, 'terrain-brittle-broken', 16, 16, (context) => {
-    outlinedRect(context, 1, 2, 14, 12, '#3f394a');
-    fillRect(context, 2, 3, 12, 3, '#7d748f');
-    fillRect(context, 3, 8, 10, 2, '#5a5268');
-    fillRect(context, 5, 11, 6, 2, '#312c3a');
+    fillRect(context, 3, 5, 10, 7, 'rgba(119, 123, 139, 0.18)');
+    fillRect(context, 5, 4, 5, 2, 'rgba(230, 236, 240, 0.22)');
   });
   createPixelTexture(scene, 'gravity-field-stream', 16, 16, (context) => {
     fillRect(context, 2, 2, 3, 12, '#9be8f7');
@@ -430,22 +425,32 @@ export const registerBootTextures = (scene: Phaser.Scene): void => {
     fillRect(context, 7, 7, 6, 6, '#e8f2ff');
   });
   createPixelTexture(scene, 'exit-base', 64, 16, (context) => {
-    outlinedRect(context, 2, 3, 60, 10, '#5f6e8a');
-    fillRect(context, 4, 5, 56, 3, '#aabddf');
-    fillRect(context, 6, 9, 52, 2, '#465471');
+    outlinedRect(context, 5, 4, 54, 8, '#b9c6d4');
+    fillRect(context, 8, 5, 48, 2, '#eef4fb');
+    fillRect(context, 11, 8, 42, 2, '#65778f');
+    fillRect(context, 18, 2, 5, 2, '#8fdff2');
+    fillRect(context, 41, 2, 5, 2, '#8fdff2');
   });
   createPixelTexture(scene, 'exit-beacon', 16, 16, (context) => {
-    outlinedRect(context, 3, 3, 10, 10, '#f7f3d6');
-    fillRect(context, 5, 5, 6, 6, '#8fdff2');
+    outlinedRect(context, 1, 2, 14, 10, '#d4dde8');
+    fillRect(context, 3, 4, 10, 2, '#eef4fb');
+    fillRect(context, 3, 7, 10, 3, '#8fdff2');
+    fillRect(context, 6, 7, 4, 3, '#f5cf64');
+    fillRect(context, 4, 12, 8, 2, '#5f718b');
   });
   createPixelTexture(scene, 'arrival-base', 48, 14, (context) => {
-    outlinedRect(context, 2, 2, 44, 10, '#6c7e9e');
-    fillRect(context, 4, 4, 40, 3, '#b8caeb');
-    fillRect(context, 6, 8, 36, 2, '#4b5a79');
+    outlinedRect(context, 4, 4, 40, 8, '#b9c6d4');
+    fillRect(context, 6, 5, 36, 2, '#eef4fb');
+    fillRect(context, 8, 8, 32, 2, '#65778f');
+    fillRect(context, 12, 2, 4, 2, '#8fdff2');
+    fillRect(context, 32, 2, 4, 2, '#8fdff2');
   });
   createPixelTexture(scene, 'arrival-beacon', 14, 14, (context) => {
-    outlinedRect(context, 2, 2, 10, 10, '#f7f3d6');
-    fillRect(context, 4, 4, 6, 6, '#9ce2f4');
+    outlinedRect(context, 1, 2, 12, 8, '#d4dde8');
+    fillRect(context, 3, 4, 8, 2, '#eef4fb');
+    fillRect(context, 3, 6, 8, 2, '#9ce2f4');
+    fillRect(context, 5, 6, 4, 2, '#f5cf64');
+    fillRect(context, 4, 10, 6, 2, '#5f718b');
   });
 
   const exitWarmHex = `#${retro.warm.toString(16).padStart(6, '0')}`;

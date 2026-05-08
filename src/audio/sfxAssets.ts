@@ -81,6 +81,7 @@ export const SFX_ASSET_MANIFEST: SfxAssetManifestEntry[] = [
   defineSfx(AUDIO_CUES.power, 'power', 'short power', 'General Sounds\\Positive Sounds\\sfx_sounds_powerup13.wav', 'power.wav', 0.46),
   defineSfx(AUDIO_CUES.block, 'interactive', 'short block', 'General Sounds\\Impacts\\sfx_sounds_impact6.wav', 'block.wav', 0.36),
   defineSfx(AUDIO_CUES.collapse, 'interactive', 'short collapse', 'Explosions\\Short\\sfx_explosion_short1.wav', 'collapse.wav', 0.38),
+  defineSfx(AUDIO_CUES.crystalBreak, 'interactive', 'crystal shatter', 'General Sounds\\Impacts\\sfx_sounds_impact5.wav', 'shoot-hit.wav', 0.38),
   defineSfx(AUDIO_CUES.spring, 'interactive', 'short spring', 'General Sounds\\Positive Sounds\\sfx_sounds_powerup8.wav', 'spring.wav', 0.4),
   defineSfx(AUDIO_CUES.movingPlatform, 'interactive', 'short moving platform', 'Movement\\Vehicles\\sfx_vehicle1.wav', 'moving-platform.wav', 0.18),
   defineSfx(AUDIO_CUES.menuNavigate, 'menu-ui', 'short menu navigate', 'General Sounds\\Menu Sounds\\sfx_menu_move1.wav', 'menu-navigate.wav', 0.34),

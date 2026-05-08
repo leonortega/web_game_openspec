@@ -294,12 +294,12 @@ export const getRetroHitFlashBlend = (
 };
 
 export const getRetroSurfaceDistortionProfile = (
-  platform: Pick<PlatformState, 'surfaceMechanic' | 'width'>,
+  platform: Pick<PlatformState, 'kind' | 'width'>,
   palette: Pick<RetroPresentationPalette, 'warm' | 'alert' | 'bright'>,
   timeMs: number,
   anchorX: number,
 ): RetroSurfaceDistortionProfile | null => {
-  if (platform.surfaceMechanic?.kind !== 'stickySludge') {
+  if (platform.kind !== 'magnet') {
     return null;
   }
 
@@ -548,6 +548,7 @@ export type RetroFeedbackSnapshot = {
   checkpoints: Array<{ id: string; activated: boolean; x: number; y: number; width: number; height: number }>;
   collectibles: Array<{ id: string; collected: boolean; x: number; y: number }>;
   rewardReveals: Array<{ id: string; kind: 'coins' | 'power'; x: number; y: number; power?: PowerType }>;
+  brittlePlatforms?: Array<{ id: string; phase: 'intact' | 'warning' | 'ready' | 'broken'; x: number; y: number; width: number; height: number }>;
   allCoinsRecovered: boolean;
   presentationPower: PowerType | null;
   player: { dead: boolean; x: number; y: number; width: number; height: number; health: number; invulnerableMs: number };
@@ -567,6 +568,7 @@ export type RetroFeedbackEvent =
   | { kind: 'checkpoint'; id: string; x: number; y: number }
   | { kind: 'coin'; id: string; x: number; y: number }
   | { kind: 'reward'; id: string; x: number; y: number }
+  | { kind: 'platform-break'; id: string; x: number; y: number; width: number; height: number }
   | { kind: 'power'; power: PowerType; x: number; y: number }
   | { kind: 'heal'; x: number; y: number }
   | { kind: 'player-hit'; x: number; y: number }
@@ -610,6 +612,20 @@ export const detectRetroFeedbackEvents = (
     }
 
     events.push({ kind: 'power', power: reveal.power ?? 'doubleJump', x: reveal.x, y: reveal.y });
+  }
+
+  for (const platform of current.brittlePlatforms ?? []) {
+    const prior = (previous.brittlePlatforms ?? []).find((entry) => entry.id === platform.id);
+    if (prior?.phase !== 'broken' && platform.phase === 'broken') {
+      events.push({
+        kind: 'platform-break',
+        id: platform.id,
+        x: platform.x + platform.width / 2,
+        y: platform.y + platform.height / 2,
+        width: platform.width,
+        height: platform.height,
+      });
+    }
   }
 
   if (!previous.allCoinsRecovered && current.allCoinsRecovered) {

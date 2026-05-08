@@ -72,6 +72,24 @@ export const spring = (x: number, y: number, width: number, height = 32, boost =
   spring: { boost, cooldownMs: 350 },
 });
 
+export const magnet = (x: number, y: number, width: number, height = 32): PlatformDefinition => ({
+  id: `platform-${x}-${y}-magnet`,
+  kind: 'magnet',
+  x,
+  y,
+  width,
+  height,
+});
+
+export const crystal = (x: number, y: number, width: number, height = 32): PlatformDefinition => ({
+  id: `platform-${x}-${y}-crystal`,
+  kind: 'crystal',
+  x,
+  y,
+  width,
+  height,
+});
+
 export const startCabin = (centerX: number, baseY: number, facing: 1 | -1 = 1): StartCabinDefinition => ({
   centerX,
   baseY,
@@ -686,10 +704,13 @@ export const resolveGroundedEnemyRect = (stage: StageDefinition, enemy: EnemyDef
   resolveAuthoredFlushRectOnSupport(stage, enemyRect(enemy), GROUNDED_ENEMY_SUPPORT_OVERLAP_RATIO, ['static', 'spring'])?.rect ?? null;
 
 export const findCheckpointSupport = (stage: StageDefinition, checkpointRect: Rect): PlatformDefinition | null =>
-  resolveAuthoredFlushRectOnSupport(stage, checkpointRect, CHECKPOINT_SUPPORT_OVERLAP_RATIO, ['static'])?.support ?? null;
+  resolveAuthoredFlushRectOnSupport(stage, checkpointRect, CHECKPOINT_SUPPORT_OVERLAP_RATIO, ['static', 'magnet', 'crystal'])?.support ?? null;
 
 export const resolveCheckpointRect = (stage: StageDefinition, checkpointRect: Rect): Rect | null => {
-  return resolveAuthoredFlushRectOnSupport(stage, checkpointRect, CHECKPOINT_SUPPORT_OVERLAP_RATIO, ['static'])?.rect ?? null;
+  return (
+    resolveAuthoredFlushRectOnSupport(stage, checkpointRect, CHECKPOINT_SUPPORT_OVERLAP_RATIO, ['static', 'magnet', 'crystal'])?.rect ??
+    null
+  );
 };
 
 export const findHazardSupport = (stage: StageDefinition, hazardRect: Rect): PlatformDefinition | null =>
@@ -726,7 +747,7 @@ export const resolveCheckpointRespawnPoint = (
 };
 
 export const findExitSupport = (stage: StageDefinition, exitRect: Rect): PlatformDefinition | null => {
-  return resolveAuthoredFlushRectOnSupport(stage, exitRect, 0.55, ['static'])?.support ?? null;
+  return resolveAuthoredFlushRectOnSupport(stage, exitRect, 0.55, ['static', 'magnet', 'crystal'])?.support ?? null;
 };
 
 const collectibleRect = (collectible: StageDefinition['collectibles'][number]): Rect => ({

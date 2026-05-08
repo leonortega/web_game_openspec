@@ -216,47 +216,47 @@ describe('astronaut presentation mappings', () => {
   it('treats brittle terrain support as active until the broken phase and keeps sludge always supporting', () => {
     expect(
       isPlatformTerrainSupportActive({
-        surfaceMechanic: { kind: 'brittleCrystal' },
+        kind: 'crystal',
         brittle: { phase: 'intact', warningMs: 420, unsupportedGapMs: 0 },
       }),
     ).toBe(true);
     expect(
       isPlatformTerrainSupportActive({
-        surfaceMechanic: { kind: 'brittleCrystal' },
+        kind: 'crystal',
         brittle: { phase: 'warning', warningMs: 120, unsupportedGapMs: 0 },
       }),
     ).toBe(true);
     expect(
       isPlatformTerrainSupportActive({
-        surfaceMechanic: { kind: 'brittleCrystal' },
+        kind: 'crystal',
         brittle: { phase: 'ready', warningMs: 0, unsupportedGapMs: 0 },
       }),
     ).toBe(true);
     expect(
       isPlatformTerrainSupportActive({
-        surfaceMechanic: { kind: 'brittleCrystal' },
+        kind: 'crystal',
         brittle: { phase: 'broken', warningMs: 0, unsupportedGapMs: 0 },
       }),
     ).toBe(false);
-    expect(isPlatformTerrainSupportActive({ surfaceMechanic: { kind: 'stickySludge' }, brittle: undefined })).toBe(true);
+    expect(isPlatformTerrainSupportActive({ kind: 'magnet', brittle: undefined })).toBe(true);
   });
 
   it('distinguishes brittle warning and broken phases for rendering and runtime checks', () => {
     expect(
       isBrittlePlatformWarning({
-        surfaceMechanic: { kind: 'brittleCrystal' },
+        kind: 'crystal',
         brittle: { phase: 'warning', warningMs: 120, unsupportedGapMs: 0 },
       }),
     ).toBe(true);
     expect(
       isBrittlePlatformBroken({
-        surfaceMechanic: { kind: 'brittleCrystal' },
+        kind: 'crystal',
         brittle: { phase: 'warning', warningMs: 120, unsupportedGapMs: 0 },
       }),
     ).toBe(false);
     expect(
       isBrittlePlatformBroken({
-        surfaceMechanic: { kind: 'brittleCrystal' },
+        kind: 'crystal',
         brittle: { phase: 'broken', warningMs: 0, unsupportedGapMs: 0 },
       }),
     ).toBe(true);

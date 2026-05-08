@@ -55,7 +55,6 @@ import {
   getRetroHitFlashPreset,
   getRetroMotionStep,
   getRetroPlayerPose,
-  getRetroSurfaceDistortionProfile,
   mixColor,
   playRetroDefeatTweenPreset,
   playRetroTweenPreset,
@@ -128,7 +127,6 @@ import {
 import {
   syncActivationNode as syncActivationNodeRendering,
   syncPlatform as syncPlatformRendering,
-  syncTerrainVariantPlatform as syncTerrainVariantPlatformRendering,
   type GameScenePlatformRenderingContext,
 } from './gameScene/platformRendering';
 import {
@@ -923,10 +921,6 @@ export class GameScene extends Phaser.Scene {
       this.syncPlatform(platform);
     }
 
-    for (const terrainVariantPlatform of state.stageRuntime.platforms.filter((platform) => platform.surfaceMechanic)) {
-      this.syncTerrainVariantPlatform(terrainVariantPlatform);
-    }
-
     for (const gravityField of state.stageRuntime.gravityFields) {
       this.syncGravityField(gravityField);
     }
@@ -1052,7 +1046,7 @@ export class GameScene extends Phaser.Scene {
     terrainVariantVisuals: {
       id: string;
       visualCategory: TraversalVisualCategory;
-      kind: NonNullable<PlatformState['surfaceMechanic']>['kind'];
+      kind: 'magnet' | 'crystal';
       x: number;
       y: number;
       width: number;
@@ -1190,7 +1184,7 @@ export class GameScene extends Phaser.Scene {
       terrainVariantVisuals: this.bridge
         .getSession()
         .getState()
-        .stageRuntime.platforms.filter((platform) => platform.surfaceMechanic).map((platform) => {
+        .stageRuntime.platforms.filter((platform) => platform.kind === 'magnet' || platform.kind === 'crystal').map((platform) => {
           const sprite = this.terrainVariantSprites.get(platform.id);
           const accent = this.terrainVariantAccentSprites.get(platform.id);
           const detailsRec = this.terrainVariantDetailSprites.get(platform.id) ?? [];
@@ -1217,7 +1211,7 @@ export class GameScene extends Phaser.Scene {
           return {
             id: platform.id,
             visualCategory: getTerrainTraversalVisualCategory(platform),
-            kind: platform.surfaceMechanic!.kind,
+            kind: platform.kind as 'magnet' | 'crystal',
             x: platform.x,
             y: platform.y,
             width: platform.width,
@@ -1382,10 +1376,6 @@ export class GameScene extends Phaser.Scene {
     syncActivationNodeRendering(this.getPlatformRenderingContext(), node as never);
   }
 
-  private syncTerrainVariantPlatform(platform: PlatformState): void {
-    syncTerrainVariantPlatformRendering(this.getPlatformRenderingContext(), platform);
-  }
-
   private syncGravityField(field: GravityFieldState): void {
     syncGravityFieldRendering(this.getGravityRenderingContext(), field);
   }
@@ -1400,11 +1390,11 @@ export class GameScene extends Phaser.Scene {
     const ready = isBrittlePlatformReady(platform);
     const centerX = platform.x + platform.width / 2;
     const centerY = platform.y + platform.height / 2;
-    const shardWidth = Math.max(6, Math.floor(platform.width * (broken ? 0.12 : ready ? 0.1 : 0.08)));
-    const shardHeight = Math.max(4, Math.floor(platform.height * (broken ? 0.4 : ready ? 0.6 : 0.72)));
-    const shardOffsets = [-0.28, 0, 0.28];
-    const shardYOffsets = broken ? [0.12, 0.18, 0.08] : ready ? [0.02, -0.16, 0.04] : [0.06, -0.08, 0.1];
-    const shardAlphas = broken ? [0.22, 0.16, 0.22] : ready ? [0.92, 1, 0.92] : warning ? [0.82, 0.96, 0.82] : [0.44, 0.66, 0.44];
+    const shineWidth = Math.max(6, Math.floor(platform.width * (broken ? 0.08 : ready ? 0.1 : 0.09)));
+    const shineHeight = Math.max(6, Math.floor(platform.height * (broken ? 0.2 : ready ? 0.72 : 0.64)));
+    const shineOffsets = [-0.24, 0, 0.24];
+    const shineYOffsets = broken ? [0.18, 0.1, 0.16] : ready ? [0, -0.04, 0.02] : [0.02, -0.06, 0.04];
+    const shineAlphas = broken ? [0.08, 0.1, 0.08] : ready ? [0.34, 0.48, 0.34] : warning ? [0.28, 0.4, 0.28] : [0.22, 0.32, 0.22];
 
     const setDetailMember = (rec: any, opts: any) => {
       if (!rec) return;
@@ -1420,25 +1410,17 @@ export class GameScene extends Phaser.Scene {
     };
 
     details.forEach((detail: any, index: number) => {
-      const x = centerX + platform.width * shardOffsets[index];
-      const y = centerY + platform.height * shardYOffsets[index];
-      const w = index === 1 ? shardWidth + 2 : shardWidth;
-      const h = index === 1 ? shardHeight + (broken ? 0 : 2) : shardHeight;
-      const color = broken ? this.retroPalette.border : ready ? this.retroPalette.alert : warning ? this.retroPalette.bright : this.retroPalette.border;
-      const alpha = shardAlphas[index];
+      const x = centerX + platform.width * shineOffsets[index];
+      const y = centerY + platform.height * shineYOffsets[index];
+      const w = index === 1 ? shineWidth + 2 : shineWidth;
+      const h = index === 1 ? shineHeight + (broken ? 0 : 2) : shineHeight;
+      const color = broken ? this.retroPalette.border : this.retroPalette.bright;
+      const alpha = shineAlphas[index];
       setDetailMember(detail, { x, y, width: w, height: h, fill: color, alpha, visible: true, scaleX: w / 2, scaleY: h / 2, tintTopLeft: color, tintTopRight: color, tintBottomLeft: color, tintBottomRight: color });
     });
   }
 
-  private syncStickyTerrainVariantDetails(platform: PlatformState, details: Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>): void {
-    const centerX = platform.x + platform.width / 2;
-    const centerY = platform.y + platform.height / 2;
-    const bandHeight = Math.max(2, Math.floor(platform.height * 0.24));
-    const baseWidths = [0.84, 0.62, 0.74];
-    const yOffsets = [-0.16, 0.04, 0.22];
-    const driftStep = (this.time.now + platform.x) / 140;
-    const distortion = getRetroSurfaceDistortionProfile(platform, this.retroPalette, this.time.now, platform.x);
-
+  private syncStickyTerrainVariantDetails(_platform: PlatformState, details: Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>): void {
     const setDetailMember = (rec: any, opts: any) => {
       if (!rec) return;
       if (rec.layer) {
@@ -1453,14 +1435,8 @@ export class GameScene extends Phaser.Scene {
     };
 
     details.forEach((detail: any, index: number) => {
-      const drift = distortion?.bandOffsets[index] ?? Math.sin(driftStep + index * 0.9) * Math.max(4, platform.width * 0.04);
-      const widthPulse = (Math.cos(driftStep * 1.2 + index) + 1) * Math.max(2, platform.width * 0.03);
-      const bandWidth = Math.max(12, Math.floor(platform.width * ((distortion?.bandWidths[index] ?? baseWidths[index]) - widthPulse / Math.max(platform.width, 1))));
-      const x = centerX + drift * (index === 1 ? -1 : 1);
-      const y = centerY + platform.height * yOffsets[index];
-      const fill = distortion?.colors[index] ?? (index === 1 ? this.retroPalette.warm : this.retroPalette.alert);
-      const alpha = distortion?.bandAlphas[index] ?? (index === 1 ? 0.34 : 0.46);
-      setDetailMember(detail, { x, y, width: bandWidth, height: bandHeight, fill, alpha, visible: true, scaleX: bandWidth / 2, scaleY: bandHeight / 2, tintTopLeft: fill, tintTopRight: fill, tintBottomLeft: fill, tintBottomRight: fill });
+      void index;
+      setDetailMember(detail, { visible: false, alpha: 0 });
     });
   }
 
@@ -1716,6 +1692,11 @@ export class GameScene extends Phaser.Scene {
           spawnRetroParticleBurst(this, event.x, event.y, this.retroPalette.warm, 'reward');
           this.recordFeedback('reward');
           break;
+        case 'platform-break':
+          spawnRetroParticleBurst(this, event.x, event.y, this.retroPalette.cool, 'reward');
+          this.spawnBeamPulse('distortion', event.x, event.y, this.retroPalette.bright, Math.max(24, event.width), Math.max(12, Math.floor(event.height * 0.9)), 120, 11);
+          this.recordFeedback('platformBreak');
+          break;
         case 'power': {
           const powerX = event.x === 0 ? state.player.x + state.player.width / 2 : event.x;
           const powerY = event.y === 0 ? state.player.y + state.player.height / 2 : event.y;
@@ -1781,6 +1762,16 @@ export class GameScene extends Phaser.Scene {
         x: rewardReveal.x,
         y: rewardReveal.y,
       })),
+      brittlePlatforms: state.stageRuntime.platforms
+        .filter((platform) => platform.kind === 'crystal' && platform.brittle)
+        .map((platform) => ({
+          id: platform.id,
+          phase: platform.brittle?.phase ?? 'intact',
+          x: platform.x,
+          y: platform.y,
+          width: platform.width,
+          height: platform.height,
+        })),
       allCoinsRecovered: state.stageRuntime.allCoinsRecovered,
       presentationPower: state.player.presentationPower,
       player: {
