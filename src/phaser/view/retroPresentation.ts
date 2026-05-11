@@ -1143,6 +1143,156 @@ const drawMountainRange = (
   }
 };
 
+const fillBackdropPolygon = (
+  graphics: Phaser.GameObjects.Graphics,
+  points: number[],
+): void => {
+  graphics.beginPath();
+  graphics.moveTo(points[0] ?? 0, points[1] ?? 0);
+  for (let index = 2; index < points.length; index += 2) {
+    graphics.lineTo(points[index] ?? 0, points[index + 1] ?? 0);
+  }
+  graphics.closePath();
+  graphics.fillPath();
+};
+
+const drawCaveFormation = (
+  graphics: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  color: number,
+  alpha: number,
+  detailColor: number,
+  detailAlpha: number,
+  seed: number,
+): void => {
+  graphics.fillStyle(color, alpha);
+  const skew = (((seed >> 2) & 0x0f) / 15 - 0.5) * 0.18;
+  const leftRise = 0.78 - (((seed >> 6) & 0x07) * 0.04);
+  const midPeak = 0.3 + (((seed >> 9) & 0x07) * 0.035);
+  const rightPeak = 0.22 + (((seed >> 12) & 0x07) * 0.03);
+  const shoulder = 0.56 + (((seed >> 15) & 0x07) * 0.02);
+  const notch = 0.76 + (((seed >> 18) & 0x07) * 0.02);
+  const baseHeight = Math.max(48, height * 0.42);
+  const baseBottom = y + height + baseHeight * 0.7;
+
+  graphics.fillRect(x, y + height - baseHeight, width, baseBottom - (y + height - baseHeight));
+
+  fillBackdropPolygon(graphics, [
+    x,
+    y + height - baseHeight,
+    x + width * 0.08,
+    y + Math.min(height * leftRise, height - baseHeight * 0.8),
+    x + width * (0.18 + skew * 0.35),
+    y + Math.min(height * (0.52 - (leftRise - 0.5) * 0.2), height - baseHeight),
+    x + width * (0.28 + skew),
+    y + height * midPeak,
+    x + width * (0.42 + skew * 0.5),
+    y + height * shoulder,
+    x + width * (0.56 + skew * 0.25),
+    y + height * (0.44 - (shoulder - 0.56) * 0.3),
+    x + width * notch,
+    y + height * rightPeak,
+    x + width * 0.9,
+    y + Math.min(height * 0.8, height - baseHeight * 0.7),
+    x + width,
+    y + baseBottom,
+    x,
+    y + baseBottom,
+  ]);
+
+  graphics.fillStyle(detailColor, detailAlpha);
+  fillBackdropPolygon(graphics, [
+    x + width * 0.04,
+    y + baseBottom,
+    x + width * 0.08,
+    y + height * (leftRise - 0.08),
+    x + width * 0.14,
+    y + height * (leftRise - 0.18),
+    x + width * 0.18,
+    y + height * (leftRise - 0.06),
+    x + width * 0.14,
+    y + baseBottom,
+  ]);
+  fillBackdropPolygon(graphics, [
+    x + width * (0.34 + skew * 0.2),
+    y + baseBottom,
+    x + width * (0.42 + skew * 0.16),
+    y + height * 0.82,
+    x + width * (0.48 + skew * 0.14),
+    y + height * 0.66,
+    x + width * (0.54 + skew * 0.1),
+    y + height * 0.88,
+    x + width * (0.5 + skew * 0.1),
+    y + baseBottom,
+  ]);
+  fillBackdropPolygon(graphics, [
+    x + width * 0.78,
+    y + baseBottom,
+    x + width * 0.84,
+    y + height * 0.82,
+    x + width * 0.9,
+    y + height * (rightPeak + 0.1),
+    x + width * 0.96,
+    y + height * 0.9,
+    x + width * 0.92,
+    y + baseBottom,
+  ]);
+};
+
+const drawCaveCeiling = (
+  graphics: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  color: number,
+  alpha: number,
+  seed: number,
+): void => {
+  graphics.fillStyle(color, alpha);
+  const ceilingA = 0.08 + (((seed >> 3) & 0x07) * 0.008);
+  const ceilingB = 0.14 + (((seed >> 7) & 0x07) * 0.012);
+  const ceilingC = 0.1 + (((seed >> 11) & 0x07) * 0.01);
+  fillBackdropPolygon(graphics, [
+    x,
+    y,
+    x + width,
+    y,
+    x + width,
+    y + height * ceilingA,
+    x + width * 0.88,
+    y + height * (ceilingB + 0.03),
+    x + width * 0.72,
+    y + height * ceilingC,
+    x + width * 0.58,
+    y + height * (ceilingB + 0.05),
+    x + width * 0.42,
+    y + height * (ceilingA + 0.02),
+    x + width * 0.24,
+    y + height * (ceilingB + 0.02),
+    x + width * 0.1,
+    y + height * ceilingC,
+    x,
+    y + height * (ceilingA + 0.01),
+  ]);
+};
+
+const drawAtmosphereBand = (
+  graphics: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  color: number,
+  alpha: number,
+): void => {
+  graphics.fillStyle(color, alpha);
+  graphics.fillRect(x, y, width, height);
+};
+
 
 export const drawRetroBackdrop = (
   scene: Phaser.Scene,
@@ -1162,6 +1312,7 @@ export const drawRetroBackdrop = (
   const midPlanetLayer = scene.add.graphics().setDepth(-26.5).setName('__retro-backdrop-mid-planets');
   const midMountainLayer = scene.add.graphics().setDepth(-26).setName('__retro-backdrop-mid-mountains');
   const nearMountainLayer = scene.add.graphics().setDepth(-25).setName('__retro-backdrop-near-mountains');
+  const caveLayer = scene.add.graphics().setDepth(-24).setName('__retro-backdrop-cave');
 
   if (variant === 'gameplay') {
     baseLayer.setScrollFactor(0, 0);
@@ -1171,14 +1322,18 @@ export const drawRetroBackdrop = (
     midPlanetLayer.setScrollFactor(0.14, 0.14);
     midMountainLayer.setScrollFactor(0.22, 0.22);
     nearMountainLayer.setScrollFactor(0.34, 0.34);
+    caveLayer.setScrollFactor(0.56, 0);
   }
 
   const motif = createRetroBackdropMotifPalette(palette);
   const deepSky = mixColor(palette.background, palette.ink, 0.18);
-  const farTone = mixColor(palette.background, motif.craterDark, 0.14);
-  const midTone = mixColor(motif.planetShade, palette.background, 0.18);
-  const nearTone = mixColor(motif.planetFill, motif.planetShade, 0.34);
-  const highlightTone = mixColor(motif.horizonGlow, palette.bright, 0.12);
+  const farTone = mixColor(palette.background, motif.craterDark, 0.22);
+  const midTone = mixColor(motif.planetShade, palette.background, 0.08);
+  const nearTone = mixColor(motif.planetFill, motif.planetShade, 0.2);
+  const caveTone = mixColor(palette.ink, motif.craterDark, 0.08);
+  const caveDetailTone = mixColor(motif.planetShade, motif.planetFill, 0.18);
+  const fogTone = mixColor(motif.planetShade, deepSky, 0.18);
+  const highlightTone = mixColor(motif.horizonGlow, palette.bright, 0.08);
   const layoutWidth = variant === 'gameplay' ? scene.scale.width : width;
   const layoutHeight = variant === 'gameplay' ? scene.scale.height : height;
   const farBaseY = y + Math.floor(height * (variant === 'gameplay' ? 0.66 : 0.62));
@@ -1192,6 +1347,8 @@ export const drawRetroBackdrop = (
 
   baseLayer.fillStyle(deepSky, 1);
   baseLayer.fillRect(x, y, width, height);
+  baseLayer.fillStyle(caveTone, 0.22);
+  baseLayer.fillRect(x, y, width, Math.floor(layoutHeight * 0.1));
   baseLayer.fillStyle(highlightTone, 0.08);
   baseLayer.fillRect(x, farBaseY - 10, width, 18);
 
@@ -1202,6 +1359,12 @@ export const drawRetroBackdrop = (
     const starSize = ((starSeed >> 4) & 0x03) === 0 ? 1 : 2;
     const starColor = index % 4 === 0 ? motif.starWarm : motif.starCool;
     const starAlpha = 0.34 + ((starSeed >> 10) & 0x03) * 0.1;
+    const heroDx = starX - (x + layoutWidth * 0.5);
+    const heroDy = starY - (y + layoutHeight * 0.2);
+    if (Math.hypot(heroDx / Math.max(1, heroPlanetRadius * 1.18), heroDy / Math.max(1, heroPlanetRadius * 0.72)) < 1.04) {
+      continue;
+    }
+
     const star = scene.add
       .rectangle(starX, starY, starSize, starSize, starColor, starAlpha)
       .setOrigin(0.5)
@@ -1253,7 +1416,7 @@ export const drawRetroBackdrop = (
   drawBackdropPlanet(
     heroPlanetLayer,
     x + layoutWidth * 0.5,
-    y + layoutHeight * 0.2,
+    y + layoutHeight * 0.19,
     heroPlanetRadius,
     mixColor(motif.planetFill, palette.bright, 0.22),
     mixColor(motif.planetShade, motif.craterDark, 0.08),
@@ -1325,6 +1488,15 @@ export const drawRetroBackdrop = (
 
   nearMountainLayer.fillStyle(nearTone, 0.98);
   nearMountainLayer.fillRect(x, nearBaseY, width, y + height - nearBaseY);
+  drawAtmosphereBand(
+    nearMountainLayer,
+    x,
+    midBaseY - Math.floor(layoutHeight * 0.05),
+    width,
+    Math.max(10, Math.floor(layoutHeight * 0.04)),
+    fogTone,
+    0.12,
+  );
   drawMountainRange(
     nearMountainLayer,
     x,
@@ -1338,6 +1510,44 @@ export const drawRetroBackdrop = (
     0.94,
     seed ^ 0x45ab3,
   );
+
+  drawCaveCeiling(
+    caveLayer,
+    x,
+    y,
+    width,
+    layoutHeight,
+    caveTone,
+    0.86,
+    seed ^ 0x51a9,
+  );
+  const caveFormationCount = 10;
+  for (let caveIndex = 0; caveIndex < caveFormationCount; caveIndex += 1) {
+    const caveSeed = (seed + caveIndex * 541) >>> 0;
+    const segmentStart = x + (width / caveFormationCount) * caveIndex;
+    const segmentWidth = width / caveFormationCount;
+    const formationWidth = Math.max(140, Math.floor(layoutWidth * (0.24 + ((caveSeed & 0x0f) / 15) * 0.22)));
+    const formationHeight = Math.max(
+      220,
+      Math.floor(layoutHeight * (0.84 + (((caveSeed >> 6) & 0x0f) / 15) * 0.22)),
+    );
+    const formationLeft = segmentStart + Math.floor(segmentWidth * (0.04 + (((caveSeed >> 17) & 0x0f) / 15) * 0.18));
+    const formationTop = y + layoutHeight - formationHeight;
+    const localAlpha = 1;
+    const localDetailAlpha = 0.22 + (((caveSeed >> 12) & 0x03) * 0.04);
+    drawCaveFormation(
+      caveLayer,
+      formationLeft,
+      formationTop,
+      formationWidth,
+      formationHeight,
+      caveTone,
+      localAlpha,
+      caveDetailTone,
+      localDetailAlpha,
+      caveSeed,
+    );
+  }
 
   return baseLayer;
 };
