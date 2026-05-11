@@ -15,6 +15,25 @@ const loadScript = async (src: string): Promise<void> => {
   });
 };
 
+const ensureRetroFontLoaded = async (): Promise<void> => {
+  if (!('fonts' in document)) {
+    return;
+  }
+
+  const fonts = document.fonts;
+  const fontSpec = '16px "Press Start 2P"';
+  const waitForFont = Promise.allSettled([
+    fonts.load(fontSpec),
+    fonts.ready,
+  ]);
+  const timeout = new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 2500);
+  });
+
+  await Promise.race([waitForFont, timeout]);
+};
+
+await ensureRetroFontLoaded();
 await loadScript('/vendor/rex/rexlocalforagefilesplugin.min.js');
 await loadScript('/vendor/rex/rexcrtfilterplugin.min.js');
 await loadScript('/vendor/rex/rextagtextplugin.min.js');

@@ -1,6 +1,11 @@
 import * as Phaser from 'phaser';
 import { TURRET_VARIANT_CONFIG, type EnemyDefeatCause, type EnemyState, type PlatformState, type PowerType } from '../../game/simulation/state';
 
+const ignoreFromUiCamera = (scene: Phaser.Scene, target: Phaser.GameObjects.GameObject): void => {
+  const uiCamera = (scene as Phaser.Scene & { uiCamera?: Phaser.Cameras.Scene2D.Camera }).uiCamera;
+  uiCamera?.ignore(target);
+};
+
 type StagePalette = {
   accent: number;
   skyTop?: number;
@@ -830,6 +835,7 @@ export const spawnRetroDefeatFlash = (
     .setDepth(config.depth)
     .setStrokeStyle(2, 0xffffff, 0.94)
     .setScale(config.scaleStart);
+  ignoreFromUiCamera(scene, flash);
 
   scene.tweens.add({
     targets: flash,
@@ -941,6 +947,7 @@ export const spawnRetroParticleBurst = (
     gravityY: config.gravityY ?? 0,
   });
   emitter.setDepth(config.depth);
+  ignoreFromUiCamera(scene, emitter);
   emitter.explode(config.count, x, y);
   scene.time.delayedCall(config.cleanupDelayMs ?? config.lifespan + 80, () => emitter.destroy());
   return emitter;

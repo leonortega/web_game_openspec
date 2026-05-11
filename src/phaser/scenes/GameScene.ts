@@ -79,7 +79,6 @@ import {
   platformColor,
   platformDetailColor,
   rewardBlockColor,
-  rewardBlockLabel,
   rewardRevealColor,
   rewardRevealText,
   terrainVariantAccentAlpha,
@@ -136,7 +135,7 @@ import {
   type GameSceneRewardRenderingContext,
 } from './gameScene/rewardRendering';
 import { createRexHud } from '../ui/rexHud';
-import { bindScaleOuter } from '../ui/rexUiTheme';
+import { bindScaleOuter, getViewportMetrics } from '../ui/rexUiTheme';
 import { drawAstronautGraphic } from '../view/runtimeCharacterGraphics';
 import { drawTeleportMachineGraphic, drawTeleportShutterGraphic } from '../view/teleportMachineGraphics';
 
@@ -273,7 +272,7 @@ export class GameScene extends Phaser.Scene {
 
   private rewardBlockSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
-  private rewardBlockLabels = new Map<string, Phaser.GameObjects.Text>();
+  private rewardBlockIcons = new Map<string, Phaser.GameObjects.Graphics>();
 
   private rewardRevealTexts = new Map<string, Phaser.GameObjects.Text>();
 
@@ -314,6 +313,8 @@ export class GameScene extends Phaser.Scene {
   private pauseText!: Phaser.GameObjects.Text;
 
   private hud!: ReturnType<typeof createRexHud>;
+
+  private uiCamera!: Phaser.Cameras.Scene2D.Camera;
 
   private completeTransitionEvent?: Phaser.Time.TimerEvent;
 
@@ -372,7 +373,7 @@ export class GameScene extends Phaser.Scene {
     void this.projectileTrailEmitters;
     void this.transientParticleEffects;
     void this.rewardBlockSprites;
-    void this.rewardBlockLabels;
+    void this.rewardBlockIcons;
     void this.rewardRevealTexts;
     void this.hazardSprites;
     void this.enemyDefeatVisibleUntilMs;
@@ -410,7 +411,7 @@ export class GameScene extends Phaser.Scene {
     void this.checkpointSprites;
     void this.collectibleSprites;
     void this.rewardBlockSprites;
-    void this.rewardBlockLabels;
+    void this.rewardBlockIcons;
     void this.enemySprites;
     void this.enemyAccentSprites;
     void this.playerAnchor;
@@ -461,7 +462,6 @@ export class GameScene extends Phaser.Scene {
     void this.terrainVariantAlpha;
     void this.terrainVariantAccentColor;
     void this.rewardBlockColor;
-    void this.rewardBlockLabel;
     void this.createTraversalMarkerRects;
     void this.drawHazard;
     return this as unknown as GameSceneBaseDisplayContext;
@@ -529,10 +529,9 @@ export class GameScene extends Phaser.Scene {
     void this.checkpointContactStrips;
     void this.collectibleSprites;
     void this.rewardBlockSprites;
-    void this.rewardBlockLabels;
+    void this.rewardBlockIcons;
     void this.rewardRevealTexts;
     void this.rewardBlockColor;
-    void this.rewardBlockLabel;
     void this.rewardRevealText;
     void this.rewardRevealColor;
     return this as unknown as GameSceneRewardRenderingContext;
@@ -563,8 +562,6 @@ export class GameScene extends Phaser.Scene {
     ensureBootTexturesRegistered(this);
     ensureParticleTexture(this);
     this.ensurePlayerAnimations();
-    this.hud = createRexHud(this);
-    setupGameSceneHud(this.getHudSetupContext());
 
     const state = this.bridge.getSession().getState();
     const { stage } = state;
@@ -592,6 +589,12 @@ export class GameScene extends Phaser.Scene {
     );
     this.gameplayMusicStarted = false;
     createBaseDisplayObjects(this.getBaseDisplayContext(), state);
+    this.hud = createRexHud(this);
+    setupGameSceneHud(this.getHudSetupContext());
+    this.uiCamera = this.cameras.add(0, 0, this.scale.width, this.scale.height, false, 'ui');
+    this.cameras.main.ignore([this.hud.root, this.pauseOverlay, this.pauseText]);
+    const uiObjects = new Set<Phaser.GameObjects.GameObject>([this.hud.root, this.pauseOverlay, this.pauseText]);
+    this.uiCamera.ignore(this.children.getAll().filter((entry) => !uiObjects.has(entry)));
 
     this.setupInput();
     this.cameras.main.startFollow(this.playerAnchor, true, 0.08, 0.08);
@@ -599,9 +602,11 @@ export class GameScene extends Phaser.Scene {
     this.bridge.syncHud(this.hud);
     this.startGameplayMusicIfReady();
 
-    const syncPauseOverlayLayout = ({ width, height }: { width: number; height: number }): void => {
-      this.pauseOverlay.setPosition(width / 2, height / 2).setSize(width, height);
-      this.pauseText.setPosition(width / 2, height / 2);
+    const syncPauseOverlayLayout = (gameSize: { width: number; height: number }): void => {
+      const { centerX, centerY, width, height } = getViewportMetrics(this, gameSize);
+      this.pauseOverlay.setPosition(centerX, centerY).setSize(width, height);
+      this.pauseText.setPosition(centerX, centerY);
+      this.uiCamera.setViewport(0, 0, width, height);
     };
     this.scale.on(Phaser.Scale.Events.RESIZE, syncPauseOverlayLayout);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -1621,10 +1626,6 @@ export class GameScene extends Phaser.Scene {
 
   private rewardBlockColor(rewardBlock: RewardBlockState): number {
     return rewardBlockColor(this.retroPalette, rewardBlock);
-  }
-
-  private rewardBlockLabel(rewardBlock: RewardBlockState): string {
-    return rewardBlockLabel(rewardBlock);
   }
 
   private rewardRevealText(rewardReveal: RewardRevealState): string {

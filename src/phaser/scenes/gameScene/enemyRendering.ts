@@ -20,6 +20,11 @@ import {
 import { drawEnemyGraphic } from '../../view/runtimeCharacterGraphics';
 import { drawHazardGraphic, drawProjectileGraphic } from '../../view/runtimeWorldGraphics';
 
+const ignoreFromUiCamera = (scene: Phaser.Scene, target: Phaser.GameObjects.GameObject): void => {
+  const uiCamera = (scene as Phaser.Scene & { uiCamera?: Phaser.Cameras.Scene2D.Camera }).uiCamera;
+  uiCamera?.ignore(target);
+};
+
 const ENEMY_VISUAL_HEIGHTS = {
   walker: WALKER_TEXTURE_SIZE.height,
   hopper: HOPPER_TEXTURE_SIZE.height,
@@ -205,6 +210,7 @@ export function syncProjectile(scene: GameSceneEnemyRenderingContext, projectile
 
   if (!sprite) {
     sprite = scene.add.graphics();
+    ignoreFromUiCamera(scene, sprite);
     scene.projectileSprites.set(projectile.id, sprite);
   }
 

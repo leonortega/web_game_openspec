@@ -15,8 +15,6 @@ const rexGlobals = globalThis as typeof globalThis & {
 export const buildGameConfig = (parent: HTMLElement): Phaser.Types.Core.GameConfig => ({
   type: Phaser.WEBGL,
   parent,
-  width: 960,
-  height: 540,
   backgroundColor: '#091310',
   pixelArt: true,
   roundPixels: true,
@@ -45,7 +43,9 @@ export const buildGameConfig = (parent: HTMLElement): Phaser.Types.Core.GameConf
     },
   },
   scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: 960,
+    height: 540,
+    mode: Phaser.Scale.RESIZE,
+    autoCenter: Phaser.Scale.NO_CENTER,
   },
 });

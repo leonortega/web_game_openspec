@@ -8,7 +8,7 @@ import { SynthAudio } from '../audio/SynthAudio';
 import { ensureBootTexturesRegistered } from '../assets/bootTextures';
 import { runUnlockedAudioAction } from '../audio/sceneAudio';
 import { applyConfiguredRetroPostFxToCamera } from '../retroPostFx';
-import { bindScaleOuter, createNinePatch, RETRO_TEXT_STYLE, UI_COLORS } from '../ui/rexUiTheme';
+import { bindScaleOuter, createNinePatch, getAuthoredGameSize, getViewportMetrics, RETRO_TEXT_STYLE, UI_COLORS } from '../ui/rexUiTheme';
 
 const INTRO_DURATION_MS = 2400;
 const describePowerVariant = (value: keyof typeof PLAYER_POWER_VARIANTS): string => {
@@ -42,9 +42,8 @@ export class StageIntroScene extends Phaser.Scene {
 
   create(): void {
     const bridge = this.registry.get('bridge') as SceneBridge;
+    const authoredGameSize = getAuthoredGameSize(this);
     const state = bridge.getSession().getState();
-    const { width, height } = this.scale;
-    const stageOffsetX = 42;
     const stagePresentation = state.stage.presentation;
     const samplesTaken = state.progress.totalCoins;
     const powerVariant = state.player.presentationPower ?? getPrimaryPowerVariant(state.progress.activePowers, state.progress.powerTimers);
@@ -58,9 +57,9 @@ export class StageIntroScene extends Phaser.Scene {
     applyConfiguredRetroPostFxToCamera(this.game, this.cameras.main);
     bindScaleOuter(this);
 
-    this.add.rectangle(width / 2 + stageOffsetX, height / 2, width + 24, height + 24, 0x05090d, 1).setDepth(0.5);
-    this.add.rectangle(width / 2 + stageOffsetX, height / 2, width + 24, height + 24, 0x071014, 0.96).setDepth(0.6);
-    [
+    const baseBackdrop = this.add.rectangle(0, 0, 10, 10, 0x05090d, 1).setDepth(0.5);
+    const baseBackdropGlow = this.add.rectangle(0, 0, 10, 10, 0x071014, 0.96).setDepth(0.6);
+    const staticStars = [
       { x: 74, y: 58, size: 3, color: 0xf7f3d6, alpha: 0.95 },
       { x: 118, y: 96, size: 2, color: 0x8fdff2, alpha: 0.82 },
       { x: 188, y: 64, size: 2, color: 0xf0b84b, alpha: 0.76 },
@@ -77,13 +76,12 @@ export class StageIntroScene extends Phaser.Scene {
       { x: 214, y: 226, size: 3, color: 0xf7f3d6, alpha: 0.82 },
       { x: 684, y: 208, size: 2, color: 0xf0b84b, alpha: 0.7 },
       { x: 826, y: 242, size: 3, color: 0xf7f3d6, alpha: 0.78 },
-    ].forEach(({ x, y, size, color, alpha }) => {
-      this.add.rectangle(x + stageOffsetX, y, size, size, color, alpha).setDepth(0.61);
-    });
-    createNinePatch(this, width / 2 + stageOffsetX, height / 2, Math.min(width - 88, 860), Math.min(height - 92, 430)).setDepth(2);
+    ];
+    const menuStars = staticStars.map(({ size, color, alpha }) => this.add.rectangle(0, 0, size, size, color, alpha).setDepth(0.61));
+    const frame = createNinePatch(this, 0, 0, 10, 10).setDepth(2);
 
-    this.add
-      .text(width / 2 + stageOffsetX, 92, stagePresentation.sectorLabel, {
+    const sectorText = this.add
+      .text(0, 0, stagePresentation.sectorLabel, {
         ...RETRO_TEXT_STYLE,
         fontSize: '14px',
         color: '#f0b84b',
@@ -92,8 +90,8 @@ export class StageIntroScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(3);
 
-    this.add
-      .text(width / 2 + stageOffsetX, 136, state.stage.name, {
+    const stageNameText = this.add
+      .text(0, 0, state.stage.name, {
         ...RETRO_TEXT_STYLE,
         fontSize: '28px',
         fontStyle: 'bold',
@@ -101,41 +99,77 @@ export class StageIntroScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(3);
 
-    this.add
-      .text(width / 2 - 286 + stageOffsetX, 194, 'Survey Loadout', {
+    const loadoutTitleText = this.add
+      .text(0, 0, 'Survey Loadout', {
         ...RETRO_TEXT_STYLE,
         fontSize: '12px',
         color: '#f0b84b',
       })
       .setOrigin(0, 0)
       .setDepth(3);
-    this.add
-      .text(
-        width / 2 - 286 + stageOffsetX,
-        222,
-        `Samples: ${samplesTaken}\nBiome: ${stagePresentation.biomeLabel}\nStatus: ${describePowerVariant(powerVariant)}`,
-        {
-          ...RETRO_TEXT_STYLE,
-          fontSize: '11px',
-          color: UI_COLORS.text,
-          lineSpacing: 8,
-          wordWrap: { width: 280, useAdvancedWrap: true },
-        },
-      )
+    const loadoutBodyText = this.add
+      .text(0, 0, `Samples: ${samplesTaken}\nBiome: ${stagePresentation.biomeLabel}\nStatus: ${describePowerVariant(powerVariant)}`, {
+        ...RETRO_TEXT_STYLE,
+        fontSize: '11px',
+        color: UI_COLORS.text,
+        lineSpacing: 8,
+        wordWrap: { width: 280, useAdvancedWrap: true },
+      })
       .setOrigin(0, 0)
       .setDepth(3);
 
     const astronaut = this.add
-      .sprite(width / 2 + 164 + stageOffsetX, 370, 'player-sheet', '0')
+      .sprite(0, 0, 'player-sheet', '0')
       .setDisplaySize(132, 168)
       .setTint(variantStyle.bodyColor)
       .setOrigin(0.5, 1)
       .setDepth(3);
 
-    this.add.ellipse(astronaut.x, astronaut.y - 8, 132, 20, 0x121a21, 0.3).setDepth(2.5);
-    this.add.rectangle(astronaut.x - 24, astronaut.y - 88, 8, 18, variantStyle.detailColor, 0.88).setDepth(3.5);
-    this.add.rectangle(astronaut.x - 24, astronaut.y - 70, 14, 8, variantStyle.accentColor, 0.92).setDepth(3.6);
-    this.add.ellipse(astronaut.x, astronaut.y - 60, 164, 206, variantStyle.auraColor ?? variantStyle.accentColor, 0.12).setDepth(2);
+    const astronautShadow = this.add.ellipse(0, 0, 132, 20, 0x121a21, 0.3).setDepth(2.5);
+    const astronautDetail = this.add.rectangle(0, 0, 8, 18, variantStyle.detailColor, 0.88).setDepth(3.5);
+    const astronautAccent = this.add.rectangle(0, 0, 14, 8, variantStyle.accentColor, 0.92).setDepth(3.6);
+    const astronautAura = this.add.ellipse(0, 0, 164, 206, variantStyle.auraColor ?? variantStyle.accentColor, 0.12).setDepth(2);
+
+    const syncLayout = (gameSize: { width: number; height: number }): void => {
+      const { centerX, centerY, width, height, safeInsetX, safeInsetY } = getViewportMetrics(this, gameSize);
+      const frameWidth = Math.min(Math.max(360, width - safeInsetX * 2 - 32), 860);
+      const frameHeight = Math.min(Math.max(280, height - safeInsetY * 2 - 32), 430);
+      const frameLeft = centerX - frameWidth / 2;
+      const frameTop = centerY - frameHeight / 2;
+      const textColumnLeft = frameLeft + Math.max(28, frameWidth * 0.1);
+      const astronautX = frameLeft + frameWidth * 0.72;
+      const astronautY = frameTop + frameHeight - 24;
+
+      baseBackdrop.setPosition(centerX, centerY).setSize(width + 24, height + 24);
+      baseBackdropGlow.setPosition(centerX, centerY).setSize(width + 24, height + 24);
+      menuStars.forEach((star, index) => {
+        const seed = staticStars[index];
+        star.setPosition(frameLeft + Math.min(seed.x, frameWidth - 20), frameTop + Math.min(seed.y, frameHeight - 20));
+      });
+      if (typeof frame.resize === 'function') {
+        frame.resize(frameWidth, frameHeight);
+      } else if (typeof frame.setSize === 'function') {
+        frame.setSize(frameWidth, frameHeight);
+      }
+      frame.setPosition(centerX, centerY);
+
+      sectorText.setPosition(centerX, frameTop + 52);
+      stageNameText.setPosition(centerX, frameTop + 96);
+      loadoutTitleText.setPosition(textColumnLeft, frameTop + 154);
+      loadoutBodyText.setPosition(textColumnLeft, frameTop + 182);
+      loadoutBodyText.setWordWrapWidth(Math.max(200, Math.min(320, frameWidth * 0.38)), true);
+
+      astronaut.setPosition(astronautX, astronautY);
+      astronautAura.setPosition(astronautX, astronautY - 60);
+      astronautShadow.setPosition(astronautX, astronautY - 8);
+      astronautDetail.setPosition(astronautX - 24, astronautY - 88);
+      astronautAccent.setPosition(astronautX - 24, astronautY - 70);
+    };
+    const handleResize = (): void => {
+      syncLayout(authoredGameSize);
+    };
+    handleResize();
+    this.scale.on(Phaser.Scale.Events.RESIZE, handleResize);
 
     this.audio.playStageIntro(state.stage);
     const retryIntroAudio = () => {
@@ -154,6 +188,7 @@ export class StageIntroScene extends Phaser.Scene {
     });
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, handleResize);
       this.introEvent?.remove(false);
       this.introEvent = undefined;
       this.accentTweenActive = false;

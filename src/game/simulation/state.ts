@@ -611,7 +611,7 @@ export const formatHudCollectibleSummary = (
   stageCollected: number,
   stageTotal: number,
   runTotal: number,
-): string => `${stageCollected}/${stageTotal} in sector (${formatCollectibleCount(runTotal)} total)`;
+): string => `${stageCollected}/${stageTotal} sector\n${runTotal} total`;
 
 export const formatRunCollectibleSummary = (runTotal: number): string => `Run research samples: ${runTotal}`;
 

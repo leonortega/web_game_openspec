@@ -83,7 +83,7 @@ describe('astronaut presentation mappings', () => {
     expect(CHECKPOINT_PRESENTATION.plural).toBe('survey beacons');
     expect(formatCollectibleCount(1)).toBe('1 research sample');
     expect(formatCollectibleCount(4)).toBe('4 research samples');
-    expect(formatHudCollectibleSummary(2, 7, 11)).toBe('2/7 in sector (11 research samples total)');
+    expect(formatHudCollectibleSummary(2, 7, 11)).toBe('2/7 sector\n11 total');
     expect(formatRunCollectibleSummary(11)).toBe('Run research samples: 11');
     expect(formatStageCollectibleTarget(7)).toBe('Sector research samples: 7');
     expect(formatStageCollectibleSummary(2, 7)).toBe('Sector research samples: 2/7');

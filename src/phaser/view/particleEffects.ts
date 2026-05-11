@@ -5,6 +5,11 @@
 
 import * as Phaser from 'phaser';
 
+const ignoreFromUiCamera = (scene: Phaser.Scene, target: Phaser.GameObjects.GameObject): void => {
+  const uiCamera = (scene as Phaser.Scene & { uiCamera?: Phaser.Cameras.Scene2D.Camera }).uiCamera;
+  uiCamera?.ignore(target);
+};
+
 export interface ParticleEffectConfig {
   x: number;
   y: number;
@@ -48,6 +53,7 @@ export function createProjectileTrailEmitter(
   if (depth !== undefined) {
     emitter.setDepth(depth);
   }
+  ignoreFromUiCamera(scene, emitter);
 
   return emitter;
 }
@@ -76,6 +82,7 @@ export function createBurstEffect(
   if (depth !== undefined) {
     emitter.setDepth(depth);
   }
+  ignoreFromUiCamera(scene, emitter);
 
   emitter.explode(count, x, y);
 
@@ -116,6 +123,7 @@ export function createFadingRegionEffect(
   if (depth !== undefined) {
     emitter.setDepth(depth);
   }
+  ignoreFromUiCamera(scene, emitter);
 
   // Gradual fade out - particles will naturally fade via lifespan
   if (durationMs) {
@@ -168,6 +176,7 @@ export function createMuzzleSmokeEffect(
   });
 
   emitter.setDepth(depth);
+  ignoreFromUiCamera(scene, emitter);
   emitter.explode(smokeCount, x, y);
   scene.time.delayedCall(560, () => emitter.destroy());
   spawnMuzzleSmokePuffs(scene, { x, y, directionX, directionY, owner, depth: depth + 0.1 });
@@ -211,6 +220,7 @@ export function createCheckpointFireworkEffect(
 
 function spawnCheckpointHalo(scene: Phaser.Scene, x: number, y: number, depth: number): void {
   const halo = scene.add.circle(x, y, 10, 0xffffff, 0.9).setDepth(depth);
+  ignoreFromUiCamera(scene, halo);
   scene.tweens.add({
     targets: halo,
     scaleX: 4.8,
@@ -235,6 +245,7 @@ function spawnCheckpointSparkBurst(
     const angle = (Math.PI * 2 * index) / sparkCount + Phaser.Math.FloatBetween(-0.18, 0.18);
     const travel = Phaser.Math.FloatBetween(18, 42);
     const spark = scene.add.circle(x, y, Phaser.Math.FloatBetween(2.8, 4.8), color, 0.98).setDepth(depth);
+    ignoreFromUiCamera(scene, spark);
 
     scene.tweens.add({
       targets: spark,
@@ -265,6 +276,7 @@ function spawnMuzzleSmokePuffs(
   const puffColor = owner === 'enemy' ? 0xeaf7ff : 0xf5ede0;
   const flashColor = owner === 'enemy' ? 0xfff1c2 : 0xffd59a;
   const flash = scene.add.circle(x, y, owner === 'enemy' ? 8 : 6, flashColor, 0.72).setDepth(depth + 0.1);
+  ignoreFromUiCamera(scene, flash);
 
   scene.tweens.add({
     targets: flash,
@@ -294,6 +306,7 @@ function spawnMuzzleSmokePuffs(
         0.8,
       )
       .setDepth(depth);
+    ignoreFromUiCamera(scene, puff);
 
     const driftX = x - forwardX * Phaser.Math.FloatBetween(18, 42) - forwardY * Phaser.Math.FloatBetween(-12, 12);
     const driftY = y - forwardY * Phaser.Math.FloatBetween(18, 42) + Phaser.Math.FloatBetween(-16, 6);

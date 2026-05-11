@@ -111,3 +111,45 @@ export const bindScaleOuter = (scene: Phaser.Scene): void => {
     scene.scale.off(Phaser.Scale.Events.RESIZE, apply);
   });
 };
+
+export const getAuthoredGameSize = (
+  scene: Phaser.Scene,
+): {
+  width: number;
+  height: number;
+} => ({
+  width: Number(scene.game.config.width) || 960,
+  height: Number(scene.game.config.height) || 540,
+});
+
+export const getViewportMetrics = (
+  scene: Phaser.Scene,
+  gameSize?: { width: number; height: number },
+): {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  centerX: number;
+  centerY: number;
+  safeInsetX: number;
+  safeInsetY: number;
+} => {
+  const width = gameSize?.width || scene.scale.width;
+  const height = gameSize?.height || scene.scale.height;
+  const left = 0;
+  const top = 0;
+  const safeInsetX = Math.max(28, Math.min(64, Math.floor(width * 0.065)));
+  const safeInsetY = Math.max(34, Math.min(72, Math.floor(height * 0.1)));
+
+  return {
+    left,
+    top,
+    width,
+    height,
+    centerX: left + width / 2,
+    centerY: top + height / 2,
+    safeInsetX,
+    safeInsetY,
+  };
+};

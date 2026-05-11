@@ -14,6 +14,7 @@ import { configureCamera } from '../../view/camera/configureCamera';
 import { drawRetroBackdrop, RETRO_FONT_FAMILY, type RetroPresentationPalette } from '../../view/retroPresentation';
 import { createWorldLocalRetroRegion } from '../../retroPostFx';
 import { createRexHud, type RexHudBindings } from '../../ui/rexHud';
+import { getViewportMetrics } from '../../ui/rexUiTheme';
 import { drawAstronautGraphic } from '../../view/runtimeCharacterGraphics';
 import { drawCollectibleGraphic } from '../../view/runtimeWorldGraphics';
 
@@ -71,7 +72,7 @@ export type GameSceneCleanupContext = Phaser.Scene & {
   collectibleSprites: Map<string, Phaser.GameObjects.Graphics>;
   projectileSprites: Map<string, Phaser.GameObjects.Graphics>;
   rewardBlockSprites: Map<string, Phaser.GameObjects.Graphics>;
-  rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
+  rewardBlockIcons: Map<string, Phaser.GameObjects.Graphics>;
   rewardRevealTexts: Map<string, Phaser.GameObjects.Text>;
   hazardSprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyDefeatVisibleUntilMs: Map<string, number>;
@@ -108,7 +109,7 @@ export type GameSceneBaseDisplayContext = Phaser.Scene & {
   checkpointSprites: Map<string, Phaser.GameObjects.Graphics>;
   collectibleSprites: Map<string, Phaser.GameObjects.Graphics>;
   rewardBlockSprites: Map<string, Phaser.GameObjects.Graphics>;
-  rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
+  rewardBlockIcons: Map<string, Phaser.GameObjects.Graphics>;
   enemySprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   playerAnchor: Phaser.GameObjects.Rectangle;
@@ -159,7 +160,6 @@ export type GameSceneBaseDisplayContext = Phaser.Scene & {
   terrainVariantAlpha(platform: PlatformState): number;
   terrainVariantAccentColor(platform: PlatformState): number;
   rewardBlockColor(rewardBlock: RewardBlockState): number;
-  rewardBlockLabel(rewardBlock: RewardBlockState): string;
   createTraversalMarkerRects(count: number, depth: number): Phaser.GameObjects.Rectangle[];
   drawHazard(hazard: SessionSnapshot['stageRuntime']['hazards'][number]): void;
 };
@@ -308,7 +308,7 @@ export function cleanupGameScene(scene: GameSceneCleanupContext): void {
   scene.collectibleSprites.clear();
   scene.projectileSprites.clear();
   scene.rewardBlockSprites.clear();
-  scene.rewardBlockLabels.clear();
+  scene.rewardBlockIcons.clear();
   scene.rewardRevealTexts.clear();
   scene.hazardSprites.clear();
   scene.enemyDefeatVisibleUntilMs.clear();
@@ -819,16 +819,9 @@ function createRewardRenderables(scene: GameSceneBaseDisplayContext, state: Read
 
   for (const rewardBlock of state.stageRuntime.rewardBlocks) {
     const blockSprite = scene.add.graphics();
-    const label = scene.add
-      .text(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2, scene.rewardBlockLabel(rewardBlock), {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '14px',
-        color: scene.retroPalette.shadow,
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+    const icon = scene.add.graphics().setDepth(4.15);
     scene.rewardBlockSprites.set(rewardBlock.id, blockSprite);
-    scene.rewardBlockLabels.set(rewardBlock.id, label);
+    scene.rewardBlockIcons.set(rewardBlock.id, icon);
   }
 }
 
@@ -894,13 +887,14 @@ function createExitAndArrivalRenderables(scene: GameSceneBaseDisplayContext, sta
 }
 
 function createPauseOverlay(scene: GameSceneBaseDisplayContext): void {
+  const { centerX, centerY, width, height } = getViewportMetrics(scene);
   scene.pauseOverlay = scene.add
-    .rectangle(scene.scale.width / 2, scene.scale.height / 2, scene.scale.width, scene.scale.height, scene.retroPalette.ink, 0.8)
+    .rectangle(centerX, centerY, width, height, scene.retroPalette.ink, 0.8)
     .setDepth(100)
     .setScrollFactor(0)
     .setVisible(false);
   scene.pauseText = scene.add
-    .text(scene.scale.width / 2, scene.scale.height / 2, 'PAUSED', {
+    .text(centerX, centerY, 'PAUSED', {
       fontFamily: RETRO_FONT_FAMILY,
       fontSize: '40px',
       color: scene.retroPalette.text,

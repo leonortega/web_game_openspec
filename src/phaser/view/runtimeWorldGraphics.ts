@@ -213,7 +213,7 @@ export const drawPlatformGraphic = (
     const rocketCenters = [10, width / 2, width - 10].map((centerX) =>
       Phaser.Math.Clamp(centerX, 8, Math.max(8, width - 8)),
     );
-    const rocketsOffline = Boolean(params.playerTouching || platform.fall?.triggered || platform.fall?.falling);
+    const rocketsOffline = Boolean(platform.fall?.falling);
     const flameAlpha = rocketsOffline ? 0 : 0.72;
     rocketCenters.forEach((centerX, index) => {
       roundedRect(graphics, centerX - 4, height - 15, 8, 9, 3, trim.deep, 0.96);
@@ -440,6 +440,98 @@ export const drawRewardBlockGraphic = (
   }
   if (rewardBlock.used) {
     rect(graphics, 5, 5, rewardBlock.width - 10, rewardBlock.height - 12, OUTLINE, 0.24);
+  }
+};
+
+export const drawRewardBlockIconGraphic = (
+  graphics: Phaser.GameObjects.Graphics,
+  params: { rewardBlock: RewardBlockState; color: number; brightColor: number; borderColor: number; alpha: number },
+): void => {
+  const { rewardBlock } = params;
+  const icon = colorPair(params.color, params.brightColor, params.borderColor);
+  const centerX = rewardBlock.width / 2;
+  const centerY = rewardBlock.height / 2;
+  clearGraphics(graphics, params.alpha);
+
+  if (rewardBlock.used) {
+    roundedRect(graphics, centerX - 6, centerY - 4, 12, 8, 3, icon.deep, 0.42);
+    rect(graphics, centerX - 4, centerY - 1, 8, 2, icon.light, 0.3);
+    circle(graphics, centerX - 7, centerY + 5, 1.5, icon.deep, 0.28);
+    circle(graphics, centerX + 7, centerY - 5, 1.5, icon.deep, 0.28);
+    return;
+  }
+
+  if (rewardBlock.reward.kind === 'coins') {
+    roundedRect(graphics, centerX - 6, centerY - 4, 12, 9, 3, icon.base, 0.96);
+    rect(graphics, centerX - 6, centerY - 1, 12, 2, icon.light, 0.92);
+    rect(graphics, centerX - 1, centerY - 4, 2, 9, icon.light, 0.88);
+    roundedRect(graphics, centerX - 3, centerY - 8, 6, 5, 2, icon.deep, 0.96);
+    roundedRect(graphics, centerX - 2, centerY - 7, 4, 3, 1, icon.glow, 0.82);
+    return;
+  }
+
+  switch (rewardBlock.reward.power) {
+    case 'doubleJump': {
+      const rocketBody = 0x72d66f;
+      const rocketNose = 0xdff7d8;
+      const rocketWindow = 0x3f8fc7;
+      const rocketFin = 0x2f7a38;
+      const rocketFlame = 0xffd36a;
+      roundedRect(graphics, centerX - 3, centerY - 6, 6, 11, 2, rocketBody, 0.98);
+      triangle(graphics, [centerX - 3, centerY + 5, centerX, centerY + 10, centerX + 3, centerY + 5], rocketNose, 0.98);
+      rect(graphics, centerX - 2, centerY - 8, 4, 2, rocketFlame, 0.92);
+      rect(graphics, centerX - 1, centerY - 10, 2, 2, 0xff8a47, 0.96);
+      circle(graphics, centerX, centerY - 2, 2, rocketWindow, 0.96);
+      triangle(graphics, [centerX - 3, centerY + 1, centerX - 6, centerY + 4, centerX - 3, centerY + 4], rocketFin, 0.94);
+      triangle(graphics, [centerX + 3, centerY + 1, centerX + 6, centerY + 4, centerX + 3, centerY + 4], rocketFin, 0.94);
+      rect(graphics, centerX - 6, centerY - 10, 2, 2, icon.light, 0.8);
+      rect(graphics, centerX + 4, centerY - 10, 2, 2, icon.light, 0.8);
+      break;
+    }
+    case 'shooter': {
+      const gunBody = 0x454c63;
+      const gunGrip = 0xc67d4d;
+      const gunBarrel = 0xeff5ff;
+      const muzzle = 0xffcd58;
+      rect(graphics, centerX - 7, centerY - 3, 11, 5, gunBody, 0.98);
+      rect(graphics, centerX + 4, centerY - 2, 4, 3, gunBarrel, 0.96);
+      rect(graphics, centerX - 2, centerY - 5, 4, 2, gunBarrel, 0.92);
+      triangle(graphics, [centerX - 3, centerY + 2, centerX - 1, centerY + 8, centerX + 2, centerY + 2], gunGrip, 0.96);
+      circle(graphics, centerX + 9, centerY - 1, 1.5, muzzle, 0.96);
+      rect(graphics, centerX + 10, centerY - 2, 2, 2, 0xff8a47, 0.92);
+      rect(graphics, centerX - 6, centerY - 2, 2, 1, icon.light, 0.72);
+      break;
+    }
+    case 'invincible': {
+      const orbOuter = 0x6fdcff;
+      const orbMid = 0xa8efff;
+      const orbCore = 0xeefcff;
+      const orbGlow = 0xc9f7ff;
+      circle(graphics, centerX, centerY, 7, orbOuter, 0.92);
+      circle(graphics, centerX, centerY, 5.5, orbMid, 0.96);
+      circle(graphics, centerX, centerY, 3, orbCore, 0.98);
+      circle(graphics, centerX - 2, centerY - 2, 1.5, 0xffffff, 0.82);
+      circle(graphics, centerX + 6, centerY - 5, 2, orbGlow, 0.34);
+      circle(graphics, centerX - 6, centerY + 4, 1.5, orbGlow, 0.28);
+      break;
+    }
+    case 'dash': {
+      const rocketBody = 0xffc78f;
+      const rocketNose = 0xfff1d8;
+      const rocketWindow = 0x8f3fc7;
+      const rocketFin = 0xd85a36;
+      const rocketFlame = 0xff7a4f;
+      roundedRect(graphics, centerX - 6, centerY - 3, 11, 6, 2, rocketBody, 0.98);
+      triangle(graphics, [centerX + 5, centerY - 3, centerX + 10, centerY, centerX + 5, centerY + 3], rocketNose, 0.96);
+      triangle(graphics, [centerX - 6, centerY - 3, centerX - 10, centerY - 5, centerX - 6, centerY - 1], rocketFlame, 0.94);
+      triangle(graphics, [centerX - 6, centerY + 3, centerX - 10, centerY + 5, centerX - 6, centerY + 1], 0xff8a47, 0.94);
+      circle(graphics, centerX - 1, centerY, 2, rocketWindow, 0.96);
+      triangle(graphics, [centerX - 1, centerY - 3, centerX + 1, centerY - 7, centerX + 2, centerY - 3], rocketFin, 0.92);
+      triangle(graphics, [centerX - 1, centerY + 3, centerX + 1, centerY + 7, centerX + 2, centerY + 3], rocketFin, 0.92);
+      rect(graphics, centerX - 12, centerY - 1, 2, 2, icon.light, 0.76);
+      rect(graphics, centerX - 15, centerY - 1, 2, 2, icon.light, 0.56);
+      break;
+    }
   }
 };
 

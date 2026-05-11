@@ -2,13 +2,24 @@ import * as Phaser from 'phaser';
 
 import type { CheckpointState, CollectibleState, RewardBlockState, RewardRevealState } from '../../../game/simulation/state';
 import { getRetroMotionStep, RETRO_FONT_FAMILY } from '../../view/retroPresentation';
-import { drawCheckpointGraphic, drawCollectibleGraphic, drawRewardBlockGraphic } from '../../view/runtimeWorldGraphics';
+import {
+  drawCheckpointGraphic,
+  drawCollectibleGraphic,
+  drawRewardBlockGraphic,
+  drawRewardBlockIconGraphic,
+} from '../../view/runtimeWorldGraphics';
+
+const ignoreFromUiCamera = (scene: Phaser.Scene, target: Phaser.GameObjects.GameObject): void => {
+  const uiCamera = (scene as Phaser.Scene & { uiCamera?: Phaser.Cameras.Scene2D.Camera }).uiCamera;
+  uiCamera?.ignore(target);
+};
 
 export type GameSceneRewardRenderingContext = Phaser.Scene & {
   retroPalette: {
     safe: number;
     cool: number;
     warm: number;
+    bright: number;
     border: number;
     shadow: string;
   };
@@ -16,10 +27,9 @@ export type GameSceneRewardRenderingContext = Phaser.Scene & {
   checkpointContactStrips: Map<string, Phaser.GameObjects.Rectangle>;
   collectibleSprites: Map<string, Phaser.GameObjects.Graphics>;
   rewardBlockSprites: Map<string, Phaser.GameObjects.Graphics>;
-  rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
+  rewardBlockIcons: Map<string, Phaser.GameObjects.Graphics>;
   rewardRevealTexts: Map<string, Phaser.GameObjects.Text>;
   rewardBlockColor(rewardBlock: RewardBlockState): number;
-  rewardBlockLabel(rewardBlock: RewardBlockState): string;
   rewardRevealText(rewardReveal: RewardRevealState): string;
   rewardRevealColor(rewardReveal: RewardRevealState): string;
 };
@@ -46,6 +56,7 @@ function syncCheckpointContactStrip(
       )
       .setOrigin(0.5, 0.5)
       .setDepth(CHECKPOINT_CONTACT_STRIP_DEPTH);
+    ignoreFromUiCamera(scene, strip);
     scene.checkpointContactStrips.set(checkpoint.id, strip);
   } else {
     strip
@@ -105,8 +116,8 @@ export function syncCollectible(scene: GameSceneRewardRenderingContext, collecti
 
 export function syncRewardBlock(scene: GameSceneRewardRenderingContext, rewardBlock: RewardBlockState): void {
   const sprite = scene.rewardBlockSprites.get(rewardBlock.id);
-  const label = scene.rewardBlockLabels.get(rewardBlock.id);
-  if (!sprite || !label) {
+  const icon = scene.rewardBlockIcons.get(rewardBlock.id);
+  if (!sprite || !icon) {
     return;
   }
 
@@ -123,9 +134,14 @@ export function syncRewardBlock(scene: GameSceneRewardRenderingContext, rewardBl
     flashProgress,
     alpha,
   });
-  label.setPosition(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2 - bumpOffset);
-  label.setText(scene.rewardBlockLabel(rewardBlock));
-  label.setAlpha(alpha);
+  icon.setPosition(rewardBlock.x, rewardBlock.y - bumpOffset).setAlpha(alpha);
+  drawRewardBlockIconGraphic(icon, {
+    rewardBlock,
+    color: scene.rewardBlockColor(rewardBlock),
+    borderColor: scene.retroPalette.border,
+    brightColor: scene.retroPalette.bright,
+    alpha,
+  });
 }
 
 export function syncRewardReveal(scene: GameSceneRewardRenderingContext, rewardReveal: RewardRevealState): void {
@@ -142,6 +158,7 @@ export function syncRewardReveal(scene: GameSceneRewardRenderingContext, rewardR
       })
       .setOrigin(0.5)
       .setDepth(12);
+    ignoreFromUiCamera(scene, text);
     scene.rewardRevealTexts.set(rewardReveal.id, text);
   }
 

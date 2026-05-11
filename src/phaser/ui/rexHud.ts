@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import type { HudViewModel } from '../../ui/hud/hud';
-import { createNinePatch, ensureUiPanelTexture, RETRO_TEXT_STYLE, UI_COLORS } from './rexUiTheme';
+import { createNinePatch, ensureUiPanelTexture, getViewportMetrics, RETRO_TEXT_STYLE, UI_COLORS } from './rexUiTheme';
 
 type HudSection = {
   root: Phaser.GameObjects.Container;
@@ -8,6 +8,15 @@ type HudSection = {
   title: Phaser.GameObjects.Text;
   value: Phaser.GameObjects.Text;
   setBounds(width: number, height: number): void;
+};
+
+type HudSectionOptions = {
+  titleFontSize?: number;
+  titleY?: number;
+  valueFontSize?: number;
+  valueLineSpacing?: number;
+  valueWrapPadding?: number;
+  valueY?: number;
 };
 
 export type RexHudBindings = {
@@ -55,20 +64,22 @@ const createHudSection = (
   title: string,
   valueFontSize: number,
   valueColor: string = UI_COLORS.text,
+  options: HudSectionOptions = {},
 ): HudSection => {
   const background = createNinePatch(scene, 0, 0, 200, TOP_BAR_HEIGHT);
   const titleText = createText(scene, title, {
     ...RETRO_TEXT_STYLE,
-    fontSize: '8px',
+    fontSize: `${options.titleFontSize ?? 8}px`,
     color: UI_COLORS.dimText,
     letterSpacing: 1,
   }).setOrigin(0, 0);
   const valueText = createText(scene, '--', {
     ...RETRO_TEXT_STYLE,
-    fontSize: `${valueFontSize}px`,
+    fontSize: `${options.valueFontSize ?? valueFontSize}px`,
     color: valueColor,
     fontStyle: 'bold',
     wordWrap: { width: 150, useAdvancedWrap: true },
+    lineSpacing: options.valueLineSpacing ?? 2,
   }).setOrigin(0, 0);
 
   const root = scene.add.container(0, 0, [background, titleText, valueText]).setScrollFactor(0);
@@ -81,9 +92,9 @@ const createHudSection = (
     setBounds(width: number, height: number) {
       resizePanel(background, width, height);
       background.setPosition(width / 2, height / 2);
-      titleText.setPosition(PANEL_PADDING_X, 8);
-      valueText.setPosition(PANEL_PADDING_X, 24);
-      valueText.setWordWrapWidth(Math.max(48, width - PANEL_PADDING_X * 2), true);
+      titleText.setPosition(PANEL_PADDING_X, options.titleY ?? 8);
+      valueText.setPosition(PANEL_PADDING_X, options.valueY ?? 22);
+      valueText.setWordWrapWidth(Math.max(48, width - (options.valueWrapPadding ?? PANEL_PADDING_X * 2)), true);
     },
   };
 };
@@ -100,10 +111,11 @@ const createMetaChip = (
   }).setOrigin(0, 0);
   const valueText = createText(scene, '--', {
     ...RETRO_TEXT_STYLE,
-    fontSize: '10px',
+    fontSize: '9px',
     color: title === 'DIFFICULTY' ? '#f5cf64' : '#f7f3d6',
     fontStyle: 'bold',
     wordWrap: { width: 140, useAdvancedWrap: true },
+    lineSpacing: 1,
   }).setOrigin(0, 0);
 
   const root = scene.add.container(0, 0, [background, titleText, valueText]).setScrollFactor(0);
@@ -115,7 +127,7 @@ const createMetaChip = (
       resizePanel(background, width, height);
       background.setPosition(width / 2, height / 2);
       titleText.setPosition(12, 8);
-      valueText.setPosition(12, 22);
+      valueText.setPosition(12, 21);
       valueText.setWordWrapWidth(Math.max(60, width - 24), true);
     },
   };
@@ -124,10 +136,25 @@ const createMetaChip = (
 export const createRexHud = (scene: Phaser.Scene): RexHudBindings => {
   ensureUiPanelTexture(scene);
 
-  const stageSection = createHudSection(scene, 'STAGE', 12, '#f5cf64');
-  const coinsSection = createHudSection(scene, 'RESEARCH', 10);
-  const healthSection = createHudSection(scene, 'HEALTH', 16, '#d6f58b');
-  const powerSection = createHudSection(scene, 'POWER', 10, '#8fdff2');
+  const stageSection = createHudSection(scene, 'STAGE', 12, '#f5cf64', {
+    valueFontSize: 10,
+    valueLineSpacing: 1,
+    valueWrapPadding: 24,
+  });
+  const coinsSection = createHudSection(scene, 'RESEARCH', 10, UI_COLORS.text, {
+    valueFontSize: 8,
+    titleFontSize: 7,
+    valueLineSpacing: 1,
+    valueWrapPadding: 24,
+  });
+  const healthSection = createHudSection(scene, 'HEALTH', 16, '#d6f58b', {
+    valueY: 20,
+  });
+  const powerSection = createHudSection(scene, 'POWER', 10, '#8fdff2', {
+    valueFontSize: 8,
+    valueLineSpacing: 1,
+    valueWrapPadding: 24,
+  });
 
   const topBar = scene.add
     .container(0, 0, [
@@ -162,12 +189,35 @@ export const createRexHud = (scene: Phaser.Scene): RexHudBindings => {
 
   const root = scene.add.container(0, 0, [topBar, metaDock, messageBox]).setDepth(200).setScrollFactor(0);
 
-  const syncLayout = ({ width }: { width: number; height: number }): void => {
-    const gutter = 10;
-    const availableWidth = Math.max(560, width - gutter * 2);
-    const stageWidth = Math.floor(availableWidth * 0.24);
-    const coinsWidth = Math.floor(availableWidth * 0.4);
-    const healthWidth = Math.floor(availableWidth * 0.12);
+  const syncLayout = (
+    _gameSize: { width: number; height: number },
+    _baseSize?: { width: number; height: number },
+    _displaySize?: { width: number; height: number },
+  ): void => {
+    // Under RESIZE + rexScaleOuter, the gameplay camera scales the authored game window
+    // to the browser area. Keep HUD layout in that authored space instead of the resized
+    // browser dimensions, otherwise the HUD geometry balloons before camera zoom is applied.
+    const authoredWidth = Number(scene.game.config.width) || 960;
+    const authoredHeight = Number(scene.game.config.height) || 540;
+    const { left, top, width, safeInsetX } = getViewportMetrics(scene, {
+      width: authoredWidth,
+      height: authoredHeight,
+    });
+    const hudTopInset = 0;
+    const columnGap = 14;
+    const chipWidth = width <= 760
+      ? Math.min(220, Math.max(140, Math.floor(width * 0.22)))
+      : Math.min(300, Math.max(196, Math.floor(width * 0.24)));
+    const chipHeight = META_CHIP_HEIGHT;
+    const rightColumnHeight = chipHeight * 2 + 6;
+    const canDockRight = width >= 820;
+    const topBarAvailableWidth = canDockRight
+      ? Math.max(420, width - safeInsetX * 2 - chipWidth - columnGap)
+      : Math.max(560, width - safeInsetX * 2);
+    const availableWidth = topBarAvailableWidth;
+    const stageWidth = width <= 760 ? Math.floor(availableWidth * 0.22) : Math.floor(availableWidth * 0.24);
+    const coinsWidth = width <= 760 ? Math.floor(availableWidth * 0.36) : Math.floor(availableWidth * 0.4);
+    const healthWidth = width <= 760 ? Math.floor(availableWidth * 0.11) : Math.floor(availableWidth * 0.12);
     const powerWidth = availableWidth - stageWidth - coinsWidth - healthWidth - PANEL_GAP * 3;
 
     stageSection.setBounds(stageWidth, TOP_BAR_HEIGHT);
@@ -179,23 +229,29 @@ export const createRexHud = (scene: Phaser.Scene): RexHudBindings => {
     coinsSection.root.setPosition(stageWidth + PANEL_GAP, 0);
     healthSection.root.setPosition(stageWidth + coinsWidth + PANEL_GAP * 2, 0);
     powerSection.root.setPosition(stageWidth + coinsWidth + healthWidth + PANEL_GAP * 3, 0);
-    topBar.setPosition(gutter, gutter);
+    topBar.setPosition(left + safeInsetX, top + hudTopInset);
 
-    const chipWidth = Math.min(320, Math.max(220, Math.floor(width * 0.28)));
-    const chipHeight = META_CHIP_HEIGHT;
     difficultyChip.setBounds(chipWidth, chipHeight);
     segmentChip.setBounds(chipWidth, chipHeight);
     difficultyChip.root.setPosition(0, 0);
     segmentChip.root.setPosition(0, chipHeight + 6);
-    metaDock.setPosition(width - gutter - chipWidth, gutter + TOP_BAR_HEIGHT + 8);
+    metaDock.setPosition(
+      canDockRight ? left + width - safeInsetX - chipWidth : left + safeInsetX,
+      canDockRight ? top + hudTopInset : top + hudTopInset + TOP_BAR_HEIGHT + 8,
+    );
 
-    const messageWidth = Math.min(width - gutter * 2, width - chipWidth - gutter * 3 - 16);
+    const messageWidth = canDockRight
+      ? Math.min(topBarAvailableWidth, width - safeInsetX * 2 - chipWidth - columnGap - 16)
+      : width - safeInsetX * 2;
     const resolvedMessageWidth = Math.max(320, messageWidth);
     resizePanel(messageBackground, resolvedMessageWidth, MESSAGE_BOX_HEIGHT);
     messageBackground.setPosition(resolvedMessageWidth / 2, MESSAGE_BOX_HEIGHT / 2);
     messageValue.setWordWrapWidth(Math.max(240, resolvedMessageWidth - 28), true);
     messageValue.setPosition(14, 12);
-    messageBox.setPosition(gutter, gutter + TOP_BAR_HEIGHT + 8);
+    messageBox.setPosition(
+      left + safeInsetX,
+      top + hudTopInset + TOP_BAR_HEIGHT + 8 + (canDockRight ? 0 : rightColumnHeight + 8),
+    );
   };
 
   syncLayout({ width: scene.scale.width, height: scene.scale.height });

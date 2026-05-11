@@ -131,7 +131,7 @@ describe('SceneBridge pause flow regression coverage', () => {
     const hud = bridge.getHudModel();
 
     expect(hud.stageName).toBe('Verdant Impact Crater');
-    expect(hud.coins).toBe(`0/${state.stageRuntime.totalCoins} in sector (0 research samples total)`);
+    expect(hud.coins).toBe(`0/${state.stageRuntime.totalCoins} sector\n0 total`);
     expect(hud.powerLabel).toBe('Thruster Burst, Shield Field (6s)');
     expect(hud.segmentLabel).toBe('Landing Shelf');
     expect(hud.message).toBe('Objective: restore the survey beacon');

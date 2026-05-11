@@ -13,7 +13,7 @@ import {
   applyConfiguredRetroPostFxToCamera,
   setCrtFilterEnabled,
 } from '../retroPostFx';
-import { bindScaleOuter, createNinePatch, RETRO_TEXT_STYLE, UI_COLORS } from '../ui/rexUiTheme';
+import { bindScaleOuter, createNinePatch, getAuthoredGameSize, getViewportMetrics, RETRO_TEXT_STYLE, UI_COLORS } from '../ui/rexUiTheme';
 
 type MenuView = 'root' | 'options' | 'help';
 type RootOptionId = 'primary' | 'options' | 'help';
@@ -23,6 +23,7 @@ type MenuButton = {
   id: string;
   container: Phaser.GameObjects.Container;
   background: Phaser.GameObjects.GameObject;
+  hitArea: Phaser.GameObjects.Rectangle;
   text: Phaser.GameObjects.Text;
 };
 
@@ -50,6 +51,18 @@ const HELP_TEXT = [
 
 const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
 const stripMarkup = (value: string): string => value.replace(/\[[^\]]+\]/g, '');
+const resizePanel = (panel: any, width: number, height: number): void => {
+  if (typeof panel.resize === 'function') {
+    panel.resize(width, height);
+    return;
+  }
+  if (typeof panel.setSize === 'function') {
+    panel.setSize(width, height);
+  }
+  if (typeof panel.setDisplaySize === 'function') {
+    panel.setDisplaySize(width, height);
+  }
+};
 
 const wrapIndex = (value: number, length: number): number => {
   if (length <= 0) {
@@ -76,7 +89,12 @@ export class MenuScene extends Phaser.Scene {
     labelText: string,
     onHover: () => void,
     onClick: () => void,
-  ): { container: Phaser.GameObjects.Container; background: Phaser.GameObjects.GameObject; text: Phaser.GameObjects.Text } {
+  ): {
+    container: Phaser.GameObjects.Container;
+    background: Phaser.GameObjects.GameObject;
+    hitArea: Phaser.GameObjects.Rectangle;
+    text: Phaser.GameObjects.Text;
+  } {
     const background = createNinePatch(this, 0, 0, width, height).setDepth?.(3) ?? createNinePatch(this, 0, 0, width, height);
     const text = this.add
       .text(0, 0, labelText, {
@@ -99,7 +117,7 @@ export class MenuScene extends Phaser.Scene {
     hitArea.on('pointerdown', onClick);
 
     const container = this.add.container(x, y, [background, text, hitArea]).setDepth(3);
-    return { container, background, text };
+    return { container, background, hitArea, text };
   }
 
   constructor() {
@@ -108,6 +126,7 @@ export class MenuScene extends Phaser.Scene {
 
   create(): void {
     const bridge = this.registry.get('bridge') as SceneBridge;
+    const authoredGameSize = getAuthoredGameSize(this);
     this.audio = new SynthAudio(
       this,
       () => bridge.getSession().getState().progress.runSettings.musicVolume,
@@ -116,10 +135,8 @@ export class MenuScene extends Phaser.Scene {
     applyConfiguredRetroPostFxToCamera(this.game, this.cameras.main);
     bindScaleOuter(this);
 
-    const { width, height } = this.scale;
-    const menuOffsetX = 42;
-    this.add.rectangle(width / 2, height / 2, width + 24, height + 24, 0x05090d, 1).setDepth(0.5);
-    this.add.rectangle(width / 2, height / 2, width + 24, height + 24, 0x071014, 0.96).setDepth(1.6);
+    const baseBackdrop = this.add.rectangle(0, 0, 10, 10, 0x05090d, 1).setDepth(0.5);
+    const baseBackdropGlow = this.add.rectangle(0, 0, 10, 10, 0x071014, 0.96).setDepth(1.6);
     [
       { x: 74, y: 58, size: 3, color: 0xf7f3d6, alpha: 0.95 },
       { x: 118, y: 96, size: 2, color: 0x8fdff2, alpha: 0.82 },
@@ -141,27 +158,24 @@ export class MenuScene extends Phaser.Scene {
       this.add.rectangle(x, y, size, size, color, alpha).setDepth(1.61);
     });
 
-    this.add
-      .rectangle(width / 2 + menuOffsetX, height / 2 + 36, Math.min(width - 12, 1000), Math.min(height - 12, 740), 0x0a1116, 0.985)
-      .setDepth(1.75);
-    const backdropStars = [
-      { x: width / 2 - 364 + menuOffsetX, y: 78, color: 0xf7f3d6, alpha: 0.95 },
-      { x: width / 2 - 322 + menuOffsetX, y: 108, color: 0x8fdff2, alpha: 0.82 },
-      { x: width / 2 + 286 + menuOffsetX, y: 102, color: 0xf0b84b, alpha: 0.9 },
-      { x: width / 2 + 344 + menuOffsetX, y: 136, color: 0xf7f3d6, alpha: 0.88 },
-      { x: width / 2 - 396 + menuOffsetX, y: 146, color: 0xf7f3d6, alpha: 0.7 },
-      { x: width / 2 + 212 + menuOffsetX, y: 84, color: 0x8fdff2, alpha: 0.9 },
-      { x: width / 2 - 248 + menuOffsetX, y: 126, color: 0xf0b84b, alpha: 0.76 },
-      { x: width / 2 + 368 + menuOffsetX, y: 92, color: 0xf7f3d6, alpha: 0.72 },
+    const menuBackdrop = this.add.rectangle(0, 0, 10, 10, 0x0a1116, 0.985).setDepth(1.75);
+    const backdropStarSeeds = [
+      { offsetX: -364, offsetY: 40, color: 0xf7f3d6, alpha: 0.95 },
+      { offsetX: -322, offsetY: 70, color: 0x8fdff2, alpha: 0.82 },
+      { offsetX: 286, offsetY: 64, color: 0xf0b84b, alpha: 0.9 },
+      { offsetX: 344, offsetY: 98, color: 0xf7f3d6, alpha: 0.88 },
+      { offsetX: -396, offsetY: 108, color: 0xf7f3d6, alpha: 0.7 },
+      { offsetX: 212, offsetY: 46, color: 0x8fdff2, alpha: 0.9 },
+      { offsetX: -248, offsetY: 88, color: 0xf0b84b, alpha: 0.76 },
+      { offsetX: 368, offsetY: 54, color: 0xf7f3d6, alpha: 0.72 },
     ];
-    backdropStars.forEach(({ x, y, color, alpha }) => {
-      this.add.rectangle(x, y, 3, 3, color, alpha).setDepth(1.76);
-    });
+    const backdropStars = backdropStarSeeds.map(({ color, alpha }) =>
+      this.add.rectangle(0, 0, 3, 3, color, alpha).setDepth(1.76),
+    );
 
-    createNinePatch(this, width / 2 + menuOffsetX, height / 2 + 36, Math.min(width - 40, 928), Math.min(height - 4, 704))
-      .setDepth(2);
-    this.add
-      .text(width / 2 + menuOffsetX, 86, 'Orbital Survey', {
+    const menuFrame = createNinePatch(this, 0, 0, 10, 10).setDepth(2);
+    const menuTitleText = this.add
+      .text(0, 0, 'Orbital Survey', {
         ...RETRO_TEXT_STYLE,
         fontSize: '26px',
         color: '#f0b84b',
@@ -171,7 +185,7 @@ export class MenuScene extends Phaser.Scene {
       .setDepth(3);
 
     const titleText = this.add
-      .text(width / 2 + menuOffsetX, 128, 'Main Menu', {
+      .text(0, 0, 'Main Menu', {
         ...RETRO_TEXT_STYLE,
         fontSize: '20px',
         fontStyle: 'bold',
@@ -180,7 +194,7 @@ export class MenuScene extends Phaser.Scene {
       .setDepth(3);
 
     const subtitleText = this.add
-      .text(width / 2 + menuOffsetX, 166, '', {
+      .text(0, 0, '', {
         ...RETRO_TEXT_STYLE,
         fontSize: '11px',
         color: '#bcc3a6',
@@ -192,10 +206,9 @@ export class MenuScene extends Phaser.Scene {
       .setDepth(3);
 
     const rootButtons: MenuButton[] = rootOptions.map((option, index) => {
-      const y = 270 + index * 68;
       const button = this.createMenuButton(
-        width / 2 + menuOffsetX,
-        y,
+        0,
+        0,
         300,
         52,
         option === 'primary' ? 'Start Survey' : option === 'options' ? 'Options' : 'Field Guide',
@@ -212,15 +225,15 @@ export class MenuScene extends Phaser.Scene {
         id: option,
         container: button.container,
         background: button.background,
+        hitArea: button.hitArea,
         text: button.text,
       };
     });
 
     const optionButtons: MenuButton[] = optionEntries.map((option, index) => {
-      const y = 206 + index * 62;
       const button = this.createMenuButton(
-        width / 2 + menuOffsetX,
-        y,
+        0,
+        0,
         620,
         54,
         '',
@@ -238,14 +251,15 @@ export class MenuScene extends Phaser.Scene {
         id: option,
         container: button.container,
         background: button.background,
+        hitArea: button.hitArea,
         text: button.text,
       };
     });
 
-    const helpPanelWidth = 760;
-    const helpPanelHeight = 326;
-    const helpViewportWidth = 660;
-    const helpViewportHeight = 224;
+    let helpPanelWidth = 760;
+    let helpPanelHeight = 326;
+    let helpViewportWidth = 660;
+    let helpViewportHeight = 224;
     const helpScrollStep = 22;
     const helpBackground = createNinePatch(this, 0, 0, helpPanelWidth, helpPanelHeight).setDepth?.(3)
       ?? createNinePatch(this, 0, 0, helpPanelWidth, helpPanelHeight);
@@ -259,7 +273,7 @@ export class MenuScene extends Phaser.Scene {
       })
       .setDepth(4);
     let helpScrollOffset = 0;
-    const helpMaxScroll = Math.max(0, helpTextObject.height - helpViewportHeight);
+    let helpMaxScroll = Math.max(0, helpTextObject.height - helpViewportHeight);
     const applyHelpScroll = (): void => {
       helpTextObject.setPosition(-helpViewportWidth / 2, -helpViewportHeight / 2 - helpScrollOffset);
       helpTextObject.setCrop(0, helpScrollOffset, helpViewportWidth, helpViewportHeight);
@@ -274,12 +288,12 @@ export class MenuScene extends Phaser.Scene {
       applyHelpScroll();
     };
     const helpArea = this.add
-      .container(width / 2 + menuOffsetX, 348, [helpBackground, helpTextObject])
+      .container(0, 0, [helpBackground, helpTextObject])
       .setDepth(3)
       .setVisible(false);
 
     const footerText = this.add
-      .text(width / 2 + menuOffsetX, height - 10, '', {
+      .text(0, 0, '', {
         ...RETRO_TEXT_STYLE,
         fontSize: '9px',
         color: UI_COLORS.dimText,
@@ -289,6 +303,65 @@ export class MenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(3);
+
+    const syncLayout = (gameSize: { width: number; height: number }): void => {
+      const { centerX, centerY, width, height, safeInsetX, safeInsetY } = getViewportMetrics(this, gameSize);
+      const frameWidth = Math.min(Math.max(360, width - safeInsetX * 2), 928);
+      const frameHeight = Math.min(Math.max(420, height - safeInsetY * 2), 704);
+      const frameTop = centerY - frameHeight / 2;
+      const rootButtonWidth = Math.min(300, Math.max(240, frameWidth - 120));
+      const optionButtonWidth = Math.min(620, Math.max(280, frameWidth - 92));
+
+      baseBackdrop.setPosition(centerX, centerY).setSize(width + 24, height + 24);
+      baseBackdropGlow.setPosition(centerX, centerY).setSize(width + 24, height + 24);
+      menuBackdrop.setPosition(centerX, centerY).setSize(Math.min(width - 12, 1000), Math.min(height - 12, 740));
+      resizePanel(menuFrame, frameWidth, frameHeight);
+      menuFrame.setPosition(centerX, centerY);
+
+      backdropStars.forEach((star, index) => {
+        const seed = backdropStarSeeds[index];
+        star.setPosition(centerX + seed.offsetX, frameTop + seed.offsetY);
+      });
+
+      const titleY = frameTop + 48;
+      const headingY = frameTop + 90;
+      const subtitleY = frameTop + 128;
+      const rootStartY = frameTop + 232;
+      const optionsStartY = frameTop + 168;
+      const helpCenterY = frameTop + Math.min(frameHeight - 178, 310);
+      const footerY = centerY + frameHeight / 2 - (this.view === 'help' ? 14 : 12);
+
+      menuTitleText.setPosition(centerX, titleY);
+      subtitleText.setPosition(centerX, subtitleY);
+      subtitleText.setWordWrapWidth(Math.max(260, Math.min(700, frameWidth - 140)), true);
+      titleText.setPosition(centerX, headingY);
+
+      rootButtons.forEach((button, index) => {
+        resizePanel(button.background, rootButtonWidth, 52);
+        button.hitArea.setSize(rootButtonWidth, 52);
+        button.container.setPosition(centerX, rootStartY + index * 68);
+      });
+
+      optionButtons.forEach((button, index) => {
+        resizePanel(button.background, optionButtonWidth, 54);
+        button.hitArea.setSize(optionButtonWidth, 54);
+        button.container.setPosition(centerX, optionsStartY + index * 62);
+      });
+
+      helpPanelWidth = Math.min(760, Math.max(300, frameWidth - 72));
+      helpPanelHeight = Math.min(326, Math.max(220, frameHeight - 192));
+      helpViewportWidth = Math.max(240, helpPanelWidth - 100);
+      helpViewportHeight = Math.max(120, helpPanelHeight - 102);
+      resizePanel(helpBackground, helpPanelWidth, helpPanelHeight);
+      helpTextObject.setWordWrapWidth(helpViewportWidth, true);
+      helpMaxScroll = Math.max(0, helpTextObject.height - helpViewportHeight);
+      helpScrollOffset = clamp(helpScrollOffset, 0, helpMaxScroll);
+      applyHelpScroll();
+      helpArea.setPosition(centerX, helpCenterY);
+
+      footerText.setPosition(centerX, footerY);
+      footerText.setWordWrapWidth(Math.max(280, Math.min(760, frameWidth - 120)), true);
+    };
 
     this.audio.startMenuMusic();
     const unlockSceneAudio = () => {
@@ -353,7 +426,7 @@ export class MenuScene extends Phaser.Scene {
             ? 'ESC returns to the root menu.'
             : 'Mouse wheel or Up / Down scroll. ESC returns to the root menu.',
       );
-      footerText.setPosition(width / 2 + menuOffsetX, this.view === 'help' ? height - 8 : height - 10);
+      syncLayout(authoredGameSize);
     };
 
     const startRun = (stageIndex = bridge.getSession().getState().stageIndex): void => {
@@ -483,6 +556,14 @@ export class MenuScene extends Phaser.Scene {
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.audio.stopMusic();
+    });
+    const handleResize = (): void => {
+      syncLayout(authoredGameSize);
+    };
+    handleResize();
+    this.scale.on(Phaser.Scale.Events.RESIZE, handleResize);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, handleResize);
     });
 
     renderOptionLabels();
