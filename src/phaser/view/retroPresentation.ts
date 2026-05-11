@@ -146,6 +146,10 @@ export type RetroBackdropMotifPalette = {
   horizonGlow: number;
   starWarm: number;
   starCool: number;
+  auroraA: number;
+  auroraB: number;
+  rockLight: number;
+  rockDark: number;
 };
 
 export const RETRO_FONT_FAMILY = '"Courier New", monospace';
@@ -227,16 +231,23 @@ export const createRetroMenuPalette = (): RetroPresentationPalette =>
 
 export const createRetroBackdropMotifPalette = (palette: RetroPresentationPalette): RetroBackdropMotifPalette => {
   const separationReferences = [palette.cool, palette.warm, palette.safe, palette.alert, palette.border, palette.panel, palette.panelAlt];
+  const hueCore = ensureSeparated(mixColor(palette.cool, palette.stageAccent, 0.08), separationReferences, palette.background, 52);
+  const hueBright = ensureSeparated(mixColor(hueCore, palette.bright, 0.34), separationReferences, palette.background, 56);
+  const hueShadow = ensureSeparated(mixColor(hueCore, palette.ink, 0.42), separationReferences, palette.background, 44);
 
   return {
-    planetFill: ensureSeparated(mixColor(palette.skyline, palette.stageAccent, 0.2), separationReferences, palette.background, 58),
-    planetShade: ensureSeparated(mixColor(palette.background, palette.groundBand, 0.42), separationReferences, palette.background, 52),
-    ring: ensureSeparated(mixColor(palette.bright, palette.backdropGlow, 0.52), separationReferences, palette.background, 56),
-    craterLight: ensureSeparated(mixColor(palette.groundBand, palette.backdropAccent, 0.3), separationReferences, palette.background, 48),
-    craterDark: ensureSeparated(mixColor(palette.background, palette.ink, 0.36), separationReferences, palette.background, 42),
-    horizonGlow: ensureSeparated(mixColor(palette.backdropGlow, palette.bright, 0.18), separationReferences, palette.background, 54),
-    starWarm: ensureSeparated(mixColor(palette.warm, palette.bright, 0.42), separationReferences, palette.background, 56),
-    starCool: ensureSeparated(mixColor(palette.cool, palette.bright, 0.34), separationReferences, palette.background, 56),
+    planetFill: ensureSeparated(mixColor(hueCore, hueBright, 0.34), separationReferences, palette.background, 58),
+    planetShade: ensureSeparated(mixColor(hueShadow, palette.background, 0.18), separationReferences, palette.background, 52),
+    ring: ensureSeparated(mixColor(hueBright, palette.bright, 0.24), separationReferences, palette.background, 56),
+    craterLight: ensureSeparated(mixColor(hueCore, palette.bright, 0.18), separationReferences, palette.background, 48),
+    craterDark: ensureSeparated(mixColor(hueShadow, palette.ink, 0.18), separationReferences, palette.background, 42),
+    horizonGlow: ensureSeparated(mixColor(hueCore, hueBright, 0.18), separationReferences, palette.background, 54),
+    starWarm: ensureSeparated(mixColor(hueBright, palette.bright, 0.18), separationReferences, palette.background, 56),
+    starCool: ensureSeparated(mixColor(hueCore, hueBright, 0.26), separationReferences, palette.background, 56),
+    auroraA: ensureSeparated(mixColor(hueCore, palette.bright, 0.12), separationReferences, palette.background, 52),
+    auroraB: ensureSeparated(mixColor(hueCore, hueShadow, 0.24), separationReferences, palette.background, 50),
+    rockLight: ensureSeparated(mixColor(hueCore, palette.bright, 0.14), separationReferences, palette.background, 54),
+    rockDark: ensureSeparated(mixColor(hueShadow, palette.ink, 0.2), separationReferences, palette.background, 48),
   };
 };
 
@@ -953,52 +964,6 @@ export const spawnRetroParticleBurst = (
   return emitter;
 };
 
-const pulseBeamBlinkOnStar = (
-  scene: Phaser.Scene,
-  star: Phaser.GameObjects.Rectangle,
-  color: number,
-  size: number,
-  variant: 'gameplay' | 'transition',
-): void => {
-  if (!star.active) {
-    return;
-  }
-
-  const target = star as any;
-  if (typeof target.enableFilters === 'function') {
-    target.enableFilters();
-  }
-
-  const filterList = target?.filters?.internal ?? target?.filters?.external;
-  if (!filterList) {
-    return;
-  }
-
-  if (typeof filterList.clear === 'function') {
-    filterList.clear();
-  }
-
-  const glowOuter = 2.6 + size * 1.3;
-  const glowStrength = 0.26 + size * 0.14;
-  const bloomStrength = 0.12 + size * 0.06;
-  const bloomBlur = variant === 'gameplay' ? 0.78 : 0.66;
-  filterList.addGlow?.(color, glowOuter, glowStrength, 1, false);
-  filterList.addBloom?.(color, bloomStrength, 1, bloomBlur, 1, 2, 2);
-
-  const pulseDuration = variant === 'gameplay' ? 160 : 130;
-  scene.time.delayedCall(pulseDuration, () => {
-    if (!star.active) {
-      return;
-    }
-
-    const cleanupTarget = star as any;
-    const cleanupList = cleanupTarget?.filters?.internal ?? cleanupTarget?.filters?.external;
-    if (typeof cleanupList?.clear === 'function') {
-      cleanupList.clear();
-    }
-  });
-};
-
 type RetroBackdropRuntime = {
   timers: Phaser.Time.TimerEvent[];
   tweens: Phaser.Tweens.Tween[];
@@ -1039,6 +1004,146 @@ const cleanupRetroBackdropArtifacts = (scene: Phaser.Scene): void => {
   }
 };
 
+const fillBackdropCircle = (
+  graphics: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  radius: number,
+  color: number,
+  alpha: number,
+): void => {
+  graphics.fillStyle(color, alpha);
+  graphics.fillCircle(Math.round(x), Math.round(y), Math.round(radius));
+};
+
+const strokeBackdropEllipseArc = (
+  graphics: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  radiusX: number,
+  radiusY: number,
+  color: number,
+  alpha: number,
+  startAngle: number,
+  endAngle: number,
+): void => {
+  const points = Math.max(16, Math.ceil((radiusX + radiusY) / 6));
+  graphics.fillStyle(color, alpha);
+  for (let index = 0; index <= points; index += 1) {
+    const t = index / points;
+    const angle = startAngle + (endAngle - startAngle) * t;
+    const px = x + Math.cos(angle) * radiusX;
+    const py = y + Math.sin(angle) * radiusY;
+    graphics.fillRect(Math.round(px), Math.round(py), 3, 3);
+  }
+};
+
+const drawBackdropPlanet = (
+  graphics: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  radius: number,
+  fill: number,
+  shade: number,
+  ring: number | null,
+  craterLight: number,
+  craterDark: number,
+  seed: number,
+  craterDetail: number = 1,
+): void => {
+  if (ring !== null) {
+    strokeBackdropEllipseArc(graphics, x, y + radius * 0.06, radius * 1.95, Math.max(10, radius * 0.36), ring, 0.24, Math.PI * 0.94, Math.PI * 1.98);
+    strokeBackdropEllipseArc(graphics, x, y + radius * 0.06, radius * 1.66, Math.max(8, radius * 0.28), mixColor(ring, shade, 0.24), 0.14, Math.PI * 0.96, Math.PI * 1.96);
+  }
+
+  fillBackdropCircle(graphics, x + radius * 0.08, y + radius * 0.08, radius, shade, 0.55);
+  fillBackdropCircle(graphics, x, y, radius, fill, 0.92);
+  fillBackdropCircle(graphics, x - radius * 0.2, y - radius * 0.18, Math.max(6, radius * 0.42), mixColor(fill, 0xffffff, 0.18), 0.2);
+  fillBackdropCircle(graphics, x + radius * 0.28, y - radius * 0.26, Math.max(4, radius * 0.18), mixColor(fill, 0xffffff, 0.12), 0.1 * craterDetail);
+
+  const craterCount = Math.max(2, Math.round((radius >= 60 ? 6 : radius >= 34 ? 4 : radius >= 24 ? 3 : 2) * craterDetail));
+  const craterPlacements: Array<{ x: number; y: number; radius: number }> = [];
+  for (let index = 0; index < craterCount; index += 1) {
+    const craterSeed = (seed + index * 977) >>> 0;
+    const craterRadius = Math.max(2, Math.round(radius * (0.055 + ((craterSeed & 0x0f) * 0.009) + craterDetail * 0.012)));
+    let craterX = x;
+    let craterY = y;
+    let placed = false;
+
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const attemptSeed = (craterSeed + attempt * 1999) >>> 0;
+      const angle = ((attemptSeed & 0xff) / 255) * Math.PI * 2;
+      const radialBand = attempt < 4
+        ? 0.18 + (((attemptSeed >> 8) & 0x0f) / 15) * 0.24
+        : 0.56 + (((attemptSeed >> 12) & 0x0f) / 15) * 0.28;
+      const radialDistance = radius * radialBand;
+      const candidateX = x + Math.cos(angle) * radialDistance;
+      const candidateY = y + Math.sin(angle) * radialDistance * 0.82;
+      const insidePlanet = Math.hypot((candidateX - x) / radius, (candidateY - y) / (radius * 0.9)) <= 0.98;
+      const overlapsExisting = craterPlacements.some((placement) => (
+        Phaser.Math.Distance.Between(candidateX, candidateY, placement.x, placement.y) < craterRadius + placement.radius + Math.max(2, radius * 0.015)
+      ));
+      if (!insidePlanet || overlapsExisting) {
+        continue;
+      }
+
+      craterX = candidateX;
+      craterY = candidateY;
+      placed = true;
+      break;
+    }
+
+    if (!placed) {
+      continue;
+    }
+
+    craterPlacements.push({ x: craterX, y: craterY, radius: craterRadius });
+    const craterMid = mixColor(craterDark, fill, 0.24);
+    fillBackdropCircle(graphics, craterX + craterRadius * 0.08, craterY + craterRadius * 0.08, craterRadius, craterDark, 0.2 + craterDetail * 0.04);
+    fillBackdropCircle(graphics, craterX, craterY, Math.max(1, craterRadius * 0.9), craterMid, 0.12 + craterDetail * 0.03);
+    fillBackdropCircle(graphics, craterX - craterRadius * 0.22, craterY - craterRadius * 0.22, Math.max(1, craterRadius * 0.56), craterLight, 0.1 + craterDetail * 0.02);
+  }
+
+  if (ring !== null) {
+    strokeBackdropEllipseArc(graphics, x, y + radius * 0.06, radius * 1.95, Math.max(10, radius * 0.36), ring, 0.72, Math.PI * 0.02, Math.PI * 0.94);
+    strokeBackdropEllipseArc(graphics, x, y + radius * 0.06, radius * 1.66, Math.max(8, radius * 0.28), mixColor(ring, fill, 0.22), 0.4, Math.PI * 0.04, Math.PI * 0.92);
+  }
+};
+
+const drawMountainRange = (
+  graphics: Phaser.GameObjects.Graphics,
+  x: number,
+  width: number,
+  baseY: number,
+  minPeakHeight: number,
+  maxPeakHeight: number,
+  minMountainWidth: number,
+  maxMountainWidth: number,
+  color: number,
+  alpha: number,
+  seed: number,
+): void => {
+  let cursor = x - Math.floor(minMountainWidth * 0.5);
+  let index = 0;
+  graphics.fillStyle(color, alpha);
+
+  while (cursor < x + width + maxMountainWidth) {
+    const localSeed = (seed + index * 131) >>> 0;
+    const mountainWidth = minMountainWidth + (localSeed % Math.max(1, maxMountainWidth - minMountainWidth + 1));
+    const peakHeight = minPeakHeight + ((localSeed >> 5) % Math.max(1, maxPeakHeight - minPeakHeight + 1));
+    const peakOffset = (((localSeed >> 10) & 0x07) - 3) * 0.08 * mountainWidth;
+    const leftX = cursor;
+    const rightX = cursor + mountainWidth;
+    const peakX = Phaser.Math.Clamp(cursor + mountainWidth * 0.5 + peakOffset, leftX + mountainWidth * 0.18, rightX - mountainWidth * 0.18);
+    const peakY = baseY - peakHeight;
+
+    graphics.fillTriangle(leftX, baseY, peakX, peakY, rightX, baseY);
+    cursor += mountainWidth * (0.52 + (((localSeed >> 14) & 0x03) * 0.08));
+    index += 1;
+  }
+};
+
+
 export const drawRetroBackdrop = (
   scene: Phaser.Scene,
   x: number,
@@ -1050,213 +1155,191 @@ export const drawRetroBackdrop = (
 ): Phaser.GameObjects.Graphics => {
   cleanupRetroBackdropArtifacts(scene);
   const runtime = createRetroBackdropRuntime(scene);
-
   const baseLayer = scene.add.graphics().setDepth(-30).setName('__retro-backdrop-base');
-  const celestialLayer = scene.add.graphics().setDepth(-29).setName('__retro-backdrop-celestial');
-  const planetFarLayer = scene.add.graphics().setDepth(-28).setName('__retro-backdrop-planet-far');
-  const planetMidLayer = scene.add.graphics().setDepth(-27).setName('__retro-backdrop-planet-mid');
-  const planetNearLayer = scene.add.graphics().setDepth(-26).setName('__retro-backdrop-planet-near');
-  const skylineLayer = scene.add.graphics().setDepth(-25).setName('__retro-backdrop-skyline');
-  const foregroundLayer = scene.add.graphics().setDepth(-24).setName('__retro-backdrop-foreground');
+  const farPlanetLayer = scene.add.graphics().setDepth(-29).setName('__retro-backdrop-far-planets');
+  const farMountainLayer = scene.add.graphics().setDepth(-28).setName('__retro-backdrop-far-mountains');
+  const heroPlanetLayer = scene.add.graphics().setDepth(-27).setName('__retro-backdrop-hero-planet');
+  const midPlanetLayer = scene.add.graphics().setDepth(-26.5).setName('__retro-backdrop-mid-planets');
+  const midMountainLayer = scene.add.graphics().setDepth(-26).setName('__retro-backdrop-mid-mountains');
+  const nearMountainLayer = scene.add.graphics().setDepth(-25).setName('__retro-backdrop-near-mountains');
 
   if (variant === 'gameplay') {
-    celestialLayer.setScrollFactor(0, 0);
-    planetFarLayer.setScrollFactor(0.08, 0.08);
-    planetMidLayer.setScrollFactor(0.16, 0.16);
-    planetNearLayer.setScrollFactor(0.3, 0.3);
-    skylineLayer.setScrollFactor(0.44, 0.44);
-    foregroundLayer.setScrollFactor(0.72, 0.72);
+    baseLayer.setScrollFactor(0, 0);
+    farPlanetLayer.setScrollFactor(0.04, 0.04);
+    heroPlanetLayer.setScrollFactor(0.08, 0.08);
+    farMountainLayer.setScrollFactor(0.1, 0.1);
+    midPlanetLayer.setScrollFactor(0.14, 0.14);
+    midMountainLayer.setScrollFactor(0.22, 0.22);
+    nearMountainLayer.setScrollFactor(0.34, 0.34);
   }
 
-  const horizonY = y + Math.floor(height * (variant === 'gameplay' ? 0.7 : 0.64));
-  const skylineY = y + Math.floor(height * (variant === 'gameplay' ? 0.5 : 0.46));
-  const motifPalette = createRetroBackdropMotifPalette(palette);
-  const paletteSeed = (palette.stageAccent ^ palette.skyline ^ palette.groundBand) >>> 0;
-  const celestialSpacing = variant === 'gameplay' ? 1800 : 1100;
-  const celestialCount = Math.max(2, Math.ceil(width / celestialSpacing));
-  const planetRadius = variant === 'gameplay' ? Math.max(28, Math.floor(height * 0.11)) : Math.max(22, Math.floor(height * 0.1));
-  const starCount = Math.max(14, celestialCount * (variant === 'gameplay' ? 7 : 5));
-  const craterCount = variant === 'gameplay' ? 0 : 5;
-  const ridgeSegments = variant === 'gameplay' ? 8 : 6;
-  const starPulseTargets: Phaser.GameObjects.Rectangle[] = [];
+  const motif = createRetroBackdropMotifPalette(palette);
+  const deepSky = mixColor(palette.background, palette.ink, 0.18);
+  const farTone = mixColor(palette.background, motif.craterDark, 0.14);
+  const midTone = mixColor(motif.planetShade, palette.background, 0.18);
+  const nearTone = mixColor(motif.planetFill, motif.planetShade, 0.34);
+  const highlightTone = mixColor(motif.horizonGlow, palette.bright, 0.12);
+  const layoutWidth = variant === 'gameplay' ? scene.scale.width : width;
+  const layoutHeight = variant === 'gameplay' ? scene.scale.height : height;
+  const farBaseY = y + Math.floor(height * (variant === 'gameplay' ? 0.66 : 0.62));
+  const midBaseY = y + Math.floor(height * (variant === 'gameplay' ? 0.76 : 0.7));
+  const nearBaseY = y + Math.floor(height * (variant === 'gameplay' ? 0.88 : 0.82));
+  const seed = (palette.stageAccent ^ palette.skyline ^ palette.groundBand ^ width ^ height) >>> 0;
+  const starCount = variant === 'gameplay' ? Math.max(36, Math.floor(layoutWidth / 14)) : Math.max(18, Math.floor(width / 26));
+  const heroPlanetRadius = variant === 'gameplay'
+    ? Math.max(120, Math.floor(layoutHeight * 0.34))
+    : Math.max(88, Math.floor(layoutHeight * 0.24));
 
-  baseLayer.fillStyle(palette.background, 1);
+  baseLayer.fillStyle(deepSky, 1);
   baseLayer.fillRect(x, y, width, height);
-
-  baseLayer.fillStyle(palette.ink, 1);
-  baseLayer.fillRect(x, y, width, Math.max(18, Math.floor(height * 0.08)));
-
-  baseLayer.fillStyle(palette.backdropGlow, variant === 'gameplay' ? 0.12 : 0.14);
-  const glowStartY = y + Math.floor(height * (variant === 'gameplay' ? 0.16 : 0.13));
-  const glowSpacing = variant === 'gameplay' ? 38 : 28;
-  const glowLines = variant === 'gameplay' ? 3 : 4;
-  for (let index = 0; index < glowLines; index += 1) {
-    const glowY = glowStartY + index * glowSpacing;
-    if (glowY >= skylineY - 12) {
-      break;
-    }
-    baseLayer.fillRect(x, glowY, width, 3);
-  }
+  baseLayer.fillStyle(highlightTone, 0.08);
+  baseLayer.fillRect(x, farBaseY - 10, width, 18);
 
   for (let index = 0; index < starCount; index += 1) {
-    const offsetSeed = (paletteSeed + index * 97) >>> 0;
-    const starDomainMinX = variant === 'gameplay' ? 14 : x + 18;
-    const starDomainWidth = variant === 'gameplay' ? Math.max(32, scene.scale.width - 28) : Math.max(width - 36, 1);
-    const starX = starDomainMinX + (offsetSeed % starDomainWidth);
-    const starDomainMinY = variant === 'gameplay' ? 12 : y + 14;
-    const starBandHeight = variant === 'gameplay'
-      ? Math.max(56, Math.floor(scene.scale.height * 0.44))
-      : Math.max(36, skylineY - y - 24);
-    const starY = starDomainMinY + (((offsetSeed >> 3) * 29) % starBandHeight);
-    const starSize = 2 + (offsetSeed & 0x03);
-    const starColor = index % 3 === 0 ? motifPalette.starWarm : motifPalette.starCool;
-    const starAlpha = 0.68 + ((offsetSeed >> 6) & 0x03) * 0.08;
-    celestialLayer.fillStyle(starColor, starAlpha);
-    celestialLayer.fillRect(starX, starY, starSize, starSize);
-    if (starSize >= 4) {
-      celestialLayer.fillRect(starX - 2, starY + 1, starSize + 4, 1);
-      celestialLayer.fillRect(starX + 1, starY - 2, 1, starSize + 4);
-    }
-
+    const starSeed = (seed + index * 1733) >>> 0;
+    const starX = x + 8 + (starSeed % Math.max(1, layoutWidth - 16));
+    const starY = y + 8 + (((starSeed >> 6) * 19) % Math.max(24, Math.min(layoutHeight, farBaseY - y) - 16));
+    const starSize = ((starSeed >> 4) & 0x03) === 0 ? 1 : 2;
+    const starColor = index % 4 === 0 ? motif.starWarm : motif.starCool;
+    const starAlpha = 0.34 + ((starSeed >> 10) & 0x03) * 0.1;
     const star = scene.add
-      .rectangle(starX + starSize / 2, starY + starSize / 2, starSize, starSize, starColor, starAlpha)
-      .setName('__retro-backdrop-star')
-      .setDepth(-28.5);
-    star.setBlendMode(Phaser.BlendModes.ADD);
+      .rectangle(starX, starY, starSize, starSize, starColor, starAlpha)
+      .setOrigin(0.5)
+      .setDepth(-29.5)
+      .setName('__retro-backdrop-star');
     if (variant === 'gameplay') {
       star.setScrollFactor(0, 0);
     }
-    starPulseTargets.push(star);
 
-    const blinkDuration = variant === 'gameplay'
-      ? 940 + ((offsetSeed >> 2) % 1500)
-      : 760 + ((offsetSeed >> 2) % 980);
-    const blinkDelay = (offsetSeed >> 4) % 720;
-    const blinkTween = scene.tweens.add({
+    const twinkleTween = scene.tweens.add({
       targets: star,
-      alpha: { from: Math.max(0.18, starAlpha * 0.34), to: starAlpha },
-      duration: blinkDuration,
+      alpha: { from: Math.max(0.12, starAlpha * 0.38), to: Math.min(0.86, starAlpha + 0.22) },
+      duration: 820 + ((starSeed >> 12) % 1400),
+      delay: (starSeed >> 8) % 900,
       yoyo: true,
       repeat: -1,
-      delay: blinkDelay,
       ease: 'Sine.InOut',
     });
-    runtime.tweens.push(blinkTween);
+    runtime.tweens.push(twinkleTween);
   }
 
-  if (starPulseTargets.length > 0) {
-    let pulseIndex = paletteSeed % starPulseTargets.length;
-    const pulseTicker = scene.time.addEvent({
-      delay: variant === 'gameplay' ? 210 : 260,
-      loop: true,
-      callback: () => {
-        if (starPulseTargets.length === 0) {
-          return;
-        }
+  drawBackdropPlanet(
+    farPlanetLayer,
+    x - layoutWidth * 0.08,
+    y + layoutHeight * 0.17,
+    Math.max(84, Math.floor(layoutHeight * 0.24)),
+    mixColor(motif.planetShade, motif.planetFill, 0.22),
+    mixColor(deepSky, motif.craterDark, 0.28),
+    mixColor(motif.ring, deepSky, 0.28),
+    mixColor(motif.craterLight, motif.planetFill, 0.12),
+    mixColor(motif.craterDark, deepSky, 0.14),
+    seed ^ 0x201,
+    1.1,
+  );
+  drawBackdropPlanet(
+    farPlanetLayer,
+    x + layoutWidth * 1.08,
+    y + layoutHeight * 0.14,
+    Math.max(36, Math.floor(layoutHeight * 0.11)),
+    mixColor(motif.planetShade, motif.planetFill, 0.1),
+    mixColor(deepSky, motif.craterDark, 0.36),
+    mixColor(motif.ring, deepSky, 0.18),
+    mixColor(motif.craterLight, motif.planetFill, 0.08),
+    mixColor(motif.craterDark, deepSky, 0.16),
+    seed ^ 0x287,
+    1.05,
+  );
 
-        const star = starPulseTargets[pulseIndex % starPulseTargets.length];
-        const color = pulseIndex % 2 === 0 ? motifPalette.starWarm : motifPalette.starCool;
-        const size = Math.max(1, Math.round(star.width));
-        pulseBeamBlinkOnStar(scene, star, color, size, variant);
-        pulseIndex += 1 + ((paletteSeed >> (pulseIndex % 11)) & 0x01);
-      },
-    });
-    runtime.timers.push(pulseTicker);
+  drawBackdropPlanet(
+    heroPlanetLayer,
+    x + layoutWidth * 0.5,
+    y + layoutHeight * 0.2,
+    heroPlanetRadius,
+    mixColor(motif.planetFill, palette.bright, 0.22),
+    mixColor(motif.planetShade, motif.craterDark, 0.08),
+    mixColor(motif.ring, motif.horizonGlow, 0.18),
+    mixColor(motif.craterLight, palette.bright, 0.14),
+    mixColor(motif.craterDark, motif.planetShade, 0.14),
+    seed ^ 0x3a1,
+    1.9,
+  );
 
-    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      pulseTicker.remove(false);
-    });
-  }
+  drawBackdropPlanet(
+    midPlanetLayer,
+    x + layoutWidth * 0.1,
+    y + layoutHeight * 0.33,
+    Math.max(40, Math.floor(layoutHeight * 0.12)),
+    mixColor(motif.planetFill, palette.bright, 0.16),
+    mixColor(motif.planetShade, motif.craterDark, 0.14),
+    null,
+    mixColor(motif.craterLight, motif.planetFill, 0.16),
+    mixColor(motif.craterDark, motif.planetShade, 0.08),
+    seed ^ 0x3d9,
+    1.15,
+  );
+  drawBackdropPlanet(
+    midPlanetLayer,
+    x + layoutWidth * 0.9,
+    y + layoutHeight * 0.34,
+    Math.max(44, Math.floor(layoutHeight * 0.13)),
+    mixColor(motif.planetFill, motif.horizonGlow, 0.14),
+    mixColor(motif.planetShade, motif.craterDark, 0.16),
+    mixColor(motif.ring, motif.horizonGlow, 0.12),
+    mixColor(motif.craterLight, motif.planetFill, 0.14),
+    mixColor(motif.craterDark, motif.planetShade, 0.1),
+    seed ^ 0x451,
+    1.2,
+  );
 
-  for (let index = 0; index < celestialCount; index += 1) {
-    const planetLayer =
-      index % 3 === 0 ? planetFarLayer : index % 3 === 1 ? planetMidLayer : planetNearLayer;
-    const sectionLeft = x + Math.floor((index / celestialCount) * width);
-    const sectionWidth = Math.ceil(width / celestialCount);
-    const sectionSeed = (paletteSeed + index * 173) >>> 0;
-    const bodyX = sectionLeft + Math.floor(sectionWidth * (0.34 + ((sectionSeed & 0x1f) / 255) * 0.32));
-    const bodyY = y + Math.floor(height * (0.16 + (((sectionSeed >> 5) & 0x0f) / 255) * 0.16));
-    const bodyRadius = Math.max(variant === 'gameplay' ? 24 : 18, planetRadius - (index % 2 === 0 ? 0 : 8));
-    const moonRadius = Math.max(10, Math.floor(bodyRadius * 0.4));
-    const moonX = bodyX - Math.floor(bodyRadius * (1.15 + (index % 3) * 0.12));
-    const moonY = bodyY + Math.floor(bodyRadius * (0.22 - (index % 2) * 0.12));
+  farMountainLayer.fillStyle(farTone, 0.72);
+  farMountainLayer.fillRect(x, farBaseY, width, y + height - farBaseY);
+  drawMountainRange(
+    farMountainLayer,
+    x,
+    width,
+    farBaseY,
+    Math.max(34, Math.floor(height * 0.08)),
+    Math.max(72, Math.floor(height * 0.16)),
+    Math.max(90, Math.floor(width * 0.08)),
+    Math.max(180, Math.floor(width * 0.16)),
+    mixColor(farTone, motif.craterDark, 0.1),
+    0.78,
+    seed ^ 0x12731,
+  );
 
-    planetLayer.fillStyle(motifPalette.planetShade, 1);
-    planetLayer.fillCircle(bodyX + 8, bodyY + 7, bodyRadius);
-    planetLayer.fillStyle(motifPalette.planetFill, 1);
-    planetLayer.fillCircle(bodyX, bodyY, bodyRadius);
-    planetLayer.fillStyle(motifPalette.craterDark, 0.9);
-    planetLayer.fillCircle(bodyX - Math.floor(bodyRadius * 0.24), bodyY + Math.floor(bodyRadius * 0.18), Math.max(6, Math.floor(bodyRadius * 0.22)));
-    planetLayer.fillCircle(bodyX + Math.floor(bodyRadius * 0.22), bodyY - Math.floor(bodyRadius * 0.14), Math.max(4, Math.floor(bodyRadius * 0.16)));
-    if (index % 2 === 0) {
-      planetLayer.lineStyle(4, motifPalette.ring, 1);
-      planetLayer.strokeEllipse(bodyX - 2, bodyY + 3, bodyRadius * 2.8, Math.max(20, bodyRadius * 0.82));
-    }
+  midMountainLayer.fillStyle(midTone, 0.88);
+  midMountainLayer.fillRect(x, midBaseY, width, y + height - midBaseY);
+  drawMountainRange(
+    midMountainLayer,
+    x,
+    width,
+    midBaseY,
+    Math.max(46, Math.floor(height * 0.1)),
+    Math.max(110, Math.floor(height * 0.22)),
+    Math.max(100, Math.floor(width * 0.1)),
+    Math.max(220, Math.floor(width * 0.2)),
+    mixColor(midTone, motif.planetShade, 0.08),
+    0.86,
+    seed ^ 0x8821,
+  );
 
-    planetLayer.fillStyle(motifPalette.planetFill, 0.94);
-    planetLayer.fillCircle(moonX, moonY, moonRadius);
-    planetLayer.fillStyle(motifPalette.craterLight, 0.86);
-    planetLayer.fillCircle(moonX + Math.floor(moonRadius * 0.14), moonY + Math.floor(moonRadius * 0.18), Math.max(4, Math.floor(moonRadius * 0.2)));
-  }
+  nearMountainLayer.fillStyle(nearTone, 0.98);
+  nearMountainLayer.fillRect(x, nearBaseY, width, y + height - nearBaseY);
+  drawMountainRange(
+    nearMountainLayer,
+    x,
+    width,
+    nearBaseY,
+    Math.max(60, Math.floor(height * 0.14)),
+    Math.max(150, Math.floor(height * 0.28)),
+    Math.max(120, Math.floor(width * 0.12)),
+    Math.max(260, Math.floor(width * 0.24)),
+    mixColor(nearTone, motif.planetFill, 0.04),
+    0.94,
+    seed ^ 0x45ab3,
+  );
 
-  skylineLayer.fillStyle(palette.skyline, 1);
-  skylineLayer.fillRect(x, skylineY, width, Math.max(36, horizonY - skylineY));
-
-  skylineLayer.fillStyle(motifPalette.horizonGlow, 0.16);
-  skylineLayer.fillRect(x, skylineY - 8, width, 4);
-  skylineLayer.fillStyle(palette.backdropAccent, 0.08);
-  skylineLayer.fillRect(x, skylineY + 6, width, 6);
-
-  const ridgeWidth = Math.ceil(width / ridgeSegments);
-  for (let index = 0; index < ridgeSegments; index += 1) {
-    const ridgeX = x + index * ridgeWidth;
-    const ridgeHeight = 18 + ((paletteSeed >> (index % 8)) & 0x07) * 5 + (index % 2 === 0 ? 8 : 0);
-    const ridgeTop = horizonY - ridgeHeight;
-    const ridgeColor = index % 2 === 0 ? motifPalette.craterDark : motifPalette.craterLight;
-    skylineLayer.fillStyle(ridgeColor, index % 2 === 0 ? 0.72 : 0.48);
-    skylineLayer.fillRect(ridgeX, ridgeTop, Math.min(ridgeWidth + 2, x + width - ridgeX), ridgeHeight + 10);
-    if (variant !== 'gameplay') {
-      skylineLayer.fillStyle(palette.ink, 0.18);
-      skylineLayer.fillEllipse(ridgeX + Math.floor(ridgeWidth * 0.46), ridgeTop + Math.max(6, Math.floor(ridgeHeight * 0.34)), Math.max(18, Math.floor(ridgeWidth * 0.5)), Math.max(10, Math.floor(ridgeHeight * 0.22)));
-    }
-  }
-
-  foregroundLayer.fillStyle(palette.groundBand, 1);
-  foregroundLayer.fillRect(x, horizonY, width, y + height - horizonY);
-
-  foregroundLayer.fillStyle(motifPalette.horizonGlow, 0.22);
-  foregroundLayer.fillRect(x, horizonY - 16, width, 8);
-
-  for (let index = 0; index < craterCount; index += 1) {
-    const craterX = x + Math.floor(((index + 1) / (craterCount + 1)) * width);
-    const craterY = horizonY + 20 + (index % 3) * 18;
-    const craterWidth = variant === 'gameplay' ? 44 + (index % 3) * 10 : 34 + (index % 2) * 10;
-    const craterHeight = 12 + (index % 2) * 5;
-    foregroundLayer.fillStyle(motifPalette.craterDark, 0.26);
-    foregroundLayer.fillEllipse(craterX, craterY, craterWidth, craterHeight);
-    foregroundLayer.fillStyle(motifPalette.craterLight, 0.16);
-    foregroundLayer.fillEllipse(craterX, craterY - 2, craterWidth - 8, Math.max(6, craterHeight - 4));
-  }
-
-  const scanlineStart = skylineY + 10;
-  const scanlineSpacing = variant === 'gameplay' ? 22 : 16;
-  skylineLayer.fillStyle(palette.ink, 0.18);
-  for (let lineY = scanlineStart; lineY < horizonY - 8; lineY += scanlineSpacing) {
-    skylineLayer.fillRect(x, lineY, width, 2);
-  }
-
-  const groundLineSpacing = variant === 'gameplay' ? 22 : 16;
-  foregroundLayer.fillStyle(motifPalette.horizonGlow, 0.08);
-  for (let lineY = horizonY + 10; lineY < y + height - 8; lineY += groundLineSpacing) {
-    foregroundLayer.fillRect(x, lineY, width, 2);
-  }
-
-  if (variant === 'transition') {
-    foregroundLayer.fillStyle(palette.ink, 1);
-    foregroundLayer.fillRect(x, y + height - 22, width, 22);
-  }
-
-  return foregroundLayer;
+  return baseLayer;
 };
 
 const RETRO_DEFEAT_FLASH_PRESETS: Record<RetroDefeatFlashPresetName, RetroDefeatFlashPreset> = {
