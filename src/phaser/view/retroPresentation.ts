@@ -231,7 +231,7 @@ export const createRetroMenuPalette = (): RetroPresentationPalette =>
 
 export const createRetroBackdropMotifPalette = (palette: RetroPresentationPalette): RetroBackdropMotifPalette => {
   const separationReferences = [palette.cool, palette.warm, palette.safe, palette.alert, palette.border, palette.panel, palette.panelAlt];
-  const hueCore = ensureSeparated(mixColor(palette.cool, palette.stageAccent, 0.08), separationReferences, palette.background, 52);
+  const hueCore = ensureSeparated(mixColor(palette.stageAccent, palette.cool, 0.18), separationReferences, palette.background, 52);
   const hueBright = ensureSeparated(mixColor(hueCore, palette.bright, 0.34), separationReferences, palette.background, 56);
   const hueShadow = ensureSeparated(mixColor(hueCore, palette.ink, 0.42), separationReferences, palette.background, 44);
 
@@ -1242,6 +1242,18 @@ const drawCaveFormation = (
   ]);
 };
 
+type RetroBackdropTheme = 'verdant' | 'ember' | 'violet';
+
+const getRetroBackdropTheme = (palette: RetroPresentationPalette): RetroBackdropTheme => {
+  if (colorDistance(palette.stageAccent, 0xffb768) < 90) {
+    return 'ember';
+  }
+  if (colorDistance(palette.stageAccent, 0xc794ff) < 120 || colorDistance(palette.stageAccent, 0x9ee8ff) < 90) {
+    return 'violet';
+  }
+  return 'verdant';
+};
+
 const drawCaveCeiling = (
   graphics: Phaser.GameObjects.Graphics,
   x: number,
@@ -1326,6 +1338,7 @@ export const drawRetroBackdrop = (
   }
 
   const motif = createRetroBackdropMotifPalette(palette);
+  const backdropTheme = getRetroBackdropTheme(palette);
   const deepSky = mixColor(palette.background, palette.ink, 0.18);
   const farTone = mixColor(palette.background, motif.craterDark, 0.22);
   const midTone = mixColor(motif.planetShade, palette.background, 0.08);
@@ -1341,9 +1354,41 @@ export const drawRetroBackdrop = (
   const nearBaseY = y + Math.floor(height * (variant === 'gameplay' ? 0.88 : 0.82));
   const seed = (palette.stageAccent ^ palette.skyline ^ palette.groundBand ^ width ^ height) >>> 0;
   const starCount = variant === 'gameplay' ? Math.max(36, Math.floor(layoutWidth / 14)) : Math.max(18, Math.floor(width / 26));
+  const heroPlanetRadiusFactor = backdropTheme === 'ember' ? 0.3 : backdropTheme === 'violet' ? 0.38 : 0.34;
   const heroPlanetRadius = variant === 'gameplay'
-    ? Math.max(120, Math.floor(layoutHeight * 0.34))
-    : Math.max(88, Math.floor(layoutHeight * 0.24));
+    ? Math.max(120, Math.floor(layoutHeight * heroPlanetRadiusFactor))
+    : Math.max(88, Math.floor(layoutHeight * (heroPlanetRadiusFactor - 0.1)));
+  const heroPlanetX = backdropTheme === 'ember' ? 0.44 : backdropTheme === 'violet' ? 0.58 : 0.5;
+  const heroPlanetY = backdropTheme === 'ember' ? 0.22 : backdropTheme === 'violet' ? 0.17 : 0.19;
+  const farPlanetSpecs = backdropTheme === 'ember'
+    ? [
+        { x: -0.12, y: 0.14, size: 0.28, ring: true, detail: 1.2, seedOffset: 0x201 },
+        { x: 1.04, y: 0.22, size: 0.18, ring: false, detail: 0.95, seedOffset: 0x287 },
+      ]
+    : backdropTheme === 'violet'
+      ? [
+          { x: -0.04, y: 0.1, size: 0.19, ring: false, detail: 1.05, seedOffset: 0x201 },
+          { x: 0.92, y: 0.07, size: 0.22, ring: true, detail: 1.16, seedOffset: 0x287 },
+          { x: 1.16, y: 0.26, size: 0.12, ring: false, detail: 0.9, seedOffset: 0x2f1 },
+        ]
+      : [
+          { x: -0.08, y: 0.17, size: 0.24, ring: true, detail: 1.1, seedOffset: 0x201 },
+          { x: 1.08, y: 0.14, size: 0.11, ring: true, detail: 1.05, seedOffset: 0x287 },
+        ];
+  const midPlanetSpecs = backdropTheme === 'ember'
+    ? [
+        { x: 0.18, y: 0.36, size: 0.1, ring: false, detail: 1.1, seedOffset: 0x3d9 },
+        { x: 0.84, y: 0.3, size: 0.14, ring: true, detail: 1.18, seedOffset: 0x451 },
+      ]
+    : backdropTheme === 'violet'
+      ? [
+          { x: 0.24, y: 0.26, size: 0.16, ring: true, detail: 1.28, seedOffset: 0x3d9 },
+          { x: 0.86, y: 0.38, size: 0.11, ring: false, detail: 1.08, seedOffset: 0x451 },
+        ]
+      : [
+          { x: 0.1, y: 0.33, size: 0.12, ring: false, detail: 1.15, seedOffset: 0x3d9 },
+          { x: 0.9, y: 0.34, size: 0.13, ring: true, detail: 1.2, seedOffset: 0x451 },
+        ];
 
   baseLayer.fillStyle(deepSky, 1);
   baseLayer.fillRect(x, y, width, height);
@@ -1386,73 +1431,51 @@ export const drawRetroBackdrop = (
     runtime.tweens.push(twinkleTween);
   }
 
-  drawBackdropPlanet(
-    farPlanetLayer,
-    x - layoutWidth * 0.08,
-    y + layoutHeight * 0.17,
-    Math.max(84, Math.floor(layoutHeight * 0.24)),
-    mixColor(motif.planetShade, motif.planetFill, 0.22),
-    mixColor(deepSky, motif.craterDark, 0.28),
-    mixColor(motif.ring, deepSky, 0.28),
-    mixColor(motif.craterLight, motif.planetFill, 0.12),
-    mixColor(motif.craterDark, deepSky, 0.14),
-    seed ^ 0x201,
-    1.1,
-  );
-  drawBackdropPlanet(
-    farPlanetLayer,
-    x + layoutWidth * 1.08,
-    y + layoutHeight * 0.14,
-    Math.max(36, Math.floor(layoutHeight * 0.11)),
-    mixColor(motif.planetShade, motif.planetFill, 0.1),
-    mixColor(deepSky, motif.craterDark, 0.36),
-    mixColor(motif.ring, deepSky, 0.18),
-    mixColor(motif.craterLight, motif.planetFill, 0.08),
-    mixColor(motif.craterDark, deepSky, 0.16),
-    seed ^ 0x287,
-    1.05,
-  );
+  for (const spec of farPlanetSpecs) {
+    drawBackdropPlanet(
+      farPlanetLayer,
+      x + layoutWidth * spec.x,
+      y + layoutHeight * spec.y,
+      Math.max(30, Math.floor(layoutHeight * spec.size)),
+      mixColor(motif.planetShade, motif.planetFill, backdropTheme === 'ember' ? 0.18 : 0.22),
+      mixColor(deepSky, motif.craterDark, backdropTheme === 'violet' ? 0.24 : 0.3),
+      spec.ring ? mixColor(motif.ring, deepSky, backdropTheme === 'ember' ? 0.22 : 0.28) : null,
+      mixColor(motif.craterLight, motif.planetFill, 0.12),
+      mixColor(motif.craterDark, deepSky, 0.14),
+      seed ^ spec.seedOffset,
+      spec.detail,
+    );
+  }
 
   drawBackdropPlanet(
     heroPlanetLayer,
-    x + layoutWidth * 0.5,
-    y + layoutHeight * 0.19,
+    x + layoutWidth * heroPlanetX,
+    y + layoutHeight * heroPlanetY,
     heroPlanetRadius,
     mixColor(motif.planetFill, palette.bright, 0.22),
     mixColor(motif.planetShade, motif.craterDark, 0.08),
-    mixColor(motif.ring, motif.horizonGlow, 0.18),
+    mixColor(motif.ring, motif.horizonGlow, backdropTheme === 'ember' ? 0.14 : 0.18),
     mixColor(motif.craterLight, palette.bright, 0.14),
     mixColor(motif.craterDark, motif.planetShade, 0.14),
     seed ^ 0x3a1,
     1.9,
   );
 
-  drawBackdropPlanet(
-    midPlanetLayer,
-    x + layoutWidth * 0.1,
-    y + layoutHeight * 0.33,
-    Math.max(40, Math.floor(layoutHeight * 0.12)),
-    mixColor(motif.planetFill, palette.bright, 0.16),
-    mixColor(motif.planetShade, motif.craterDark, 0.14),
-    null,
-    mixColor(motif.craterLight, motif.planetFill, 0.16),
-    mixColor(motif.craterDark, motif.planetShade, 0.08),
-    seed ^ 0x3d9,
-    1.15,
-  );
-  drawBackdropPlanet(
-    midPlanetLayer,
-    x + layoutWidth * 0.9,
-    y + layoutHeight * 0.34,
-    Math.max(44, Math.floor(layoutHeight * 0.13)),
-    mixColor(motif.planetFill, motif.horizonGlow, 0.14),
-    mixColor(motif.planetShade, motif.craterDark, 0.16),
-    mixColor(motif.ring, motif.horizonGlow, 0.12),
-    mixColor(motif.craterLight, motif.planetFill, 0.14),
-    mixColor(motif.craterDark, motif.planetShade, 0.1),
-    seed ^ 0x451,
-    1.2,
-  );
+  for (const spec of midPlanetSpecs) {
+    drawBackdropPlanet(
+      midPlanetLayer,
+      x + layoutWidth * spec.x,
+      y + layoutHeight * spec.y,
+      Math.max(30, Math.floor(layoutHeight * spec.size)),
+      mixColor(motif.planetFill, spec.ring ? palette.bright : motif.horizonGlow, 0.14),
+      mixColor(motif.planetShade, motif.craterDark, 0.15),
+      spec.ring ? mixColor(motif.ring, motif.horizonGlow, 0.12) : null,
+      mixColor(motif.craterLight, motif.planetFill, 0.15),
+      mixColor(motif.craterDark, motif.planetShade, 0.09),
+      seed ^ spec.seedOffset,
+      spec.detail,
+    );
+  }
 
   farMountainLayer.fillStyle(farTone, 0.72);
   farMountainLayer.fillRect(x, farBaseY, width, y + height - farBaseY);
@@ -1521,17 +1544,31 @@ export const drawRetroBackdrop = (
     0.86,
     seed ^ 0x51a9,
   );
-  const caveFormationCount = 10;
+  const caveFormationCount = backdropTheme === 'ember' ? 9 : backdropTheme === 'violet' ? 11 : 10;
   for (let caveIndex = 0; caveIndex < caveFormationCount; caveIndex += 1) {
     const caveSeed = (seed + caveIndex * 541) >>> 0;
     const segmentStart = x + (width / caveFormationCount) * caveIndex;
     const segmentWidth = width / caveFormationCount;
-    const formationWidth = Math.max(140, Math.floor(layoutWidth * (0.24 + ((caveSeed & 0x0f) / 15) * 0.22)));
+    const baseWidthFactor = backdropTheme === 'ember' ? 0.28 : backdropTheme === 'violet' ? 0.22 : 0.24;
+    const widthVariance = backdropTheme === 'ember' ? 0.18 : backdropTheme === 'violet' ? 0.26 : 0.22;
+    const formationWidth = Math.max(140, Math.floor(layoutWidth * (baseWidthFactor + ((caveSeed & 0x0f) / 15) * widthVariance)));
     const formationHeight = Math.max(
       220,
-      Math.floor(layoutHeight * (0.84 + (((caveSeed >> 6) & 0x0f) / 15) * 0.22)),
+      Math.floor(layoutHeight * (
+        backdropTheme === 'ember'
+          ? 0.74 + (((caveSeed >> 6) & 0x0f) / 15) * 0.18
+          : backdropTheme === 'violet'
+            ? 0.9 + (((caveSeed >> 6) & 0x0f) / 15) * 0.2
+            : 0.84 + (((caveSeed >> 6) & 0x0f) / 15) * 0.22
+      )),
     );
-    const formationLeft = segmentStart + Math.floor(segmentWidth * (0.04 + (((caveSeed >> 17) & 0x0f) / 15) * 0.18));
+    const formationLeft = segmentStart + Math.floor(
+      segmentWidth * (
+        backdropTheme === 'violet'
+          ? 0.02 + (((caveSeed >> 17) & 0x0f) / 15) * 0.24
+          : 0.04 + (((caveSeed >> 17) & 0x0f) / 15) * 0.18
+      ),
+    );
     const formationTop = y + layoutHeight - formationHeight;
     const localAlpha = 1;
     const localDetailAlpha = 0.22 + (((caveSeed >> 12) & 0x03) * 0.04);
