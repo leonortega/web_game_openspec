@@ -9,7 +9,7 @@ import {
   type RewardBlockDefinition,
   type SecretRouteDefinition,
 } from './types';
-import type { PlatformSurfaceKind, PlatformSurfaceTerrainKind, Rect, TurretVariantId } from '../../simulation/state';
+import type { PlatformSurfaceTerrainKind, Rect, TurretVariantId } from '../../simulation/state';
 import type { StageAudioThemeMetadata } from '../../../audio/audioContract';
 import { GRAVITY_FIELD_KINDS, PLATFORM_SURFACE_TERRAIN_KINDS, TURRET_VARIANT_CONFIG } from '../../simulation/state';
 import {
@@ -49,7 +49,7 @@ const POWER_PICKUP_SUPPORT_GAP = 56;
 const POWER_PICKUP_SUPPORT_HEIGHT_TOLERANCE = 96;
 const SECRET_ROUTE_MIN_REWARD_SCORE = 3;
 const MAIN_STAGE_IDS = ['forest-ruins', 'amber-cavern', 'sky-sanctum'] as const;
-const MAIN_STAGE_TERRAIN_KINDS = ['brittleCrystal', 'stickySludge'] as const;
+const MAIN_STAGE_TERRAIN_KINDS = ['crystal', 'magnet'] as const;
 const HALO_SPIRE_ARRAY_STAGE_ID = 'sky-sanctum';
 const GRAVITY_FIELD_CHECKPOINT_CLEARANCE = 56;
 const MAGNETIC_PLATFORM_STAGE_ID = 'forest-ruins';
@@ -686,7 +686,7 @@ const routeUsesReadableMechanic = (stage: StageDefinition, route: SecretRouteDef
             stage.platforms.some(
               (platform) =>
                 platform.id === platformId &&
-                (platform.surfaceMechanic?.kind === 'brittleCrystal' || platform.surfaceMechanic?.kind === 'stickySludge') &&
+                (platform.kind === 'crystal' || platform.kind === 'magnet') &&
                 intersectsRect(routeBounds, platform),
             ),
           ) ?? false
@@ -831,7 +831,7 @@ export const validateStageCatalogTerrainRollout = (stages: StageDefinition[]): S
   const missingStageTerrain = mainStages.filter((stage) => mainStageTerrainKinds(stage).length === 0);
   if (missingStageTerrain.length > 0) {
     throw new Error(
-      `Main stage terrain rollout must keep at least one brittle crystal or sticky sludge beat in each shipped stage: ${missingStageTerrain.map((stage) => stage.id).join(', ')}`,
+      `Main stage terrain rollout must keep at least one crystal or magnet beat in each shipped stage: ${missingStageTerrain.map((stage) => stage.id).join(', ')}`,
     );
   }
 
@@ -839,7 +839,7 @@ export const validateStageCatalogTerrainRollout = (stages: StageDefinition[]): S
   const missingTerrainKinds = MAIN_STAGE_TERRAIN_KINDS.filter((kind) => !campaignTerrainKinds.has(kind));
   if (missingTerrainKinds.length > 0) {
     throw new Error(
-      `Main stage terrain rollout must include both brittle crystal and sticky sludge across Verdant Impact Crater, Ember Rift Warrens, and Halo Spire Array: missing ${missingTerrainKinds.join(', ')}`,
+      `Main stage terrain rollout must include both crystal and magnet across Verdant Impact Crater, Ember Rift Warrens, and Halo Spire Array: missing ${missingTerrainKinds.join(', ')}`,
     );
   }
 
@@ -853,23 +853,14 @@ export const validateStageCatalogTerrainRollout = (stages: StageDefinition[]): S
   return stages;
 };
 
-const authoredSurfacePlatforms = (
-  stage: StageDefinition,
-  kind?: PlatformSurfaceKind,
-): (PlatformDefinition & { surfaceMechanic: NonNullable<PlatformDefinition['surfaceMechanic']> })[] =>
-  stage.platforms.filter(
-    (platform): platform is PlatformDefinition & { surfaceMechanic: NonNullable<PlatformDefinition['surfaceMechanic']> } =>
-      platform.surfaceMechanic !== undefined && (kind == null || platform.surfaceMechanic.kind === kind),
-  );
-
 const authoredTerrainVariantPlatforms = (
   stage: StageDefinition,
   kind?: PlatformSurfaceTerrainKind,
-): (PlatformDefinition & { surfaceMechanic: { kind: PlatformSurfaceTerrainKind } })[] =>
-  authoredSurfacePlatforms(stage).filter(
-    (platform): platform is PlatformDefinition & { surfaceMechanic: { kind: PlatformSurfaceTerrainKind } } =>
-      PLATFORM_SURFACE_TERRAIN_KINDS.includes(platform.surfaceMechanic.kind as PlatformSurfaceTerrainKind) &&
-      (kind == null || platform.surfaceMechanic.kind === kind),
+): PlatformDefinition[] =>
+  stage.platforms.filter(
+    (platform) =>
+      PLATFORM_SURFACE_TERRAIN_KINDS.includes(platform.kind as PlatformSurfaceTerrainKind) &&
+      (kind == null || platform.kind === kind),
   );
 
 const isTerrainVariantInteriorOnlyDeadEnd = (route: SecretRouteDefinition, platform: PlatformDefinition): boolean =>
@@ -1059,7 +1050,7 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
   if (hasLegacyTerrainSurfaceOverlays(stage)) {
     const legacyIds = legacyTerrainSurfaceIds((stage as StageDefinition & { terrainSurfaces?: unknown }).terrainSurfaces).join(', ');
     throw new Error(
-      `Brittle crystal and sticky sludge must be authored on platform terrainVariant instead of terrain surfaces${legacyIds ? `: ${legacyIds}` : ''}`,
+      `Crystal and magnet routes must be authored as platform kinds instead of terrain surfaces${legacyIds ? `: ${legacyIds}` : ''}`,
     );
   }
 
@@ -1102,21 +1093,26 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
 
   const invalidTerrainVariantPlatforms = terrainVariantPlatforms.filter(
     (platform) =>
-      platform.kind !== 'static' || Boolean(platform.reveal) || Boolean(platform.temporaryBridge) || Boolean(platform.magnetic),
+      (platform.kind !== 'magnet' && platform.kind !== 'crystal') ||
+      Boolean(platform.reveal) ||
+      Boolean(platform.temporaryBridge) ||
+      Boolean(platform.magnetic),
   );
   if (invalidTerrainVariantPlatforms.length > 0) {
     throw new Error(
-      `Platform surface mechanics must stay on plain static platforms: ${invalidTerrainVariantPlatforms.map((platform) => platform.id).join(', ')}`,
+      `Crystal and magnet platforms must stay on plain authored platform bodies: ${invalidTerrainVariantPlatforms.map((platform) => platform.id).join(', ')}`,
     );
   }
 
-  const retiredSurfaceMechanicPlatforms = authoredSurfacePlatforms(stage).filter(
-    (platform) => !PLATFORM_SURFACE_TERRAIN_KINDS.includes(platform.surfaceMechanic.kind as PlatformSurfaceTerrainKind),
+  const retiredSurfaceMechanicPlatforms = stage.platforms.filter(
+    (platform): platform is PlatformDefinition & { surfaceMechanic: NonNullable<PlatformDefinition['surfaceMechanic']> } =>
+      Boolean(platform.surfaceMechanic) &&
+      !PLATFORM_SURFACE_TERRAIN_KINDS.includes(platform.surfaceMechanic!.kind as PlatformSurfaceTerrainKind),
   );
   if (retiredSurfaceMechanicPlatforms.length > 0) {
     throw new Error(
-      `Platform surface mechanics only support brittle crystal and sticky sludge on static platforms: ${retiredSurfaceMechanicPlatforms
-        .map((platform) => `${platform.id}:${platform.surfaceMechanic.kind}`)
+      `Platform surface mechanics only support crystal and magnet on static platforms: ${retiredSurfaceMechanicPlatforms
+        .map((platform) => `${platform.id}:${platform.surfaceMechanic!.kind}`)
         .join(', ')}`,
     );
   }
@@ -1464,13 +1460,13 @@ export const validateTraversalMechanics = (stage: StageDefinition): StageDefinit
     const restoredTerrainPlatforms = authoredTerrainVariantPlatforms(stage);
     if (restoredTerrainPlatforms.length === 0) {
       throw new Error(
-        `Main stages must author at least one readable brittle crystal or sticky sludge terrain variant: ${stage.id}`,
+        `Main stages must author at least one readable brittle crystal or sticky platform terrain variant: ${stage.id}`,
       );
     }
 
     const deadEndTerrainKinds = terrainKindsConfinedToDeadEnds(stage);
     if (deadEndTerrainKinds.length > 0) {
-      throw new Error(`Main stages cannot confine brittle crystal or sticky sludge to unreadable dead-end pockets: ${stage.id}`);
+      throw new Error(`Main stages cannot confine brittle crystal or sticky platform to unreadable dead-end pockets: ${stage.id}`);
     }
 
     if (stage.gravityFields.length === 0) {

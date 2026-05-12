@@ -7,7 +7,6 @@ import {
   TURRET_TEXTURE_SIZE,
   WALKER_TEXTURE_SIZE,
 } from '../../assets/bootTextures';
-import { createOptimizedSprite } from '../../plugins/enhancedRenderUtils';
 import { TURRET_VARIANT_CONFIG, type EnemyState, type HazardState, type ProjectileState } from '../../../game/simulation/state';
 import {
   getRetroDefeatTweenPreset,
@@ -15,8 +14,16 @@ import {
   getRetroEnemyPose,
   getRetroHitFlashBlend,
   mixColor,
+  snapRetroValue,
   type RetroPresentationPalette,
 } from '../../view/retroPresentation';
+import { drawEnemyGraphic } from '../../view/runtimeCharacterGraphics';
+import { drawHazardGraphic, drawProjectileGraphic } from '../../view/runtimeWorldGraphics';
+
+const ignoreFromUiCamera = (scene: Phaser.Scene, target: Phaser.GameObjects.GameObject): void => {
+  const uiCamera = (scene as Phaser.Scene & { uiCamera?: Phaser.Cameras.Scene2D.Camera }).uiCamera;
+  uiCamera?.ignore(target);
+};
 
 const ENEMY_VISUAL_HEIGHTS = {
   walker: WALKER_TEXTURE_SIZE.height,
@@ -28,11 +35,11 @@ const ENEMY_VISUAL_HEIGHTS = {
 
 export type GameSceneEnemyRenderingContext = Phaser.Scene & {
   retroPalette: RetroPresentationPalette;
-  hazardSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  enemySprites: Map<string, Phaser.GameObjects.Sprite>;
+  hazardSprites: Map<string, Phaser.GameObjects.Graphics>;
+  enemySprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyContactStrips: Map<string, Phaser.GameObjects.Rectangle>;
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  projectileSprites: Map<string, Phaser.GameObjects.Sprite>;
+  projectileSprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyDefeatVisibleUntilMs: Map<string, number>;
   enemyHitFlashUntilMs: Map<string, number>;
 };
@@ -53,30 +60,14 @@ export const getSpikeHazardToothRects = (
 };
 
 export function drawHazard(scene: GameSceneEnemyRenderingContext, hazard: HazardState): void {
-  const base = scene.add
-    .rectangle(
-      hazard.rect.x + hazard.rect.width / 2,
-      hazard.rect.y + hazard.rect.height / 2,
-      hazard.rect.width,
-      hazard.rect.height,
-      scene.retroPalette.alert,
-    )
-    .setOrigin(0.5)
-    .setDepth(4)
-    .setStrokeStyle(2, scene.retroPalette.ink, 1);
-
-  for (const tooth of getSpikeHazardToothRects(hazard.rect)) {
-    scene.add
-      .rectangle(
-        tooth.x,
-        tooth.y,
-        tooth.width,
-        tooth.height,
-        scene.retroPalette.warm,
-      )
-      .setOrigin(0.5, 0)
-      .setDepth(5);
-  }
+  const base = scene.add.graphics().setDepth(4);
+  base.setPosition(hazard.rect.x, hazard.rect.y);
+  drawHazardGraphic(base, {
+    hazard,
+    color: scene.retroPalette.alert,
+    brightColor: scene.retroPalette.warm,
+    borderColor: scene.retroPalette.border,
+  });
 
   scene.hazardSprites.set(hazard.id, base);
 }
@@ -110,8 +101,11 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
       enemy.kind === 'flyer'
         ? enemy.y + motion.yOffset
         : enemy.y + enemy.height - visualHeight * motion.scaleY + plantedOffsetY;
-    sprite.setPosition(enemy.x, renderY);
-    sprite.setFlipX(enemy.direction < 0);
+    const snappedEnemyX = snapRetroValue(enemy.x);
+    const snappedRenderY = snapRetroValue(renderY);
+    sprite.setPosition(snappedEnemyX, snappedRenderY);
+    sprite.setData('visualWidth', enemy.width);
+    sprite.setData('visualHeight', visualHeight);
     sprite.setScale(motion.scaleX, motion.scaleY);
     sprite.setAlpha(motion.alpha);
     sprite.setAngle(0);
@@ -137,31 +131,35 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
     if (ramp) {
       tint = ramp.baseTint;
     }
-    if (hitFlashBlend > 0) {
-      tint = mixColor(tint, scene.retroPalette.bright, hitFlashBlend);
-      sprite.setAlpha(Math.max(motion.alpha, 0.88));
-    }
-    sprite.setTint(tint);
+    drawEnemyGraphic(sprite, {
+      enemy,
+      pose: motion,
+      tint,
+      alpha: hitFlashBlend > 0 ? Math.max(motion.alpha, 0.88) : motion.alpha,
+      hitFlashBlend,
+      brightColor: scene.retroPalette.bright,
+      borderColor: scene.retroPalette.border,
+    });
     for (const accent of accents) {
       accent.setVisible(false);
     }
     if (enemy.kind === 'flyer' && accents.length === 2) {
       accents[0]
-        .setPosition(enemy.x + 14, enemy.y + 7 + motion.accentOffsetY)
+        .setPosition(snapRetroValue(snappedEnemyX + 14), snapRetroValue(enemy.y + 7 + motion.accentOffsetY))
         .setFillStyle(scene.retroPalette.cool, motion.accentAlpha)
         .setVisible(true);
       accents[1]
-        .setPosition(enemy.x + 10, enemy.y + 16 + motion.accentOffsetY)
+        .setPosition(snapRetroValue(snappedEnemyX + 10), snapRetroValue(enemy.y + 16 + motion.accentOffsetY))
         .setFillStyle(scene.retroPalette.bright, 0.16 + motion.accentAlpha * 0.5)
         .setVisible(true);
     } else if (ramp && accents.length === 2) {
       accents[0]
-        .setPosition(enemy.x + 4, renderY + 5)
+        .setPosition(snapRetroValue(snappedEnemyX + 4), snapRetroValue(snappedRenderY + 5))
         .setSize(Math.max(10, enemy.width - 8), 4)
         .setFillStyle(ramp.highlightTint, Math.min(0.92, ramp.stripeAlpha + hitFlashBlend * 0.22))
         .setVisible(true);
       accents[1]
-        .setPosition(enemy.x + 6, renderY + enemy.height - 9)
+        .setPosition(snapRetroValue(snappedEnemyX + 6), snapRetroValue(snappedRenderY + enemy.height - 9))
         .setSize(Math.max(8, enemy.width - 12), 3)
         .setFillStyle(ramp.shadowTint, Math.min(0.9, 0.34 + hitFlashBlend * 0.2))
         .setVisible(true);
@@ -172,10 +170,20 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
 
   if (defeatHoldActive) {
     const defeatPreset = getRetroDefeatTweenPreset(enemy.defeatCause === 'plasma-blast' ? 'plasma-blast' : 'stomp');
+    sprite.setData('visualWidth', enemy.width);
+    sprite.setData('visualHeight', ENEMY_VISUAL_HEIGHTS[enemy.kind]);
     sprite.setDepth(defeatPreset.depth);
     sprite.setAlpha(1);
     const defeatTint = enemy.defeatCause === 'plasma-blast' ? scene.retroPalette.bright : scene.retroPalette.alert;
-    sprite.setTint(hitFlashBlend > 0 ? mixColor(defeatTint, scene.retroPalette.border, hitFlashBlend) : defeatTint);
+    drawEnemyGraphic(sprite, {
+      enemy,
+      pose: { state: 'idle', yOffset: 0, scaleX: 1, scaleY: 1, alpha: 1, accentAlpha: 0, accentOffsetX: 0, accentOffsetY: 0 },
+      tint: hitFlashBlend > 0 ? mixColor(defeatTint, scene.retroPalette.border, hitFlashBlend) : defeatTint,
+      alpha: 1,
+      hitFlashBlend,
+      brightColor: scene.retroPalette.bright,
+      borderColor: scene.retroPalette.border,
+    });
     for (const accent of accents) {
       accent.setVisible(false);
     }
@@ -201,12 +209,17 @@ export function syncProjectile(scene: GameSceneEnemyRenderingContext, projectile
   }
 
   if (!sprite) {
-    sprite = createOptimizedSprite(scene, projectile.x, projectile.y, 'projectile').setOrigin(0, 0);
+    sprite = scene.add.graphics();
+    ignoreFromUiCamera(scene, sprite);
     scene.projectileSprites.set(projectile.id, sprite);
   }
 
-  sprite.setPosition(projectile.x, projectile.y);
-  sprite.setTint(projectile.variant ? TURRET_VARIANT_CONFIG[projectile.variant].projectileColor : 0xffc15b);
-  sprite.setScale(projectile.variant ? 1.18 : 1.06);
-  sprite.setAlpha(projectile.variant ? 0.96 : 0.9);
+  sprite.setPosition(snapRetroValue(projectile.x), snapRetroValue(projectile.y));
+  drawProjectileGraphic(sprite, {
+    projectile,
+    color: projectile.variant ? TURRET_VARIANT_CONFIG[projectile.variant].projectileColor : 0xffc15b,
+    brightColor: scene.retroPalette.bright,
+    borderColor: scene.retroPalette.border,
+    alpha: projectile.variant ? 0.96 : 0.9,
+  });
 }

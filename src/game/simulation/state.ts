@@ -13,8 +13,8 @@ export type Rect = {
 export type HazardKind = 'spikes';
 export type EnemyKind = 'walker' | 'hopper' | 'turret' | 'charger' | 'flyer';
 export type TurretVariantId = 'resinBurst' | 'ionPulse';
-export type PlatformKind = 'static' | 'moving' | 'falling' | 'spring';
-export type PlatformSurfaceTerrainKind = 'brittleCrystal' | 'stickySludge';
+export type PlatformKind = 'static' | 'moving' | 'falling' | 'spring' | 'magnet' | 'crystal';
+export type PlatformSurfaceTerrainKind = 'magnet' | 'crystal';
 export type PlatformSurfaceKind = PlatformSurfaceTerrainKind;
 export type PlatformSurfaceMechanic = {
   kind: PlatformSurfaceTerrainKind;
@@ -31,6 +31,7 @@ export type RunSettings = {
   masterVolume: number;
   musicVolume: number;
   sfxVolume: number;
+  crtEnabled: boolean;
   difficulty: DifficultySetting;
   enemyPressure: EnemyPressureSetting;
 };
@@ -389,9 +390,9 @@ export const POWER_LABELS: Record<PowerType, string> = Object.fromEntries(
 
 export const PLAYER_POWER_VARIANTS: Record<'base' | PowerType, PlayerPowerVariant> = {
   base: {
-    bodyColor: 0xf7f3d6,
-    detailColor: 0x11141b,
-    accentColor: 0x8fdff2,
+    bodyColor: 0xfff6ee,
+    detailColor: 0x67c8ec,
+    accentColor: 0xd38a34,
     auraColor: null,
   },
   doubleJump: {
@@ -407,10 +408,10 @@ export const PLAYER_POWER_VARIANTS: Record<'base' | PowerType, PlayerPowerVarian
     auraColor: null,
   },
   invincible: {
-    bodyColor: 0x9fdae8,
-    detailColor: 0x173848,
-    accentColor: 0xe9fff7,
-    auraColor: 0x8fdff2,
+    bodyColor: 0xfff6ee,
+    detailColor: 0x67c8ec,
+    accentColor: 0xd38a34,
+    auraColor: 0x67c8ec,
   },
   dash: {
     bodyColor: 0xc6d2bf,
@@ -439,14 +440,18 @@ export function createPlayerStateWithMachine(
         return snapshot?.matches?.('dead') ?? false;
       }
       if (prop === 'onGround') {
-        const snapshot = machineActor.getSnapshot?.() || machineActor.state;
-        return (snapshot?.matches?.('idle') || snapshot?.matches?.('run')) ?? false;
+        return target.onGround;
       }
       return Reflect.get(target, prop);
     },
     set(target, prop, value) {
       if (prop === 'onGround' || prop === 'dead') {
         const nextValue = Boolean(value);
+        const previousValue = Boolean(Reflect.get(target, prop));
+        Reflect.set(target, prop, nextValue);
+        if (previousValue === nextValue) {
+          return true;
+        }
         if (prop === 'onGround') {
           machineActor.send?.({ type: nextValue ? 'GROUND_CONTACT' : 'LEAVE_GROUND' });
         } else {
@@ -509,7 +514,7 @@ export const TURRET_VARIANT_CONFIG: Record<
 };
 
 export const GRAVITY_FIELD_KINDS: GravityFieldKind[] = ['anti-grav-stream', 'gravity-inversion-column'];
-export const PLATFORM_SURFACE_TERRAIN_KINDS: PlatformSurfaceTerrainKind[] = ['brittleCrystal', 'stickySludge'];
+export const PLATFORM_SURFACE_TERRAIN_KINDS: PlatformSurfaceTerrainKind[] = ['magnet', 'crystal'];
 export const BRITTLE_WARNING_MS = 420;
 export const BRITTLE_READY_BREAK_DELAY_MS = 220;
 export const SLUDGE_GROUND_ACCEL_MULTIPLIER = 0.48;
@@ -566,6 +571,7 @@ export const createDefaultRunSettings = (): RunSettings => ({
   masterVolume: 0.7,
   musicVolume: 0.7,
   sfxVolume: 0.8,
+  crtEnabled: false,
   difficulty: 'standard',
   enemyPressure: 'normal',
 });
@@ -605,7 +611,7 @@ export const formatHudCollectibleSummary = (
   stageCollected: number,
   stageTotal: number,
   runTotal: number,
-): string => `${stageCollected}/${stageTotal} in sector (${formatCollectibleCount(runTotal)} total)`;
+): string => `${stageCollected}/${stageTotal} sector\n${runTotal} total`;
 
 export const formatRunCollectibleSummary = (runTotal: number): string => `Run research samples: ${runTotal}`;
 
@@ -724,19 +730,19 @@ export const createInactiveTemporaryBridgeState = (
 });
 
 export const isBrittlePlatformBroken = (
-  platform: Pick<PlatformState, 'surfaceMechanic' | 'brittle'>,
-): boolean => platform.surfaceMechanic?.kind === 'brittleCrystal' && platform.brittle?.phase === 'broken';
+  platform: Pick<PlatformState, 'kind' | 'brittle'>,
+): boolean => platform.kind === 'crystal' && platform.brittle?.phase === 'broken';
 
 export const isBrittlePlatformWarning = (
-  platform: Pick<PlatformState, 'surfaceMechanic' | 'brittle'>,
-): boolean => platform.surfaceMechanic?.kind === 'brittleCrystal' && platform.brittle?.phase === 'warning';
+  platform: Pick<PlatformState, 'kind' | 'brittle'>,
+): boolean => platform.kind === 'crystal' && platform.brittle?.phase === 'warning';
 
 export const isBrittlePlatformReady = (
-  platform: Pick<PlatformState, 'surfaceMechanic' | 'brittle'>,
-): boolean => platform.surfaceMechanic?.kind === 'brittleCrystal' && platform.brittle?.phase === 'ready';
+  platform: Pick<PlatformState, 'kind' | 'brittle'>,
+): boolean => platform.kind === 'crystal' && platform.brittle?.phase === 'ready';
 
 export const isPlatformTerrainSupportActive = (
-  platform: Pick<PlatformState, 'surfaceMechanic' | 'brittle'>,
+  platform: Pick<PlatformState, 'kind' | 'brittle'>,
 ): boolean => !isBrittlePlatformBroken(platform);
 
 export const formatActivePowerSummary = (powers: PowerInventory, timers: PowerTimers): string => {

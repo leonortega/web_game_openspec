@@ -8,7 +8,7 @@ import { BRITTLE_READY_BREAK_DELAY_MS, TURRET_VARIANT_CONFIG } from './state';
 
 const getMutableState = (session: GameSession) => session.getState() as any;
 
-const applyTerrainVariantFixture = (platform: any, kind: 'brittleCrystal' | 'stickySludge') => {
+const applyTerrainVariantFixture = (platform: any, kind: 'brittleCrystal' | 'stickyPlatform') => {
   platform.surfaceMechanic = { kind };
   platform.brittle =
     kind === 'brittleCrystal'
@@ -624,6 +624,23 @@ describe('GameSession regression coverage', () => {
 
     expect(state.player.dead).toBe(true);
     expect(state.respawnTimerMs).toBe(780);
+  });
+
+  it('keeps physical ground contact true while hurt on a supported platform', () => {
+    const session = new GameSession();
+    const state = getMutableState(session);
+    const platform = state.stageRuntime.platforms[0];
+
+    placePlayerOnSupportedPlatform(state, platform);
+    session.update(16, defaultInputState());
+
+    expect(state.player.onGround).toBe(true);
+
+    (session as any).damagePlayer();
+
+    expect(state.player.dead).toBe(false);
+    expect(state.player.onGround).toBe(true);
+    expect(state.player.supportPlatformId).toBe(platform.id);
   });
 
   it('respawns from the active checkpoint after defeat while keeping death semantics and clearing powers', () => {
@@ -1808,7 +1825,7 @@ describe('GameSession regression coverage', () => {
     expect(next.player.gravityFieldId).toBe('test-anti-grav');
     expect(next.player.gravityFieldKind).toBe('anti-grav-stream');
     expect(next.player.gravityScale).toBeLessThan(0);
-    expect(next.player.vy).toBeLessThan(-640);
+    expect(next.player.vy).toBeLessThan(-680);
 
     next.progress.activePowers.dash = true;
     next.player.x = support.x + 30;
@@ -2738,7 +2755,7 @@ describe('GameSession regression coverage', () => {
     state = getMutableState(session);
     expect(state.player.gravityFieldId).toBe(antiGravField.id);
     expect(state.player.gravityFieldKind).toBe('anti-grav-stream');
-    expect(state.player.vy).toBeCloseTo(640 + state.stage.world.gravity * state.player.gravityScale * 0.016, 4);
+    expect(state.player.vy).toBeCloseTo(680 + state.stage.world.gravity * state.player.gravityScale * 0.016, 4);
     expect(state.stageRuntime.enemies.find((enemy: any) => enemy.id === containedEnemyId).x + 34).toBeLessThan(buttonLaneLeft);
 
     state.player.x = capsule.button.x + capsule.button.width / 2 - state.player.width / 2;
@@ -2828,7 +2845,7 @@ describe('GameSession regression coverage', () => {
 
     session.forceStartStage(2);
     state = getMutableState(session);
-    const stickyPlatform = applyTerrainVariantFixture(createStaticPlatformFixture('gravity-sticky-support', 10520, 480, 180), 'stickySludge');
+    const stickyPlatform = applyTerrainVariantFixture(createStaticPlatformFixture('gravity-sticky-support', 10520, 480, 180), 'stickyPlatform');
     state.stageRuntime.platforms.push(stickyPlatform);
     const { capsule, antiGravField } = getGravityCapsuleFixture(state);
 
@@ -2860,7 +2877,7 @@ describe('GameSession regression coverage', () => {
 
     state = getMutableState(session);
     expect(state.player.gravityFieldId).toBeNull();
-    expect(state.player.vy).toBeCloseTo(-640 + state.stage.world.gravity * 0.016, 4);
+    expect(state.player.vy).toBeCloseTo(-680 + state.stage.world.gravity * 0.016, 4);
 
     session.forceStartStage(0);
     state = getMutableState(session);
@@ -2996,7 +3013,7 @@ describe('GameSession regression coverage', () => {
     state.stageRuntime.enemies = [];
     state.stageRuntime.hazards = [];
     const support = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-9010-480');
-    const activeJumpVy = 640 + state.stage.world.gravity * -0.38 * 0.016;
+    const activeJumpVy = 680 + state.stage.world.gravity * -0.38 * 0.016;
 
     state.player.x = support.x + 20;
     state.player.y = support.y - state.player.height;
@@ -3195,7 +3212,7 @@ describe('GameSession regression coverage', () => {
     session.update(16, { ...defaultInputState(), jumpHeld: true, jumpPressed: true });
 
     state = getMutableState(session);
-    const normalJumpVy = -(640 - state.stage.world.gravity * 0.016);
+    const normalJumpVy = -(680 - state.stage.world.gravity * 0.016);
     expect(state.player.vy).toBeLessThan(0);
     expect(state.player.vy).toBeCloseTo(normalJumpVy, 4);
     expect(state.player.gravityFieldId).toBeNull();
@@ -3317,6 +3334,47 @@ describe('GameSession regression coverage', () => {
 
     session.update(BRITTLE_READY_BREAK_DELAY_MS, defaultInputState());
     expect(brittlePlatform.brittle.phase).toBe('broken');
+    expect(state.player.supportPlatformId).toBeNull();
+    expect(state.player.onGround).toBe(false);
+    expect(session.consumeCues()).toContain(AUDIO_CUES.crystalBreak);
+  });
+
+  it('uses a dedicated crystal-touch cue instead of the normal land cue on first contact', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const brittlePlatform = applyTerrainVariantFixture(createStaticPlatformFixture('brittle-touch-cue', 2000, 520, 180), 'brittleCrystal');
+    isolatePlayerPlatformFixture(state, [brittlePlatform]);
+
+    placePlayerAbovePlatform(state, brittlePlatform, 220);
+    advanceSession(session, 32, 8);
+
+    const cues = session.consumeCues();
+    expect(state.player.supportPlatformId).toBe(brittlePlatform.id);
+    expect(cues).toContain(AUDIO_CUES.crystalTouch);
+    expect(cues).not.toContain(AUDIO_CUES.land);
+  });
+
+  it('treats broken brittle platforms as fully non-solid on later contact attempts', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    const state = getMutableState(session);
+    const brittlePlatform = applyTerrainVariantFixture(createStaticPlatformFixture('brittle-gone', 2000, 520, 180), 'brittleCrystal');
+    isolatePlayerPlatformFixture(state, [brittlePlatform]);
+
+    brittlePlatform.brittle.phase = 'broken';
+    brittlePlatform.brittle.warningMs = 0;
+    brittlePlatform.brittle.readyElapsedMs = BRITTLE_READY_BREAK_DELAY_MS;
+    brittlePlatform.brittle.readyRemainingMs = 0;
+
+    placePlayerAbovePlatform(state, brittlePlatform, 220);
+    advanceSession(session, 96, 16);
+
+    expect(state.player.supportPlatformId).toBeNull();
+    expect(state.player.onGround).toBe(false);
+    expect(state.player.y).toBeGreaterThan(brittlePlatform.y - state.player.height);
   });
 
   it('keeps ready brittle solid and jumpable before expiry, including landing from adjacent platform', () => {
@@ -3445,7 +3503,7 @@ describe('GameSession regression coverage', () => {
     state.stageRuntime.enemies = [];
     state.stageRuntime.hazards = [];
     const stickySupport = state.stageRuntime.platforms.find((platform: any) => platform.id === supportId);
-    applyTerrainVariantFixture(stickySupport, 'stickySludge');
+    applyTerrainVariantFixture(stickySupport, 'stickyPlatform');
     state.player.x = stickySupport.x + 32;
     state.player.y = stickySupport.y - state.player.height;
     state.player.vx = 0;
@@ -3462,7 +3520,7 @@ describe('GameSession regression coverage', () => {
     state.stageRuntime.enemies = [];
     state.stageRuntime.hazards = [];
     const bufferedStickySupport = state.stageRuntime.platforms.find((platform: any) => platform.id === supportId);
-    applyTerrainVariantFixture(bufferedStickySupport, 'stickySludge');
+    applyTerrainVariantFixture(bufferedStickySupport, 'stickyPlatform');
     state.player.x = bufferedStickySupport.x + 32;
     state.player.y = bufferedStickySupport.y - state.player.height - 8;
     state.player.vx = 0;
@@ -3475,7 +3533,7 @@ describe('GameSession regression coverage', () => {
       }
     }
     state = getMutableState(session);
-    const expectedBufferedJumpVy = -(640 - state.stage.world.gravity * 0.016);
+    const expectedBufferedJumpVy = -(680 - state.stage.world.gravity * 0.016);
     expect(state.player.vy).toBeLessThan(0);
     expect(state.player.vy).toBeCloseTo(expectedBufferedJumpVy, 4);
 
@@ -3488,7 +3546,7 @@ describe('GameSession regression coverage', () => {
     expect(state.player.vy).toBeCloseTo(expectedBufferedJumpVy, 4);
   });
 
-  it('keeps dash normal on sticky sludge and applies low gravity after the normal jump impulse', () => {
+  it('keeps dash normal on sticky platform and applies low gravity after the normal jump impulse', () => {
     const session = new GameSession();
     session.forceStartStage(0);
 
@@ -3499,7 +3557,7 @@ describe('GameSession regression coverage', () => {
     const stickySupportId = stickySupport.id;
 
     state.progress.activePowers.dash = true;
-    applyTerrainVariantFixture(stickySupport, 'stickySludge');
+    applyTerrainVariantFixture(stickySupport, 'stickyPlatform');
     state.player.x = stickySupport.x + 32;
     state.player.y = stickySupport.y - state.player.height;
     state.player.vx = 0;
@@ -3516,7 +3574,7 @@ describe('GameSession regression coverage', () => {
     state.stageRuntime.enemies = [];
     state.stageRuntime.hazards = [];
     const lowGravityStickySupport = state.stageRuntime.platforms.find((platform: any) => platform.id === stickySupportId);
-    applyTerrainVariantFixture(lowGravityStickySupport, 'stickySludge');
+    applyTerrainVariantFixture(lowGravityStickySupport, 'stickyPlatform');
     state.stageRuntime.lowGravityZones = [
       {
         id: 'sticky-zone',
@@ -3537,7 +3595,7 @@ describe('GameSession regression coverage', () => {
     state = getMutableState(session);
     expect(state.player.gravityScale).toBe(lowGravityZone.gravityScale);
     expect(state.player.vy).toBeLessThan(0);
-    expect(state.player.vy).toBeCloseTo(-(640 - state.stage.world.gravity * lowGravityZone.gravityScale * 0.016), 4);
+    expect(state.player.vy).toBeCloseTo(-(680 - state.stage.world.gravity * lowGravityZone.gravityScale * 0.016), 4);
   });
 
   it('launches from spring platforms with authored boost, cooldown, and cue values', () => {

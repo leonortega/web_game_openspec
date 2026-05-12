@@ -4,7 +4,7 @@
 Define the retro visual direction for gameplay-facing presentation, including palette restraint, silhouette rules, and optional analog-display guardrails.
 ## Requirements
 ### Requirement: Gameplay presentation uses an Atari 2600-inspired silhouette-first style
-The game SHALL present active gameplay using a denser readable 8-bit console-inspired visual language defined by silhouette-first sprites and tiles, bounded palette ramps, flat fills with selective internal pixel detail, and restrained sprite-like motion rather than the earlier ultra-coarse silhouette-only pass. The presentation MUST move the player, enemies, terrain, and stage backdrops toward a more NES-like level of pixel complexity while preserving route readability, foreground versus background separation, and clear hazard contrast. When a stage defines authored backdrop palette inputs such as sky and ground colors, the active stage backdrop MUST derive its background bands, decorative motifs, and texture accents from those authored inputs or bounded derivatives of them, and it MUST keep those background colors and details visually secondary to playable terrain, hazards, and other foreground gameplay surfaces. Refreshed enemy designs for this pass MUST remain original to the project, MAY take style direction from supplied reference material, and MUST NOT directly copy or reproduce that reference image. Supported flying enemies MUST read as original symmetric underside-lit saucers or ovnis through lower-hull accent placement, readable belly-light separation, and bounded retro detailing rather than top-heavy cap accents or copied window details alone. Any optional hover-light blink used by those enemies MUST remain subtle, low-area, and visually secondary to silhouette and route readability. The refreshed backdrop language MUST evoke extraterrestrial or planetary spacescapes through original low-detail motifs such as distant planet disks, ring arcs, crater ridges, alien horizons, and sparse star fields, and it MUST not directly copy or reproduce the supplied background reference image.
+The game SHALL present active gameplay using a denser readable 8-bit/16-bit-inspired visual language defined by silhouette-first sprites and tiles, bounded palette ramps, flat fills with selective internal pixel detail, and restrained sprite-like motion rather than the earlier ultra-coarse silhouette-only pass. The presentation MUST move the player, enemies, terrain, and stage backdrops toward a more NES-like level of pixel complexity while preserving route readability, foreground versus background separation, and clear hazard contrast. For gameplay-facing actors, this pass MUST support a chibi-oriented character language with readable oversized head mass, compact torso-limb masses, and clear pose readability at gameplay scale. Higher actor detail and richer frame animation are allowed, but they MUST remain within the explicit canvas and frame-budget contracts defined in `art.md` so migration stays apply-feasible. When a stage defines authored backdrop palette inputs such as sky and ground colors, the active stage backdrop MUST derive its background bands, decorative motifs, and texture accents from those authored inputs or bounded derivatives of them, and it MUST keep those background colors and details visually secondary to playable terrain, hazards, and other foreground gameplay surfaces. Refreshed enemy designs for this pass MUST remain original to the project, MAY take style direction from supplied reference material, and MUST NOT directly copy or reproduce that reference image. Supported flying enemies MUST read as original symmetric underside-lit saucers or ovnis through lower-hull accent placement, readable belly-light separation, and bounded retro detailing rather than top-heavy cap accents or copied window details alone. Any optional hover-light blink used by those enemies MUST remain subtle, low-area, and visually secondary to silhouette and route readability. The refreshed backdrop language MUST evoke extraterrestrial or planetary spacescapes through original low-detail motifs such as distant planet disks, ring arcs, crater ridges, alien horizons, and sparse star fields, and it MUST not directly copy or reproduce the supplied background reference image.
 
 #### Scenario: Viewing active gameplay
 - **WHEN** the player enters a playable stage
@@ -39,7 +39,63 @@ The game SHALL present active gameplay using a denser readable 8-bit console-ins
 #### Scenario: Reading optional hover-light polish
 - **WHEN** a refreshed hover enemy uses a blink-light or shimmer accent during active play
 - **THEN** the accent remains subtle and secondary to the enemy silhouette
-- **AND** it does not become a distracting strobe or a required gameplay-state indicator
+- **AND** it does not become a distracting strobe or a required gameplay-state indicator. For this migration program, gameplay-facing sprite and animation key contracts MUST use `art.md` as the source of truth for key names, frame sizes, movement clip intent, and animator state mapping, and implementation MUST prioritize true frame animation over tint-only or tween-only substitutions.
+
+#### Scenario: Reading chibi actor silhouettes during active play
+- **WHEN** the player views the player avatar and enemy cast during active gameplay
+- **THEN** each actor reads as a compact chibi-like character with clear silhouette separation at gameplay scale
+- **AND** added detail does not reduce route readability or hazard contrast
+
+#### Scenario: Increasing detail without unbounded scope
+- **WHEN** artists add richer internal pixel detail and additional animation frames for actor states
+- **THEN** the resulting assets stay within the canvas and frame limits defined in `art.md`
+- **AND** migration remains feasible without requiring a full-world art replacement in one pass
+
+#### Scenario: Preserving behavior while upgrading character presentation
+- **WHEN** chibi-oriented detail and animation upgrades are applied
+- **THEN** collision footprints, movement timing, and enemy threat cadence remain unchanged
+- **AND** the change remains presentation-only
+
+#### Scenario: Validating migration keys and movement mapping
+- **WHEN** apply implementation wires gameplay sprite sheets and animation clips in this migration
+- **THEN** key names, frame sizes, and movement-state mapping align with `art.md`
+- **AND** deviations are treated as contract violations unless a follow-up spec change explicitly updates that source of truth
+
+### Requirement: Slice-based sprite-sheet migration is apply-feasible and behavior-safe
+The game SHALL execute 16-bit-like sprite-sheet migration in bounded implementation slices so each apply pass can be completed and validated without requiring a full-world art replacement in one change. The first slice MUST include gameplay player sprite-sheet animation plus route-critical world visuals for platform surface variants, gravity field/capsule visuals, spike hazards, reward and activation props, and exit or arrival support pieces listed in `art.md` immediate priorities. This slice MUST preserve existing collision behavior, simulation timing, and gameplay fairness while replacing procedural rectangle-driven visuals in the scoped scene touchpoints.
+
+#### Scenario: Delivering the first migration slice
+- **WHEN** the first sprite-sheet migration apply pass is completed
+- **THEN** gameplay player uses true frame animation clips bound to runtime movement states
+- **AND** scoped route-critical visuals are rendered from sprite or tile assets instead of rectangle-only primitives in the target render paths
+
+#### Scenario: Avoiding false-positive migration completion
+- **WHEN** migration completion is evaluated for the first slice
+- **THEN** tint-only recolors and unbounded tween-heavy pseudo-animation do not count as satisfying sprite-sheet animation migration
+- **AND** the pass must show true frame-based animation where animation is required by the slice contract
+
+#### Scenario: Preserving fairness during visual migration
+- **WHEN** the first slice updates rendering and animation presentation
+- **THEN** movement constants, dash and jump timing windows, and enemy cadence remain unchanged
+- **AND** collision or support behavior does not regress because of render-anchor or sprite-size drift
+
+### Requirement: Character production sheets use exact row packing and atlas memory caps
+The game SHALL define gameplay-facing character production sheets through exact row packing contracts in `art.md`, including row index, clip assignment, frame-slot counts, and reserved slots per row. Player and enemy sheet authoring MUST stay within those exact row maps and MUST NOT exceed frame slots allocated for each clip class. The game SHALL also enforce explicit atlas memory caps in `art.md` for actor, world, props/UI, and total pixel-art atlas groups. Any sheet or atlas that exceeds slot allocations or memory caps MUST be treated as a contract violation and revised before integration. This contract remains presentation-only and MUST NOT alter gameplay timing, collision, or threat behavior.
+
+#### Scenario: Validating player and enemy row packing
+- **WHEN** new player or enemy sprite sheets are prepared for integration
+- **THEN** each clip occupies only the row index and frame-slot allocation defined in `art.md`
+- **AND** no clip spills into rows reserved for another clip family
+
+#### Scenario: Validating atlas memory caps
+- **WHEN** packed atlases are evaluated before runtime integration
+- **THEN** each atlas group stays at or below its cap listed in `art.md`
+- **AND** the aggregate pixel-art atlas memory stays at or below the total cap
+
+#### Scenario: Handling cap or packing overflow
+- **WHEN** any sheet packing or memory cap is exceeded
+- **THEN** the content is flagged as non-compliant and revised
+- **AND** gameplay simulation contracts remain unchanged during that revision
 
 ### Requirement: Optional analog-display effects remain secondary to readability
 Any optional scanline, CRT, flicker, or similar analog-display treatment used by this change SHALL remain subtle, SHALL never be required to communicate gameplay state, and SHALL preserve readability of the HUD, player state, hazards, and transition text. Any optional backdrop-only separation effect used to keep scenery distinct from the playable route MUST remain secondary to the authored stage palette, MUST NOT make the backdrop brighter or more attention-grabbing than the foreground, and MUST preserve the readability of HUD and transition overlays that sit above the stage view. Any bounded Beam, distortion, or similar postfx region added by this change MUST stay within world-local presentation space and MUST NOT warp the gameplay HUD band, transient message lane, or other overlay text. Planetary or extraterrestrial backdrop motifs MUST also stay low-density enough that readable paths, hazard telegraphs, and power silhouettes remain more visually dominant than the scenery.
@@ -216,3 +272,7 @@ The game MAY use Phaser 4 Beam, shader, or post-processing accents to support en
 - **WHEN** the updated Beam or shader accents are evaluated during gameplay
 - **THEN** they still read as restrained retro presentation support
 - **AND** they do not rely on dominant blur, bloom, or full-scene distortion
+
+
+
+

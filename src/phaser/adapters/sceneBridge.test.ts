@@ -1,10 +1,27 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { SceneBridge } from './sceneBridge';
 
 const getMutableState = (bridge: SceneBridge) => bridge.getSession().getState() as any;
 
 describe('SceneBridge pause flow regression coverage', () => {
+  it('throttles persistence during gameplay frames instead of serializing every update', () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const bridge = new SceneBridge({ load: vi.fn(), save } as any);
+    const serializeSpy = vi.spyOn(bridge as any, 'serializeProgress');
+
+    bridge.consumeFrame(16);
+    bridge.consumeFrame(16);
+    bridge.consumeFrame(16);
+
+    expect(serializeSpy).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+
+    bridge.consumeFrame(260);
+
+    expect(serializeSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('pauses the active run, clears latched input, and resumes the exact suspended run in place', () => {
     const bridge = new SceneBridge();
     const state = getMutableState(bridge);
@@ -131,7 +148,7 @@ describe('SceneBridge pause flow regression coverage', () => {
     const hud = bridge.getHudModel();
 
     expect(hud.stageName).toBe('Verdant Impact Crater');
-    expect(hud.coins).toBe(`0/${state.stageRuntime.totalCoins} in sector (0 research samples total)`);
+    expect(hud.coins).toBe(`0/${state.stageRuntime.totalCoins} sector\n0 total`);
     expect(hud.powerLabel).toBe('Thruster Burst, Shield Field (6s)');
     expect(hud.segmentLabel).toBe('Landing Shelf');
     expect(hud.message).toBe('Objective: restore the survey beacon');
@@ -147,7 +164,7 @@ describe('SceneBridge pause flow regression coverage', () => {
 
     const support = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-9010-480');
     const capsule = state.stageRuntime.gravityCapsules.find((entry: any) => entry.id === 'sky-anti-grav-capsule');
-    const activeJumpVy = 640 + state.stage.world.gravity * -0.38 * 0.016;
+    const activeJumpVy = 680 + state.stage.world.gravity * -0.38 * 0.016;
 
     state.player.x = support.x + 20;
     state.player.y = support.y - state.player.height;
@@ -197,7 +214,7 @@ describe('SceneBridge pause flow regression coverage', () => {
 
     const support = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-9010-480');
     const capsule = state.stageRuntime.gravityCapsules.find((entry: any) => entry.id === 'sky-anti-grav-capsule');
-    support.surfaceMechanic = { kind: 'stickySludge' };
+    support.kind = 'magnet';
 
     capsule.enabled = false;
     capsule.button.activated = true;

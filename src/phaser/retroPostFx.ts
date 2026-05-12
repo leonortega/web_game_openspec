@@ -62,7 +62,7 @@ export const createWorldLocalRetroRegion = (
   return region;
 };
 
-export const getCrtFilterEnabled = (game: Phaser.Game, fallback = true): boolean => {
+export const getCrtFilterEnabled = (game: Phaser.Game, fallback = false): boolean => {
   const value = (game.registry as any)?.get?.('crtFilterEnabled');
   if (typeof value === 'boolean') {
     return value;
@@ -89,68 +89,52 @@ export const applyConfiguredRetroPostFxToCamera = (
   game: Phaser.Game,
   camera: Phaser.Cameras.Scene2D.Camera,
 ): void => {
-  applyRetroPostFxToCamera(game, camera, getCrtFilterEnabled(game, true));
+  applyRetroPostFxToCamera(camera, getCrtFilterEnabled(game, false));
 };
 
 export const toggleCrtFilterForCamera = (
   game: Phaser.Game,
   camera: Phaser.Cameras.Scene2D.Camera,
 ): boolean => {
-  const nextEnabled = !getCrtFilterEnabled(game, true);
+  const nextEnabled = !getCrtFilterEnabled(game, false);
   setCrtFilterEnabled(game, nextEnabled);
-  applyRetroPostFxToCamera(game, camera, nextEnabled);
+  applyRetroPostFxToCamera(camera, nextEnabled);
   return nextEnabled;
 };
 
 export const applyRetroPostFxToCamera = (
-  game: Phaser.Game,
   camera: Phaser.Cameras.Scene2D.Camera,
   crtFilterEnabled: boolean,
 ): void => {
-  try {
-    (camera as any)?.setRenderFilters?.(true);
-    (camera as any)?.setFiltersForceComposite?.(true);
-    (camera as any)?.setForceComposite?.(true);
-  } catch (e) {
-    // ignore
-  }
-
-  const filterList = (camera as any)?.filters?.external ?? (camera as any)?.filters?.internal;
-  if (!filterList) {
+  type RexCrtPlugin = {
+    add?: (target: unknown, config?: object) => unknown;
+    get?: (target: unknown) => unknown[];
+    remove?: (target: unknown) => void;
+  };
+  const scene = (camera as Phaser.Cameras.Scene2D.Camera & { scene?: Phaser.Scene }).scene;
+  const crtPlugin = ((scene as Phaser.Scene & {
+    plugins?: { get?: (key: string) => unknown };
+  })?.plugins?.get?.('rexCrtFilter') ?? undefined) as RexCrtPlugin | undefined;
+  if (!crtPlugin) {
     return;
   }
-
-  // Clear only if this camera was previously managed by this helper.
-  if ((camera as any)[RETRO_POST_FX_OWNED_KEY] && typeof filterList.clear === 'function') {
-    filterList.clear();
+  const existingControllers = crtPlugin.get?.(camera) ?? [];
+  if (existingControllers.length > 0) {
+    crtPlugin.remove?.(camera);
   }
-
-  let quantizeEnabled = false;
 
   if (crtFilterEnabled) {
-    if (typeof filterList.addCRT === 'function') {
-      filterList.addCRT();
-    } else if (typeof filterList.addBarrel === 'function') {
-      // Phaser barrel amount: 1 = no distortion. Use a light curve plus vignette for a visible CRT-like fallback.
-      filterList.addBarrel(1.035);
-      if (typeof filterList.addVignette === 'function') {
-        filterList.addVignette(0.5, 0.5, 0.72, 0.34);
-      }
-    } else if (typeof filterList.addVignette === 'function') {
-      filterList.addVignette(0.5, 0.5, 0.72, 0.34);
-    }
+    camera.setZoom(1.035);
+    crtPlugin.add?.(camera, {
+      warpX: 0.18,
+      warpY: 0.14,
+      scanLineStrength: 0.08,
+      scanLineWidth: 768,
+      name: 'rexCrtPostFx',
+    });
+  } else {
+    camera.setZoom(1);
   }
 
-  if (typeof filterList.addQuantize === 'function') {
-    filterList.addQuantize({ steps: [32, 64, 32, 1], dither: true, mode: 0 });
-    quantizeEnabled = true;
-  }
-
-  (camera as any)[RETRO_POST_FX_OWNED_KEY] = true;
-
-  try {
-    (game.registry as any).set('globalQuantizeEnabled', quantizeEnabled);
-  } catch (e) {
-    // ignore
-  }
+  (camera as any)[RETRO_POST_FX_OWNED_KEY] = crtFilterEnabled;
 };

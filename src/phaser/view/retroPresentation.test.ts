@@ -408,8 +408,8 @@ describe('createRetroPresentationPalette', () => {
       ground: 0x7daccb,
     });
 
-    const sticky = getRetroSurfaceDistortionProfile({ surfaceMechanic: { kind: 'stickySludge' }, width: 96 }, retro, 240, 120);
-    const brittle = getRetroSurfaceDistortionProfile({ surfaceMechanic: { kind: 'brittleCrystal' }, width: 96 }, retro, 240, 120);
+    const sticky = getRetroSurfaceDistortionProfile({ kind: 'magnet', width: 96 }, retro, 240, 120);
+    const brittle = getRetroSurfaceDistortionProfile({ kind: 'crystal', width: 96 }, retro, 240, 120);
 
     expect(sticky?.routing).toEqual(RETRO_WORLD_LOCAL_EFFECT_ROUTING);
     expect(sticky?.bandOffsets).toHaveLength(3);

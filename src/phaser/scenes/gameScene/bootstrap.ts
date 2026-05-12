@@ -8,16 +8,18 @@ import type {
   PlatformState,
   RewardBlockState,
 } from '../../../game/simulation/state';
-import { createHud } from '../../../ui/hud/hud';
 import { runUnlockedAudioAction } from '../../audio/sceneAudio';
-import { EXIT_CAPSULE_ART_BOUNDS, EXIT_CAPSULE_TEXTURE_KEYS } from '../../view/capsulePresentation';
+import { EXIT_CAPSULE_ART_BOUNDS } from '../../view/capsulePresentation';
 import { configureCamera } from '../../view/camera/configureCamera';
 import { drawRetroBackdrop, RETRO_FONT_FAMILY, type RetroPresentationPalette } from '../../view/retroPresentation';
-import { createOptimizedSprite } from '../../plugins/enhancedRenderUtils';
 import { createWorldLocalRetroRegion } from '../../retroPostFx';
+import { createRexHud, type RexHudBindings } from '../../ui/rexHud';
+import { getViewportMetrics } from '../../ui/rexUiTheme';
+import { drawAstronautGraphic } from '../../view/runtimeCharacterGraphics';
+import { drawCollectibleGraphic } from '../../view/runtimeWorldGraphics';
 
 export type GameSceneHudSetupContext = Phaser.Scene & {
-  hud: ReturnType<typeof createHud>;
+  hud: RexHudBindings;
 };
 
 export type GameSceneInputContext = Phaser.Scene & {
@@ -42,36 +44,37 @@ export type GameSceneInputContext = Phaser.Scene & {
 export type GameSceneCleanupContext = Phaser.Scene & {
   completeTransitionEvent?: Phaser.Time.TimerEvent;
   audio: { stopMusic(): void };
-  hud: ReturnType<typeof createHud>;
-  platformSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  hud: RexHudBindings;
+  bottomMistSprites: Phaser.GameObjects.Shape[];
+  platformSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
   platformShadowSprites: Map<string, Phaser.GameObjects.Rectangle>;
   platformDetailSprites: Map<string, Phaser.GameObjects.Rectangle>;
   platformCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle | Phaser.GameObjects.TileSprite>;
   terrainVariantShadowSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   terrainVariantAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
   terrainVariantDetailSprites: Map<string, Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>>;
   gravityZoneSprites: Phaser.GameObjects.Rectangle[];
-  gravityFieldSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  gravityFieldSprites: Map<string, Phaser.GameObjects.Graphics>;
   gravityFieldCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  gravityCapsuleShellSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleEntryDoorSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleExitDoorSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleButtonSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleButtonCoreSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  gravityCapsuleShellSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleEntryDoorSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleExitDoorSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleButtonSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleButtonCoreSprites: Map<string, Phaser.GameObjects.Graphics>;
   gravityCapsuleShellMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   gravityCapsuleButtonMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  activationNodeSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  activationNodeSprites: Map<string, Phaser.GameObjects.Graphics>;
   activationNodeMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  enemySprites: Map<string, Phaser.GameObjects.Sprite>;
+  enemySprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  checkpointSprites: Map<string, Phaser.GameObjects.Sprite>;
-  collectibleSprites: Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>;
-  projectileSprites: Map<string, Phaser.GameObjects.Sprite>;
-  rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
+  checkpointSprites: Map<string, Phaser.GameObjects.Graphics>;
+  collectibleSprites: Map<string, Phaser.GameObjects.Graphics>;
+  projectileSprites: Map<string, Phaser.GameObjects.Graphics>;
+  rewardBlockSprites: Map<string, Phaser.GameObjects.Graphics>;
+  rewardBlockIcons: Map<string, Phaser.GameObjects.Graphics>;
   rewardRevealTexts: Map<string, Phaser.GameObjects.Text>;
-  hazardSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  hazardSprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyDefeatVisibleUntilMs: Map<string, number>;
   playerDefeatVisibleUntilMs: number;
   playerDefeatResetPending: boolean;
@@ -82,33 +85,35 @@ export type GameSceneCleanupContext = Phaser.Scene & {
 
 export type GameSceneBaseDisplayContext = Phaser.Scene & {
   retroPalette: RetroPresentationPalette;
+  bottomMistSprites: Phaser.GameObjects.Shape[];
   gravityZoneSprites: Phaser.GameObjects.Rectangle[];
-  gravityFieldSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  gravityFieldSprites: Map<string, Phaser.GameObjects.Graphics>;
   gravityFieldCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  gravityCapsuleShellSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleEntryDoorSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleExitDoorSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleButtonSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  gravityCapsuleButtonCoreSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  gravityCapsuleShellSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleEntryDoorSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleExitDoorSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleButtonSprites: Map<string, Phaser.GameObjects.Graphics>;
+  gravityCapsuleButtonCoreSprites: Map<string, Phaser.GameObjects.Graphics>;
   gravityCapsuleShellMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   gravityCapsuleButtonMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  activationNodeSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  activationNodeSprites: Map<string, Phaser.GameObjects.Graphics>;
   activationNodeMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  platformSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  platformSprites: Map<string, Phaser.GameObjects.Graphics>;
   platformShadowSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   platformDetailSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   platformCategoryMarkerSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
-  terrainVariantSprites: Map<string, Phaser.GameObjects.Rectangle>;
+  terrainVariantSprites: Map<string, Phaser.GameObjects.Graphics>;
   terrainVariantShadowSprites: Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>;
   terrainVariantAccentSprites: Map<string, Phaser.GameObjects.Rectangle>;
   terrainVariantDetailSprites: Map<string, Array<Phaser.GameObjects.Rectangle | { layer: any; index: number }>>;
-  checkpointSprites: Map<string, Phaser.GameObjects.Sprite>;
-  collectibleSprites: Map<string, Phaser.GameObjects.Sprite | { layer: any; index: number }>;
-  rewardBlockSprites: Map<string, Phaser.GameObjects.Rectangle>;
-  rewardBlockLabels: Map<string, Phaser.GameObjects.Text>;
-  enemySprites: Map<string, Phaser.GameObjects.Sprite>;
+  checkpointSprites: Map<string, Phaser.GameObjects.Graphics>;
+  collectibleSprites: Map<string, Phaser.GameObjects.Graphics>;
+  rewardBlockSprites: Map<string, Phaser.GameObjects.Graphics>;
+  rewardBlockIcons: Map<string, Phaser.GameObjects.Graphics>;
+  enemySprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyAccentSprites: Map<string, Phaser.GameObjects.Rectangle[]>;
   playerAnchor: Phaser.GameObjects.Rectangle;
+  playerSprite: Phaser.GameObjects.Graphics;
   playerAura: Phaser.GameObjects.Ellipse;
   player: Phaser.GameObjects.Rectangle;
   playerHelmet: Phaser.GameObjects.Rectangle;
@@ -126,18 +131,16 @@ export type GameSceneBaseDisplayContext = Phaser.Scene & {
   playerAccent: Phaser.GameObjects.Rectangle;
   playerWingLeft: Phaser.GameObjects.Rectangle;
   playerWingRight: Phaser.GameObjects.Rectangle;
-  exitShell: Phaser.GameObjects.Image;
-  exitDoor: Phaser.GameObjects.Image;
-  exitBase: Phaser.GameObjects.Rectangle;
+  exitShell: Phaser.GameObjects.Graphics;
+  exitDoor: Phaser.GameObjects.Graphics;
+  exitBase: Phaser.GameObjects.Image;
   exitBaseShadow: Phaser.GameObjects.Rectangle;
-  exitBeacon: Phaser.GameObjects.Rectangle;
-  arrivalBase: Phaser.GameObjects.Rectangle;
+  exitBeacon: Phaser.GameObjects.Image;
   arrivalBaseShadow: Phaser.GameObjects.Rectangle;
-  arrivalBeacon: Phaser.GameObjects.Rectangle;
-  arrivalShell: Phaser.GameObjects.Image;
-  arrivalDoor: Phaser.GameObjects.Image;
+  arrivalShell: Phaser.GameObjects.Graphics;
+  arrivalDoor: Phaser.GameObjects.Graphics;
   arrivalAura: Phaser.GameObjects.Ellipse;
-  arrivalPlayer: Phaser.GameObjects.Sprite;
+  arrivalPlayer: Phaser.GameObjects.Graphics;
   pauseOverlay: Phaser.GameObjects.Rectangle;
   pauseText: Phaser.GameObjects.Text;
   gravityFieldColor(field: GravityFieldState, capsule?: GravityCapsuleState | null): number;
@@ -157,26 +160,13 @@ export type GameSceneBaseDisplayContext = Phaser.Scene & {
   terrainVariantAlpha(platform: PlatformState): number;
   terrainVariantAccentColor(platform: PlatformState): number;
   rewardBlockColor(rewardBlock: RewardBlockState): number;
-  rewardBlockLabel(rewardBlock: RewardBlockState): string;
   createTraversalMarkerRects(count: number, depth: number): Phaser.GameObjects.Rectangle[];
   drawHazard(hazard: SessionSnapshot['stageRuntime']['hazards'][number]): void;
 };
 
 export function setupGameSceneHud(scene: GameSceneHudSetupContext): void {
-  const applyResponsiveHudScale = ({ width }: { width: number }): void => {
-    const baseFontPx = Phaser.Math.Clamp((width / 960) * 8, 5, 10);
-    scene.hud.root.style.setProperty('--hud-font-base', `${baseFontPx.toFixed(2)}px`);
-  };
-
-  const mount = scene.game.canvas.parentElement as HTMLElement;
-  scene.hud.root.remove();
-  scene.hud = createHud(mount);
-
-  applyResponsiveHudScale({ width: scene.scale.displaySize.width || scene.scale.width });
-  scene.scale.on(Phaser.Scale.Events.RESIZE, applyResponsiveHudScale);
-  scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-    scene.scale.off(Phaser.Scale.Events.RESIZE, applyResponsiveHudScale);
-  });
+  scene.hud.root.destroy(true);
+  scene.hud = createRexHud(scene);
 }
 
 export function setupGameSceneInput(scene: GameSceneInputContext): void {
@@ -253,7 +243,7 @@ export function cleanupGameScene(scene: GameSceneCleanupContext): void {
   scene.completeTransitionEvent = undefined;
   scene.audio.stopMusic();
   scene.setPauseOverlayVisible(false);
-  scene.hud.root.remove();
+  scene.hud.root.destroy(true);
   // Destroy any GPU layers created at runtime.
   try {
     (scene as any).tileGPULayer?.destroy?.();
@@ -292,6 +282,7 @@ export function cleanupGameScene(scene: GameSceneCleanupContext): void {
   }
 
   scene.platformSprites.clear();
+  scene.bottomMistSprites = [];
   scene.platformShadowSprites.clear();
   scene.platformDetailSprites.clear();
   scene.platformCategoryMarkerSprites.clear();
@@ -317,7 +308,7 @@ export function cleanupGameScene(scene: GameSceneCleanupContext): void {
   scene.collectibleSprites.clear();
   scene.projectileSprites.clear();
   scene.rewardBlockSprites.clear();
-  scene.rewardBlockLabels.clear();
+  scene.rewardBlockIcons.clear();
   scene.rewardRevealTexts.clear();
   scene.hazardSprites.clear();
   scene.enemyDefeatVisibleUntilMs.clear();
@@ -325,6 +316,48 @@ export function cleanupGameScene(scene: GameSceneCleanupContext): void {
   scene.playerDefeatResetPending = false;
   scene.feedbackCounts = {};
   scene.setStageStartArrivalVisible(false);
+}
+
+type BottomAmbientBand = {
+  topY: number;
+  height: number;
+};
+
+const BOTTOM_MIST_CLEARANCE = 18;
+const BOTTOM_MIST_MIN_HEIGHT = 46;
+const BOTTOM_MIST_MAX_HEIGHT = 120;
+
+export function resolveBottomAmbientBand(state: Readonly<SessionSnapshot>): BottomAmbientBand | null {
+  const worldBottom = state.stage.world.height;
+  const ambientFloorY = Math.max(
+    state.player.y + state.player.height,
+    state.stage.exit.y,
+    ...state.stageRuntime.platforms.map((platform) => platform.y),
+    ...state.stageRuntime.hazards.map((hazard) => hazard.rect.y),
+    ...state.stageRuntime.checkpoints.map((checkpoint) => checkpoint.rect.y),
+    ...state.stageRuntime.rewardBlocks.map((rewardBlock) => rewardBlock.y),
+    ...state.stageRuntime.activationNodes.map((node) => node.y),
+    ...state.stageRuntime.gravityCapsules.flatMap((capsule) => [
+      capsule.shell.y,
+      capsule.entryDoor.y,
+      capsule.exitDoor.y,
+      capsule.button.y,
+      capsule.entryRoute.y,
+      capsule.buttonRoute.y,
+      capsule.exitRoute.y,
+    ]),
+    ...state.stageRuntime.collectibles.map((collectible) => collectible.position.y),
+    ...state.stageRuntime.enemies.map((enemy) => enemy.y),
+  );
+  const topY = Math.ceil(ambientFloorY + BOTTOM_MIST_CLEARANCE);
+  const availableHeight = Math.floor(worldBottom - topY);
+  if (availableHeight < BOTTOM_MIST_MIN_HEIGHT) {
+    return null;
+  }
+  return {
+    topY,
+    height: Math.min(BOTTOM_MIST_MAX_HEIGHT, availableHeight),
+  };
 }
 
 export function createBaseDisplayObjects(scene: GameSceneBaseDisplayContext, state: Readonly<SessionSnapshot>): void {
@@ -339,94 +372,79 @@ export function createBaseDisplayObjects(scene: GameSceneBaseDisplayContext, sta
   );
 
   drawRetroBackdrop(scene, 0, 0, stage.world.width, stage.world.height, scene.retroPalette, 'gameplay');
+  scene.bottomMistSprites = [];
 
-  // Create a lightweight GPU-backed background tile layer when available.
-  try {
-    // Ensure tiny white textures exist for GPU layer fallbacks and tilemap GPU layer.
-    if (!scene.textures.exists('gpuPixel')) {
-      try {
-        const dt = scene.textures.addDynamicTexture('gpuPixel', 2, 2) as any;
-        if (dt) {
-          dt.fill(0xffffff);
-          dt.render();
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
-    if (!scene.textures.exists('gpuTile16')) {
-      try {
-        const dt = scene.textures.addDynamicTexture('gpuTile16', 16, 16) as any;
-        if (dt) {
-          dt.fill(0xffffff);
-          dt.render();
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
-
-    const tileSize = 16;
-    const cols = Math.ceil(stage.world.width / tileSize);
-    const rows = Math.ceil(stage.world.height / tileSize);
-
-    let gpuTileLayer: any = null;
-
-    // Preferred path: true TilemapGPULayer (createLayer(..., gpu=true)).
-    try {
-      if (scene.make?.tilemap) {
-        const tileData = Array.from({ length: rows }, () => Array(cols).fill(0));
-        const tilemap = scene.make.tilemap({
-          tileWidth: tileSize,
-          tileHeight: tileSize,
-          width: cols,
-          height: rows,
-          data: tileData,
-        });
-
-        const tileset = tilemap.addTilesetImage('gpuTile16', 'gpuTile16', tileSize, tileSize, 0, 0);
-        if (tileset) {
-          const tilemapLayer = tilemap.createLayer(0, tileset, 0, 0, true) as any;
-          if (tilemapLayer) {
-            tilemapLayer.setDepth(0.15);
-            tilemapLayer.setAlpha(0.06);
-            tilemapLayer.setTint(scene.retroPalette.panelAlt);
-            gpuTileLayer = tilemapLayer;
-            (scene as any).tileGPUMap = tilemap;
-          }
-        }
-      }
-    } catch (e) {
-      // fall through to spriteGPULayer fallback
-    }
-
-    // Fallback path when TilemapGPULayer is unavailable.
-    if (!gpuTileLayer && (scene as any).add && typeof (scene as any).add.spriteGPULayer === 'function') {
-      const count = Math.min(8192, cols * rows);
-      const tileLayer = (scene as any).add.spriteGPULayer('gpuPixel', count) as any;
-      tileLayer.setDepth(0.15);
-      let added = 0;
-      for (let y = 0; y < stage.world.height && added < count; y += tileSize) {
-        for (let x = 0; x < stage.world.width && added < count; x += tileSize) {
-          tileLayer.addMember({
-            x: x + tileSize / 2,
-            y: y + tileSize / 2,
-            scaleX: tileSize / 2,
-            scaleY: tileSize / 2,
-            alpha: 0.06,
-            tintTopLeft: scene.retroPalette.panelAlt,
-          });
-          added += 1;
-        }
-      }
-      gpuTileLayer = tileLayer;
-    }
-
-    if (gpuTileLayer) {
-      (scene as any).tileGPULayer = gpuTileLayer;
-    }
-  } catch (e) {
-    // ignore if GPULayer or dynamic textures not supported
+  const bottomAmbientBand = resolveBottomAmbientBand(state);
+  if (bottomAmbientBand) {
+    const centerX = stage.world.width / 2;
+    const bandBottomY = bottomAmbientBand.topY + bottomAmbientBand.height;
+    const hazeBase = scene.add
+      .rectangle(
+        centerX,
+        bottomAmbientBand.topY + bottomAmbientBand.height / 2,
+        stage.world.width + 96,
+        bottomAmbientBand.height,
+        scene.retroPalette.border,
+        0.2,
+      )
+      .setOrigin(0.5)
+      .setDepth(0.35);
+    const hazeGlow = scene.add
+      .ellipse(
+        centerX,
+        bandBottomY - Math.max(12, Math.floor(bottomAmbientBand.height * 0.28)),
+        Math.max(260, Math.floor(stage.world.width * 0.92)),
+        Math.max(44, Math.floor(bottomAmbientBand.height * 0.8)),
+        scene.retroPalette.border,
+        0.14,
+      )
+      .setOrigin(0.5)
+      .setDepth(0.36);
+    scene.tweens.add({
+      targets: hazeGlow,
+      x: centerX + 28,
+      alpha: 0.19,
+      duration: 6200,
+      ease: 'Sine.InOut',
+      yoyo: true,
+      repeat: -1,
+    });
+    const plumeCount = Math.max(4, Math.min(9, Math.floor(stage.world.width / 180)));
+    const plumeStep = stage.world.width / plumeCount;
+    const plumes = Array.from({ length: plumeCount }, (_, index) => {
+      const x = plumeStep * index + plumeStep / 2 + ((index % 2 === 0 ? -1 : 1) * plumeStep * 0.12);
+      const width = plumeStep * 1.35;
+      const height = Math.max(34, bottomAmbientBand.height * (0.56 + (index % 3) * 0.08));
+      return scene.add
+        .ellipse(
+          x,
+          bandBottomY - height * 0.42,
+          width,
+          height,
+          scene.retroPalette.border,
+          index % 2 === 0 ? 0.14 : 0.11,
+        )
+        .setOrigin(0.5)
+        .setDepth(0.37 + index * 0.001);
+    });
+    plumes.forEach((plume, index) => {
+      const baseX = plume.x;
+      const baseY = plume.y;
+      const driftX = 16 + (index % 3) * 7;
+      const liftY = 5 + (index % 2) * 4;
+      const targetAlpha = 0.18 - (index % 3) * 0.015;
+      scene.tweens.add({
+        targets: plume,
+        x: baseX + (index % 2 === 0 ? driftX : -driftX),
+        y: baseY - liftY,
+        alpha: targetAlpha,
+        duration: 4200 + index * 520,
+        ease: 'Sine.InOut',
+        yoyo: true,
+        repeat: -1,
+      });
+    });
+    scene.bottomMistSprites.push(hazeBase, hazeGlow, ...plumes);
   }
 
   // Create GPULayers for platform shadows and platform details when available.
@@ -450,7 +468,7 @@ export function createBaseDisplayObjects(scene: GameSceneBaseDisplayContext, sta
       }
       // Terrain variant GPULayers (shadows + details)
       try {
-        const terrainCount = state.stageRuntime.platforms.filter((p) => p.surfaceMechanic).length;
+        const terrainCount = state.stageRuntime.platforms.filter((p) => p.kind === 'magnet' || p.kind === 'crystal').length;
         const terrainSize = Math.max(16, terrainCount * 3);
         try {
           const terrainShadowLayer = (scene as any).add.spriteGPULayer('gpuPixel', terrainSize) as any;
@@ -492,80 +510,17 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
   }
 
   for (const field of state.stageRuntime.gravityFields) {
-    const overlay = scene.add
-      .rectangle(
-        field.x + field.width / 2,
-        field.y + field.height / 2,
-        field.width,
-        field.height,
-        scene.gravityFieldColor(field),
-        scene.gravityFieldAlpha(field),
-      )
-      .setStrokeStyle(2, scene.gravityFieldColor(field), 0.42)
-      .setOrigin(0.5)
-      .setDepth(1);
+    const overlay = scene.add.graphics().setDepth(1);
     scene.gravityFieldSprites.set(field.id, overlay);
     scene.gravityFieldCategoryMarkerSprites.set(field.id, scene.createTraversalMarkerRects(4, 1.2));
   }
 
   for (const capsule of state.stageRuntime.gravityCapsules) {
-    const shell = scene.add
-      .rectangle(
-        capsule.shell.x + capsule.shell.width / 2,
-        capsule.shell.y + capsule.shell.height / 2,
-        capsule.shell.width,
-        capsule.shell.height,
-        scene.gravityCapsuleShellColor(capsule),
-        scene.gravityCapsuleShellAlpha(capsule),
-      )
-      .setOrigin(0.5)
-      .setStrokeStyle(2, scene.gravityCapsuleShellStrokeColor(capsule), 0.55)
-      .setDepth(1.4);
-    const door = scene.add
-      .rectangle(
-        capsule.entryDoor.x + capsule.entryDoor.width / 2,
-        capsule.entryDoor.y + capsule.entryDoor.height / 2,
-        capsule.entryDoor.width,
-        capsule.entryDoor.height,
-        scene.gravityCapsuleEntryDoorColor(capsule),
-        scene.gravityCapsuleDoorAlpha(capsule),
-      )
-      .setOrigin(0.5)
-      .setDepth(1.6);
-    const exitDoor = scene.add
-      .rectangle(
-        capsule.exitDoor.x + capsule.exitDoor.width / 2,
-        capsule.exitDoor.y + capsule.exitDoor.height / 2,
-        capsule.exitDoor.width,
-        capsule.exitDoor.height,
-        scene.gravityCapsuleExitDoorColor(capsule),
-        scene.gravityCapsuleDoorAlpha(capsule),
-      )
-      .setOrigin(0.5)
-      .setDepth(1.65);
-    const button = scene.add
-      .rectangle(
-        capsule.button.x + capsule.button.width / 2,
-        capsule.button.y + capsule.button.height / 2,
-        capsule.button.width,
-        capsule.button.height,
-        scene.gravityCapsuleButtonColor(capsule),
-        0.92,
-      )
-      .setOrigin(0.5)
-      .setStrokeStyle(2, scene.gravityCapsuleShellStrokeColor(capsule), 0.5)
-      .setDepth(3.1);
-    const buttonCore = scene.add
-      .rectangle(
-        capsule.button.x + capsule.button.width / 2,
-        capsule.button.y + capsule.button.height / 2,
-        Math.max(8, capsule.button.width - 12),
-        Math.max(8, capsule.button.height - 12),
-        scene.gravityCapsuleButtonCoreColor(capsule),
-        0.95,
-      )
-      .setOrigin(0.5)
-      .setDepth(3.2);
+    const shell = scene.add.graphics().setDepth(1.4);
+    const door = scene.add.graphics().setDepth(1.6);
+    const exitDoor = scene.add.graphics().setDepth(1.65);
+    const button = scene.add.graphics().setDepth(3.1);
+    const buttonCore = scene.add.graphics().setDepth(3.2);
     scene.gravityCapsuleShellSprites.set(capsule.id, shell);
     scene.gravityCapsuleEntryDoorSprites.set(capsule.id, door);
     scene.gravityCapsuleExitDoorSprites.set(capsule.id, exitDoor);
@@ -576,20 +531,14 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
   }
 
   for (const node of state.stageRuntime.activationNodes) {
-    const sprite = scene.add
-      .rectangle(node.x + node.width / 2, node.y + node.height / 2, node.width, node.height, scene.activationNodeColor(node), 0.9)
-      .setStrokeStyle(2, scene.retroPalette.border, 0.48)
-      .setOrigin(0.5)
-      .setDepth(3);
+    const sprite = scene.add.graphics().setDepth(3);
     scene.activationNodeSprites.set(node.id, sprite);
     scene.activationNodeMarkerSprites.set(node.id, scene.createTraversalMarkerRects(3, 3.1));
   }
 
   for (const platform of state.stageRuntime.platforms) {
     const topSurfaceHeight = Math.min(platform.height, 8);
-    const sprite = scene.add
-      .rectangle(platform.x + platform.width / 2, platform.y + platform.height / 2, platform.width, platform.height, scene.platformColor(platform))
-      .setOrigin(0.5);
+    const sprite = scene.add.graphics().setDepth(1);
     // Shadow and detail may be GPULayer members when supported; otherwise fallback to rectangles.
     const shadowLayer = (scene as any).platformShadowGPULayer as any | undefined;
     const detailLayer = (scene as any).platformDetailGPULayer as any | undefined;
@@ -671,18 +620,8 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
     scene.platformCategoryMarkerSprites.set(platform.id, scene.createTraversalMarkerRects(3, 1.1));
   }
 
-  for (const terrainVariantPlatform of state.stageRuntime.platforms.filter((platform) => platform.surfaceMechanic)) {
-    const sprite = scene.add
-      .rectangle(
-        terrainVariantPlatform.x + terrainVariantPlatform.width / 2,
-        terrainVariantPlatform.y + terrainVariantPlatform.height / 2,
-        terrainVariantPlatform.width,
-        terrainVariantPlatform.height,
-        scene.terrainVariantColor(terrainVariantPlatform),
-        scene.terrainVariantAlpha(terrainVariantPlatform),
-      )
-      .setOrigin(0.5)
-      .setDepth(2);
+  for (const terrainVariantPlatform of state.stageRuntime.platforms.filter((platform) => platform.kind === 'magnet' || platform.kind === 'crystal')) {
+    const sprite = scene.add.graphics().setDepth(2).setVisible(false);
     const shadow = scene.add
       .rectangle(
         terrainVariantPlatform.x + terrainVariantPlatform.width / 2,
@@ -693,7 +632,8 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
         0.2,
       )
       .setOrigin(0.5)
-      .setDepth(2.5);
+      .setDepth(2.5)
+      .setVisible(false);
     const accent = scene.add
       .rectangle(
         terrainVariantPlatform.x + terrainVariantPlatform.width / 2,
@@ -704,7 +644,8 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
         0.9,
       )
       .setOrigin(0.5)
-      .setDepth(3);
+      .setDepth(3)
+      .setVisible(false);
     const details = Array.from({ length: 3 }, () =>
       createWorldLocalRetroRegion(scene, {
         kind: 'distortion',
@@ -715,9 +656,14 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
         color: scene.retroPalette.bright,
         alpha: 0.5,
         depth: 3.2,
-      }).setOrigin(0.5),
+      }).setOrigin(0.5).setVisible(false),
     );
-    sprite.setStrokeStyle(2, scene.retroPalette.border, terrainVariantPlatform.surfaceMechanic?.kind === 'stickySludge' ? 0.24 : 0.38);
+    const terrainSpriteAny = sprite as any;
+    terrainSpriteAny.setStrokeStyle?.(
+      2,
+      scene.retroPalette.border,
+      terrainVariantPlatform.kind === 'magnet' ? 0.24 : 0.38,
+    );
     scene.terrainVariantSprites.set(terrainVariantPlatform.id, sprite);
     scene.terrainVariantShadowSprites.set(terrainVariantPlatform.id, shadow);
     scene.terrainVariantAccentSprites.set(terrainVariantPlatform.id, accent);
@@ -731,7 +677,21 @@ function createEnvironmentRenderables(scene: GameSceneBaseDisplayContext, state:
 
 function createPlayerRenderables(scene: GameSceneBaseDisplayContext): void {
   scene.playerAnchor = scene.add.rectangle(0, 0, 24, 40, scene.retroPalette.ink, 0).setOrigin(0, 0).setVisible(false);
-  scene.playerAura = scene.add.ellipse(0, 0, 40, 52, scene.retroPalette.cool, 0.18).setVisible(false).setDepth(5);
+  scene.playerSprite = scene.add.graphics().setDepth(6).setVisible(false);
+  drawAstronautGraphic(scene.playerSprite, {
+    variantKey: 'base',
+    width: 24,
+    height: 40,
+    facing: 1,
+    variant: { bodyColor: 0xeff5ff, detailColor: 0x4060cf, accentColor: 0x8fe8ff, auraColor: null },
+    pose: 'idle',
+    alpha: 1,
+    hitFlashBlend: 0,
+    defeat: false,
+    brightColor: scene.retroPalette.bright,
+    alertColor: scene.retroPalette.alert,
+  });
+  scene.playerAura = scene.add.ellipse(0, 0, 46, 60, scene.retroPalette.cool, 0.18).setVisible(false).setDepth(5);
   scene.playerPack = scene.add.rectangle(0, 0, 6, 14, scene.retroPalette.ink).setOrigin(0, 0).setDepth(5);
   scene.playerArmLeft = scene.add.rectangle(0, 0, 4, 12, scene.retroPalette.border).setOrigin(0, 0).setDepth(7);
   scene.playerArmRight = scene.add.rectangle(0, 0, 4, 12, scene.retroPalette.border).setOrigin(0, 0).setDepth(7);
@@ -752,88 +712,35 @@ function createPlayerRenderables(scene: GameSceneBaseDisplayContext): void {
 
 function createRewardRenderables(scene: GameSceneBaseDisplayContext, state: Readonly<SessionSnapshot>): void {
   for (const checkpoint of state.stageRuntime.checkpoints) {
-    const sprite = createOptimizedSprite(scene, checkpoint.rect.x, checkpoint.rect.y, 'checkpoint')
-      .setOrigin(0, 0)
-      .setDisplaySize(checkpoint.rect.width, checkpoint.rect.height);
+    const sprite = scene.add.graphics().setDepth(4.2);
     scene.checkpointSprites.set(checkpoint.id, sprite);
   }
 
-  // Attempt to create collectibles in a SpriteGPULayer for high-count performance.
-  let collectibleLayer: any | null = null;
-  try {
-    if ((scene as any).add && typeof (scene as any).add.spriteGPULayer === 'function' && state.stageRuntime.collectibles.length > 0) {
-      const size = Math.max(64, state.stageRuntime.collectibles.length * 2);
-      collectibleLayer = (scene as any).add.spriteGPULayer('collectible', size) as any;
-      collectibleLayer.setDepth(4.05);
-    }
-  } catch (e) {
-    collectibleLayer = null;
-  }
-
   for (const collectible of state.stageRuntime.collectibles) {
-    if (collectibleLayer) {
-      const index = collectibleLayer.memberCount;
-      // uniform frame, animated properties handled via editMember later
-      collectibleLayer.addMember({
-        x: collectible.position.x,
-        y: collectible.position.y,
-        scaleX: 1,
-        scaleY: 1,
-        alpha: collectible.collected ? 0 : 1,
-        tintTopLeft: scene.retroPalette.warm,
-      });
-      scene.collectibleSprites.set(collectible.id, { layer: collectibleLayer, index });
-    } else {
-      const sprite = createOptimizedSprite(scene, collectible.position.x, collectible.position.y, 'collectible');
-      scene.collectibleSprites.set(collectible.id, sprite as any);
-    }
-  }
-
-  if (collectibleLayer) {
-    (scene as any).collectibleGPULayer = collectibleLayer;
+    const sprite = scene.add.graphics().setDepth(4.05);
+    drawCollectibleGraphic(sprite, {
+      color: scene.retroPalette.warm,
+      brightColor: scene.retroPalette.bright,
+      borderColor: scene.retroPalette.border,
+      alpha: collectible.collected ? 0 : 1,
+      scale: 1,
+    });
+    scene.collectibleSprites.set(collectible.id, sprite);
   }
 
   for (const rewardBlock of state.stageRuntime.rewardBlocks) {
-    const blockSprite = scene.add
-      .rectangle(
-        rewardBlock.x + rewardBlock.width / 2,
-        rewardBlock.y + rewardBlock.height / 2,
-        rewardBlock.width,
-        rewardBlock.height,
-        scene.rewardBlockColor(rewardBlock),
-      )
-      .setStrokeStyle(2, scene.retroPalette.border, 0.55)
-      .setOrigin(0.5);
-    const label = scene.add
-      .text(rewardBlock.x + rewardBlock.width / 2, rewardBlock.y + rewardBlock.height / 2, scene.rewardBlockLabel(rewardBlock), {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '14px',
-        color: scene.retroPalette.shadow,
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+    const blockSprite = scene.add.graphics();
+    const icon = scene.add.graphics().setDepth(4.15);
     scene.rewardBlockSprites.set(rewardBlock.id, blockSprite);
-    scene.rewardBlockLabels.set(rewardBlock.id, label);
+    scene.rewardBlockIcons.set(rewardBlock.id, icon);
   }
 }
 
 function createEnemyRenderables(scene: GameSceneBaseDisplayContext, state: Readonly<SessionSnapshot>): void {
   for (const enemy of state.stageRuntime.enemies) {
-    const sprite = createOptimizedSprite(scene, enemy.x, enemy.y, enemy.kind).setOrigin(0, 0);
+    const sprite = scene.add.graphics().setDepth(0);
     scene.enemySprites.set(enemy.id, sprite);
-    if (enemy.kind === 'flyer') {
-      const accents = [
-        createWorldLocalRetroRegion(scene, { kind: 'palette-ramp', x: enemy.x + 14, y: enemy.y + 7, width: 6, height: 2, color: scene.retroPalette.cool, alpha: 0, depth: 10 }).setOrigin(0, 0),
-        createWorldLocalRetroRegion(scene, { kind: 'palette-ramp', x: enemy.x + 10, y: enemy.y + 16, width: 14, height: 2, color: scene.retroPalette.bright, alpha: 0, depth: 10 }).setOrigin(0, 0),
-      ];
-      scene.enemyAccentSprites.set(enemy.id, accents);
-    } else if (enemy.kind === 'turret' && enemy.variant) {
-      const accents = [
-        createWorldLocalRetroRegion(scene, { kind: 'palette-ramp', x: enemy.x + 4, y: enemy.y + 6, width: Math.max(10, enemy.width - 8), height: 4, color: scene.retroPalette.border, alpha: 0, depth: 10 }).setOrigin(0, 0),
-        createWorldLocalRetroRegion(scene, { kind: 'palette-ramp', x: enemy.x + 6, y: enemy.y + 14, width: Math.max(8, enemy.width - 12), height: 3, color: scene.retroPalette.cool, alpha: 0, depth: 10 }).setOrigin(0, 0),
-      ];
-      scene.enemyAccentSprites.set(enemy.id, accents);
-    }
+    scene.enemyAccentSprites.set(enemy.id, []);
   }
 }
 
@@ -843,76 +750,62 @@ function createExitAndArrivalRenderables(scene: GameSceneBaseDisplayContext, sta
     .setOrigin(0.5)
     .setDepth(1.1);
   scene.exitBase = scene.add
-    .rectangle(stage.exit.x + stage.exit.width / 2, stage.exit.y + stage.exit.height + 4, stage.exit.width + 24, 12, scene.retroPalette.panelAlt, 0.94)
-    .setStrokeStyle(2, scene.retroPalette.border, 0.5)
+    .image(stage.exit.x + stage.exit.width / 2, stage.exit.y + stage.exit.height + 4, 'exit-base')
+    .setDisplaySize(stage.exit.width + 24, 12)
+    .setTint(scene.retroPalette.panelAlt)
+    .setAlpha(0.94)
     .setOrigin(0.5)
     .setDepth(1.2);
   scene.exitBeacon = scene.add
-    .rectangle(stage.exit.x + stage.exit.width / 2, stage.exit.y + 18, 14, 8, scene.retroPalette.bright, 0.82)
+    .image(stage.exit.x + stage.exit.width / 2, stage.exit.y + 18, 'exit-beacon')
+    .setDisplaySize(14, 8)
+    .setTint(scene.retroPalette.bright)
+    .setAlpha(0.82)
     .setOrigin(0.5)
     .setDepth(2.2);
   scene.exitShell = scene.add
-    .image(
+    .graphics()
+    .setPosition(
       stage.exit.x + EXIT_CAPSULE_ART_BOUNDS.shell.x + EXIT_CAPSULE_ART_BOUNDS.shell.width / 2,
       stage.exit.y + EXIT_CAPSULE_ART_BOUNDS.shell.y + EXIT_CAPSULE_ART_BOUNDS.shell.height / 2,
-      EXIT_CAPSULE_TEXTURE_KEYS.shell,
     )
-    .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.shell.width, EXIT_CAPSULE_ART_BOUNDS.shell.height);
+    .setDepth(1.25);
+  scene.exitShell.setData('debugWidth', EXIT_CAPSULE_ART_BOUNDS.shell.width);
+  scene.exitShell.setData('debugTextureKey', 'shared-teleport-machine');
   scene.exitDoor = scene.add
-    .image(
+    .graphics()
+    .setPosition(
       stage.exit.x + EXIT_CAPSULE_ART_BOUNDS.door.x + EXIT_CAPSULE_ART_BOUNDS.door.width / 2,
       stage.exit.y + EXIT_CAPSULE_ART_BOUNDS.door.y + EXIT_CAPSULE_ART_BOUNDS.door.height / 2,
-      EXIT_CAPSULE_TEXTURE_KEYS.door,
     )
-    .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.door.width, EXIT_CAPSULE_ART_BOUNDS.door.height)
-    .setOrigin(0.5)
     .setDepth(1.3);
+  scene.exitDoor.setData('debugWidth', EXIT_CAPSULE_ART_BOUNDS.door.width);
+  scene.exitDoor.setData('debugTextureKey', 'shared-teleport-shutter');
     
-  // Arrival base (start) visuals: create placeholders; positions are set by presentation logic.
   scene.arrivalBaseShadow = scene.add
     .rectangle(0, 0, 12, 6, scene.retroPalette.ink, 0.22)
     .setOrigin(0.5)
     .setDepth(9.1)
     .setVisible(false);
-  scene.arrivalBase = scene.add
-    .rectangle(0, 0, 14, 8, scene.retroPalette.panelAlt, 0.92)
-    .setOrigin(0.5)
-    .setDepth(9.2)
-    .setVisible(false);
-  scene.arrivalBeacon = scene.add
-    .rectangle(0, 0, 14, 8, scene.retroPalette.bright, 0.34)
-    .setOrigin(0.5)
-    .setDepth(9.3)
-    .setVisible(false);
-    scene.arrivalShell = scene.add
-      .image(0, 0, EXIT_CAPSULE_TEXTURE_KEYS.shell)
-      .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.shell.width, EXIT_CAPSULE_ART_BOUNDS.shell.height)
-      .setOrigin(0.5)
-      .setDepth(9.4)
-      .setVisible(false);
-  scene.arrivalDoor = scene.add
-    .image(0, 0, EXIT_CAPSULE_TEXTURE_KEYS.door)
-    .setDisplaySize(EXIT_CAPSULE_ART_BOUNDS.door.width, EXIT_CAPSULE_ART_BOUNDS.door.height)
-    .setOrigin(0.5)
-    .setDepth(9.5)
-    .setVisible(false);
+  scene.arrivalShell = scene.add.graphics().setDepth(9.4).setVisible(false);
+  scene.arrivalDoor = scene.add.graphics().setDepth(9.5).setVisible(false);
+  scene.arrivalShell.setData('debugWidth', EXIT_CAPSULE_ART_BOUNDS.shell.width);
+  scene.arrivalShell.setData('debugTextureKey', 'arrival-teleport-machine');
+  scene.arrivalDoor.setData('debugWidth', EXIT_CAPSULE_ART_BOUNDS.door.width);
+  scene.arrivalDoor.setData('debugTextureKey', 'arrival-teleport-shutter');
   scene.arrivalAura = scene.add.ellipse(0, 0, 46, 62, scene.retroPalette.cool, 0.2).setDepth(9.6).setVisible(false);
-  scene.arrivalPlayer = createOptimizedSprite(scene, 0, 0, 'player').setOrigin(0, 0).setDepth(9.7).setTint(scene.retroPalette.cool).setVisible(false);
-  try {
-    (scene.arrivalPlayer as any).setLighting?.(true, { selfShadow: true });
-  } catch (e) {
-    // ignore
-  }
+  scene.arrivalPlayer = scene.add.graphics().setDepth(9.7).setVisible(false);
 }
 
 function createPauseOverlay(scene: GameSceneBaseDisplayContext): void {
+  const { centerX, centerY, width, height } = getViewportMetrics(scene);
   scene.pauseOverlay = scene.add
-    .rectangle(scene.scale.width / 2, scene.scale.height / 2, scene.scale.width, scene.scale.height, scene.retroPalette.ink, 0.8)
+    .rectangle(centerX, centerY, width, height, scene.retroPalette.ink, 0.8)
     .setDepth(100)
     .setScrollFactor(0)
     .setVisible(false);
   scene.pauseText = scene.add
-    .text(scene.scale.width / 2, scene.scale.height / 2, 'PAUSED', {
+    .text(centerX, centerY, 'PAUSED', {
       fontFamily: RETRO_FONT_FAMILY,
       fontSize: '40px',
       color: scene.retroPalette.text,

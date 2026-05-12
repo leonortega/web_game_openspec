@@ -28,6 +28,8 @@ export const AUDIO_CUES = {
   power: 'power',
   block: 'block',
   collapse: 'collapse',
+  crystalTouch: 'crystal-touch',
+  crystalBreak: 'crystal-break',
   spring: 'spring',
   movingPlatform: 'moving-platform',
   menuNavigate: 'menu-navigate',

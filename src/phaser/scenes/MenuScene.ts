@@ -11,44 +11,58 @@ import { SynthAudio } from '../audio/SynthAudio';
 import { playMenuInteractionCue, runUnlockedAudioAction } from '../audio/sceneAudio';
 import {
   applyConfiguredRetroPostFxToCamera,
-  getCrtFilterEnabled,
-  toggleCrtFilterForCamera,
+  setCrtFilterEnabled,
 } from '../retroPostFx';
-import {
-  RETRO_FONT_FAMILY,
-  createRetroMenuPalette,
-  drawRetroBackdrop,
-} from '../view/retroPresentation';
+import { bindScaleOuter, createNinePatch, getAuthoredGameSize, getViewportMetrics, RETRO_TEXT_STYLE, UI_COLORS } from '../ui/rexUiTheme';
 
-type MenuMode = 'main';
 type MenuView = 'root' | 'options' | 'help';
 type RootOptionId = 'primary' | 'options' | 'help';
-type OptionsOptionId = 'difficulty' | 'enemies' | 'musicVolume' | 'sfxVolume' | 'crtFilter';
+type OptionsOptionId = 'difficulty' | 'enemies' | 'musicVolume' | 'sfxVolume' | 'crt';
+
+type MenuButton = {
+  id: string;
+  container: Phaser.GameObjects.Container;
+  background: Phaser.GameObjects.GameObject;
+  hitArea: Phaser.GameObjects.Rectangle;
+  text: Phaser.GameObjects.Text;
+};
 
 const difficultyValues = ['casual', 'standard', 'expert'] as const;
 const enemyValues = ['low', 'normal', 'high'] as const;
 const rootOptions: RootOptionId[] = ['primary', 'options', 'help'];
-const optionEntries: OptionsOptionId[] = ['difficulty', 'enemies', 'musicVolume', 'sfxVolume', 'crtFilter'];
+const optionEntries: OptionsOptionId[] = ['difficulty', 'enemies', 'musicVolume', 'sfxVolume', 'crt'];
 
-const HELP_LINES = [
-  'Controls: Move with Arrow keys or A / D. Jump with Up, W, or Space. Trigger Booster Dash with Shift and fire Plasma Blaster shots with F when that system is active.',
-  'Powers',
-  `${getPowerLabel('doubleJump')}: ${getPowerHelpSummary('doubleJump')}`,
-  `${getPowerLabel('shooter')}: ${getPowerHelpSummary('shooter')}`,
-  `${getPowerLabel('invincible')}: ${getPowerHelpSummary('invincible')}`,
-  `${getPowerLabel('dash')}: ${getPowerHelpSummary('dash')}`,
-  'Damage Rules: A hit strips non-Shield Field powers before it costs a heart, so a pickup can absorb one mistake before health drops.',
-  'Enemies And Hazards',
-  'Spikes: Deal contact damage immediately and usually guard ledges, pits, or short landing zones.',
-  'Turrets: Flash before firing, so use the telegraph and cross the lane after the shot leaves the barrel.',
-  'Walkers: Patrol horizontal footing and pressure narrow landing pads with steady movement.',
-  'Hoppers: Leap in arcs that punish late jumps or slow approaches near ledges.',
-  'Chargers: Pause briefly before rushing forward, so bait the wind-up and then move through the opened lane.',
-  'Flyers: Sweep across the screen at fixed heights and often defend the optional upper survey routes.',
-  'Help Controls: When this panel is longer than the visible window, use Up or Down to scroll and use the mouse wheel to read the hidden sections.',
-];
+const HELP_TEXT = [
+  '[title]Controls[/title]',
+  'Move with [accent]Arrow keys[/accent] or [accent]A / D[/accent]. Jump with [accent]Up[/accent], [accent]W[/accent], or [accent]Space[/accent]. Trigger [accent]Booster Dash[/accent] with [accent]Shift[/accent] and fire the [accent]Plasma Blaster[/accent] with [accent]F[/accent] when unlocked.',
+  '[title]Powers[/title]',
+  `[ok]${getPowerLabel('doubleJump')}[/ok]: ${getPowerHelpSummary('doubleJump')}`,
+  `[ok]${getPowerLabel('shooter')}[/ok]: ${getPowerHelpSummary('shooter')}`,
+  `[ok]${getPowerLabel('invincible')}[/ok]: ${getPowerHelpSummary('invincible')}`,
+  `[ok]${getPowerLabel('dash')}[/ok]: ${getPowerHelpSummary('dash')}`,
+  '[title]Hazards[/title]',
+  '[danger]Spikes[/danger]: Immediate contact damage, mostly guarding ledges and short landing zones.',
+  '[danger]Turrets[/danger]: Flash before firing. Cross after the shot leaves the barrel.',
+  '[danger]Walkers[/danger]: Patrol narrow pads and punish slow landings.',
+  '[danger]Hoppers[/danger]: Leap in arcs that punish late jump timing.',
+  '[danger]Chargers[/danger]: Bait the wind-up, then move through the lane they abandon.',
+  '[danger]Flyers[/danger]: Sweep fixed heights and pressure optional upper routes.',
+].join('\n\n');
 
 const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+const stripMarkup = (value: string): string => value.replace(/\[[^\]]+\]/g, '');
+const resizePanel = (panel: any, width: number, height: number): void => {
+  if (typeof panel.resize === 'function') {
+    panel.resize(width, height);
+    return;
+  }
+  if (typeof panel.setSize === 'function') {
+    panel.setSize(width, height);
+  }
+  if (typeof panel.setDisplaySize === 'function') {
+    panel.setDisplaySize(width, height);
+  }
+};
 
 const wrapIndex = (value: number, length: number): number => {
   if (length <= 0) {
@@ -61,36 +75,50 @@ const wrapIndex = (value: number, length: number): number => {
 export class MenuScene extends Phaser.Scene {
   private audio!: SynthAudio;
 
-  private mode: MenuMode = 'main';
-
   private view: MenuView = 'root';
 
   private rootSelectedIndex = 0;
 
   private optionsSelectedIndex = 0;
 
-  private visibleTexts: Phaser.GameObjects.Text[] = [];
+  private createMenuButton(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    labelText: string,
+    onHover: () => void,
+    onClick: () => void,
+  ): {
+    container: Phaser.GameObjects.Container;
+    background: Phaser.GameObjects.GameObject;
+    hitArea: Phaser.GameObjects.Rectangle;
+    text: Phaser.GameObjects.Text;
+  } {
+    const background = createNinePatch(this, 0, 0, width, height).setDepth?.(3) ?? createNinePatch(this, 0, 0, width, height);
+    const text = this.add
+      .text(0, 0, labelText, {
+        ...RETRO_TEXT_STYLE,
+        fontSize: '16px',
+        fontStyle: 'bold',
+        color: UI_COLORS.text,
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setDepth(4);
 
-  private helpScrollOffset = 0;
+    const hitArea = this.add
+      .rectangle(0, 0, width, height, 0xffffff, 0.001)
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(5);
 
-  private helpScrollMax = 0;
+    hitArea.on('pointerover', onHover);
+    hitArea.on('pointerdown', onClick);
 
-  private helpScrollbarVisible = false;
-
-  private helpPanelHeight = 0;
-
-  private helpViewportHeight = 0;
-
-  private helpViewportTop = 0;
-
-  private helpParagraphDebug: Array<{
-    text: string;
-    top: number;
-    bottom: number;
-    visible: boolean;
-    cropY: number;
-    cropHeight: number;
-  }> = [];
+    const container = this.add.container(x, y, [background, text, hitArea]).setDepth(3);
+    return { container, background, hitArea, text };
+  }
 
   constructor() {
     super('menu');
@@ -98,24 +126,242 @@ export class MenuScene extends Phaser.Scene {
 
   create(): void {
     const bridge = this.registry.get('bridge') as SceneBridge;
+    const authoredGameSize = getAuthoredGameSize(this);
     this.audio = new SynthAudio(
       this,
       () => bridge.getSession().getState().progress.runSettings.musicVolume,
       () => bridge.getSession().getState().progress.runSettings.sfxVolume,
     );
     applyConfiguredRetroPostFxToCamera(this.game, this.cameras.main);
-    const retro = createRetroMenuPalette();
-    this.view = 'root';
-    this.rootSelectedIndex = 0;
-    this.optionsSelectedIndex = 0;
-    this.helpScrollOffset = 0;
-    this.helpScrollMax = 0;
-    this.helpScrollbarVisible = false;
+    bindScaleOuter(this);
 
-    const { width, height } = this.scale;
-    const cleanup: Array<() => void> = [];
-    const rootTexts = new Map<RootOptionId, Phaser.GameObjects.Text>();
-    const optionsTexts = new Map<OptionsOptionId, Phaser.GameObjects.Text>();
+    const baseBackdrop = this.add.rectangle(0, 0, 10, 10, 0x05090d, 1).setDepth(0.5);
+    const baseBackdropGlow = this.add.rectangle(0, 0, 10, 10, 0x071014, 0.96).setDepth(1.6);
+    [
+      { x: 74, y: 58, size: 3, color: 0xf7f3d6, alpha: 0.95 },
+      { x: 118, y: 96, size: 2, color: 0x8fdff2, alpha: 0.82 },
+      { x: 188, y: 64, size: 2, color: 0xf0b84b, alpha: 0.76 },
+      { x: 246, y: 118, size: 3, color: 0xf7f3d6, alpha: 0.9 },
+      { x: 332, y: 78, size: 2, color: 0x8fdff2, alpha: 0.72 },
+      { x: 406, y: 102, size: 3, color: 0xf7f3d6, alpha: 0.88 },
+      { x: 514, y: 70, size: 2, color: 0xf0b84b, alpha: 0.8 },
+      { x: 612, y: 90, size: 3, color: 0xf7f3d6, alpha: 0.92 },
+      { x: 704, y: 60, size: 2, color: 0x8fdff2, alpha: 0.78 },
+      { x: 812, y: 112, size: 3, color: 0xf7f3d6, alpha: 0.86 },
+      { x: 892, y: 82, size: 2, color: 0xf0b84b, alpha: 0.72 },
+      { x: 948, y: 54, size: 3, color: 0xf7f3d6, alpha: 0.9 },
+      { x: 96, y: 188, size: 2, color: 0x8fdff2, alpha: 0.74 },
+      { x: 214, y: 226, size: 3, color: 0xf7f3d6, alpha: 0.82 },
+      { x: 684, y: 208, size: 2, color: 0xf0b84b, alpha: 0.7 },
+      { x: 826, y: 242, size: 3, color: 0xf7f3d6, alpha: 0.78 },
+    ].forEach(({ x, y, size, color, alpha }) => {
+      this.add.rectangle(x, y, size, size, color, alpha).setDepth(1.61);
+    });
+
+    const menuBackdrop = this.add.rectangle(0, 0, 10, 10, 0x0a1116, 0.985).setDepth(1.75);
+    const backdropStarSeeds = [
+      { offsetX: -364, offsetY: 40, color: 0xf7f3d6, alpha: 0.95 },
+      { offsetX: -322, offsetY: 70, color: 0x8fdff2, alpha: 0.82 },
+      { offsetX: 286, offsetY: 64, color: 0xf0b84b, alpha: 0.9 },
+      { offsetX: 344, offsetY: 98, color: 0xf7f3d6, alpha: 0.88 },
+      { offsetX: -396, offsetY: 108, color: 0xf7f3d6, alpha: 0.7 },
+      { offsetX: 212, offsetY: 46, color: 0x8fdff2, alpha: 0.9 },
+      { offsetX: -248, offsetY: 88, color: 0xf0b84b, alpha: 0.76 },
+      { offsetX: 368, offsetY: 54, color: 0xf7f3d6, alpha: 0.72 },
+    ];
+    const backdropStars = backdropStarSeeds.map(({ color, alpha }) =>
+      this.add.rectangle(0, 0, 3, 3, color, alpha).setDepth(1.76),
+    );
+
+    const menuFrame = createNinePatch(this, 0, 0, 10, 10).setDepth(2);
+    const menuTitleText = this.add
+      .text(0, 0, 'Orbital Survey', {
+        ...RETRO_TEXT_STYLE,
+        fontSize: '26px',
+        color: '#f0b84b',
+        letterSpacing: 3,
+      })
+      .setOrigin(0.5)
+      .setDepth(3);
+
+    const titleText = this.add
+      .text(0, 0, 'Main Menu', {
+        ...RETRO_TEXT_STYLE,
+        fontSize: '20px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setDepth(3);
+
+    const subtitleText = this.add
+      .text(0, 0, '', {
+        ...RETRO_TEXT_STYLE,
+        fontSize: '11px',
+        color: '#bcc3a6',
+        align: 'center',
+        wordWrap: { width: 700 },
+        lineSpacing: 8,
+      })
+      .setOrigin(0.5)
+      .setDepth(3);
+
+    const rootButtons: MenuButton[] = rootOptions.map((option, index) => {
+      const button = this.createMenuButton(
+        0,
+        0,
+        300,
+        52,
+        option === 'primary' ? 'Start Survey' : option === 'options' ? 'Options' : 'Field Guide',
+        () => {
+          this.rootSelectedIndex = index;
+          syncSelection();
+        },
+        () => {
+          this.rootSelectedIndex = index;
+          activateRootOption(rootOptions[this.rootSelectedIndex]);
+        },
+      );
+      return {
+        id: option,
+        container: button.container,
+        background: button.background,
+        hitArea: button.hitArea,
+        text: button.text,
+      };
+    });
+
+    const optionButtons: MenuButton[] = optionEntries.map((option, index) => {
+      const button = this.createMenuButton(
+        0,
+        0,
+        620,
+        54,
+        '',
+        () => {
+          this.optionsSelectedIndex = index;
+          syncSelection();
+        },
+        () => {
+          this.optionsSelectedIndex = index;
+          cycleValue(optionEntries[this.optionsSelectedIndex], 1);
+        },
+      );
+      button.text.setFontSize('15px');
+      return {
+        id: option,
+        container: button.container,
+        background: button.background,
+        hitArea: button.hitArea,
+        text: button.text,
+      };
+    });
+
+    let helpPanelWidth = 760;
+    let helpPanelHeight = 326;
+    let helpViewportWidth = 660;
+    let helpViewportHeight = 224;
+    const helpScrollStep = 22;
+    const helpBackground = createNinePatch(this, 0, 0, helpPanelWidth, helpPanelHeight).setDepth?.(3)
+      ?? createNinePatch(this, 0, 0, helpPanelWidth, helpPanelHeight);
+    const helpTextObject = this.add
+      .text(0, 0, stripMarkup(HELP_TEXT), {
+        ...RETRO_TEXT_STYLE,
+        fontSize: '11px',
+        color: UI_COLORS.text,
+        lineSpacing: 6,
+        wordWrap: { width: helpViewportWidth, useAdvancedWrap: true },
+      })
+      .setDepth(4);
+    let helpScrollOffset = 0;
+    let helpMaxScroll = Math.max(0, helpTextObject.height - helpViewportHeight);
+    const applyHelpScroll = (): void => {
+      helpTextObject.setPosition(-helpViewportWidth / 2, -helpViewportHeight / 2 - helpScrollOffset);
+      helpTextObject.setCrop(0, helpScrollOffset, helpViewportWidth, helpViewportHeight);
+    };
+    const scrollHelp = (direction: -1 | 1): void => {
+      helpScrollOffset = clamp(helpScrollOffset + direction * helpScrollStep, 0, helpMaxScroll);
+      applyHelpScroll();
+    };
+    applyHelpScroll();
+    const resetHelpScroll = (): void => {
+      helpScrollOffset = 0;
+      applyHelpScroll();
+    };
+    const helpArea = this.add
+      .container(0, 0, [helpBackground, helpTextObject])
+      .setDepth(3)
+      .setVisible(false);
+
+    const footerText = this.add
+      .text(0, 0, '', {
+        ...RETRO_TEXT_STYLE,
+        fontSize: '9px',
+        color: UI_COLORS.dimText,
+        letterSpacing: 1,
+        align: 'center',
+        wordWrap: { width: 760 },
+      })
+      .setOrigin(0.5)
+      .setDepth(3);
+
+    const syncLayout = (gameSize: { width: number; height: number }): void => {
+      const { centerX, centerY, width, height, safeInsetX, safeInsetY } = getViewportMetrics(this, gameSize);
+      const frameWidth = Math.min(Math.max(360, width - safeInsetX * 2), 928);
+      const frameHeight = Math.min(Math.max(420, height - safeInsetY * 2), 704);
+      const frameTop = centerY - frameHeight / 2;
+      const rootButtonWidth = Math.min(300, Math.max(240, frameWidth - 120));
+      const optionButtonWidth = Math.min(620, Math.max(280, frameWidth - 92));
+
+      baseBackdrop.setPosition(centerX, centerY).setSize(width + 24, height + 24);
+      baseBackdropGlow.setPosition(centerX, centerY).setSize(width + 24, height + 24);
+      menuBackdrop.setPosition(centerX, centerY).setSize(Math.min(width - 12, 1000), Math.min(height - 12, 740));
+      resizePanel(menuFrame, frameWidth, frameHeight);
+      menuFrame.setPosition(centerX, centerY);
+
+      backdropStars.forEach((star, index) => {
+        const seed = backdropStarSeeds[index];
+        star.setPosition(centerX + seed.offsetX, frameTop + seed.offsetY);
+      });
+
+      const titleY = frameTop + 48;
+      const headingY = frameTop + 90;
+      const subtitleY = frameTop + 128;
+      const rootStartY = frameTop + 232;
+      const optionsStartY = frameTop + 168;
+      const helpCenterY = frameTop + Math.min(frameHeight - 178, 310);
+      const footerY = centerY + frameHeight / 2 - (this.view === 'help' ? 14 : 12);
+
+      menuTitleText.setPosition(centerX, titleY);
+      subtitleText.setPosition(centerX, subtitleY);
+      subtitleText.setWordWrapWidth(Math.max(260, Math.min(700, frameWidth - 140)), true);
+      titleText.setPosition(centerX, headingY);
+
+      rootButtons.forEach((button, index) => {
+        resizePanel(button.background, rootButtonWidth, 52);
+        button.hitArea.setSize(rootButtonWidth, 52);
+        button.container.setPosition(centerX, rootStartY + index * 68);
+      });
+
+      optionButtons.forEach((button, index) => {
+        resizePanel(button.background, optionButtonWidth, 54);
+        button.hitArea.setSize(optionButtonWidth, 54);
+        button.container.setPosition(centerX, optionsStartY + index * 62);
+      });
+
+      helpPanelWidth = Math.min(760, Math.max(300, frameWidth - 72));
+      helpPanelHeight = Math.min(326, Math.max(220, frameHeight - 192));
+      helpViewportWidth = Math.max(240, helpPanelWidth - 100);
+      helpViewportHeight = Math.max(120, helpPanelHeight - 102);
+      resizePanel(helpBackground, helpPanelWidth, helpPanelHeight);
+      helpTextObject.setWordWrapWidth(helpViewportWidth, true);
+      helpMaxScroll = Math.max(0, helpTextObject.height - helpViewportHeight);
+      helpScrollOffset = clamp(helpScrollOffset, 0, helpMaxScroll);
+      applyHelpScroll();
+      helpArea.setPosition(centerX, helpCenterY);
+
+      footerText.setPosition(centerX, footerY);
+      footerText.setWordWrapWidth(Math.max(280, Math.min(760, frameWidth - 120)), true);
+    };
 
     this.audio.startMenuMusic();
     const unlockSceneAudio = () => {
@@ -125,329 +371,68 @@ export class MenuScene extends Phaser.Scene {
     };
     this.input.keyboard?.once('keydown', unlockSceneAudio);
     this.input.once('pointerdown', unlockSceneAudio);
-    const updateRootSelection = (nextIndex: number, playAudio = true): void => {
-      const wrapped = wrapIndex(nextIndex, rootOptions.length);
-      const changed = this.rootSelectedIndex !== wrapped;
-      this.rootSelectedIndex = wrapped;
-      if (changed && playAudio) {
-        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuNavigate);
-      }
-      render();
+
+    const renderOptionLabels = (): void => {
+      const state = bridge.getSession().getState();
+      const labels: Record<OptionsOptionId, string> = {
+        difficulty: `Difficulty  ${DIFFICULTY_LABELS[state.progress.runSettings.difficulty]}`,
+        enemies: `Enemy Pressure  ${ENEMY_PRESSURE_LABELS[state.progress.runSettings.enemyPressure]}`,
+        musicVolume: `Music Volume  ${Math.round(state.progress.runSettings.musicVolume * 100)}%`,
+        sfxVolume: `SFX Volume  ${Math.round(state.progress.runSettings.sfxVolume * 100)}%`,
+        crt: `CRT  ${state.progress.runSettings.crtEnabled ? 'ON' : 'OFF'}`,
+      };
+
+      optionButtons.forEach((button) => {
+        button.text.setText(labels[button.id as OptionsOptionId]);
+      });
     };
 
-    const updateOptionsSelection = (nextIndex: number, playAudio = true): void => {
-      const wrapped = wrapIndex(nextIndex, optionEntries.length);
-      const changed = this.optionsSelectedIndex !== wrapped;
-      this.optionsSelectedIndex = wrapped;
-      if (changed && playAudio) {
-        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuNavigate);
-      }
-      render();
-    };
-
-    drawRetroBackdrop(this, 0, 0, width, height, retro, 'transition');
-    this.add
-      .rectangle(width / 2, height / 2, width - 112, height - 110, retro.panel, 0.98)
-      .setOrigin(0.5)
-      .setStrokeStyle(4, retro.border, 0.92);
-    this.add.rectangle(width / 2, 82, width - 146, 26, retro.stageAccent, 1).setStrokeStyle(2, retro.ink, 1);
-    this.add.rectangle(width / 2, height - 54, width - 146, 26, retro.panelAlt, 1).setStrokeStyle(2, retro.border, 0.58);
-
-    const eyebrowText = this.add
-      .text(width / 2, 82, 'Orbital Survey', {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '30px',
-        color: retro.shadow,
-        fontStyle: 'bold',
-        letterSpacing: 3,
-      })
-      .setOrigin(0.5);
-
-    const titleText = this.add
-      .text(width / 2, 134, '', {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '28px',
-        color: retro.text,
-        fontStyle: 'bold',
-        letterSpacing: 2,
-      })
-      .setOrigin(0.5);
-
-    const subtitleText = this.add
-      .text(width / 2, 176, '', {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '16px',
-        color: retro.dimText,
-        align: 'center',
-        wordWrap: { width: width - 220 },
-        lineSpacing: 6,
-      })
-      .setOrigin(0.5);
-
-    rootOptions.forEach((option, index) => {
-      const text = this.add
-        .text(width / 2, 258 + index * 58, '', {
-          fontFamily: RETRO_FONT_FAMILY,
-          fontSize: '24px',
-          color: retro.text,
-          backgroundColor: '#11161c',
-          padding: { x: 20, y: 8 },
-          letterSpacing: 2,
-        })
-        .setOrigin(0.5)
-        .setInteractive({ useHandCursor: true });
-
-      text.on('pointerover', () => {
-        updateRootSelection(index);
-      });
-      text.on('pointerdown', () => {
-        updateRootSelection(index, false);
-        activateRootOption(rootOptions[this.rootSelectedIndex]);
-      });
-
-      rootTexts.set(option, text);
-    });
-
-    optionEntries.forEach((option, index) => {
-      const text = this.add
-        .text(width / 2, 238 + index * 58, '', {
-          fontFamily: RETRO_FONT_FAMILY,
-          fontSize: '22px',
-          color: retro.text,
-          backgroundColor: '#11161c',
-          padding: { x: 20, y: 8 },
-          letterSpacing: 2,
-        })
-        .setOrigin(0.5)
-        .setInteractive({ useHandCursor: true });
-
-      text.on('pointerover', () => {
-        updateOptionsSelection(index);
-      });
-      text.on('pointerdown', () => {
-        updateOptionsSelection(index, false);
-        cycleValue(optionEntries[this.optionsSelectedIndex], 1);
-      });
-
-      optionsTexts.set(option, text);
-    });
-
-    const optionsHintText = this.add
-      .text(width / 2, 432, '', {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '15px',
-        color: retro.dimText,
-        align: 'center',
-        wordWrap: { width: width - 260 },
-        lineSpacing: 6,
-      })
-      .setOrigin(0.5);
-
-    const helpPanel = this.add.container(width / 2, 316);
-    const helpPanelWidth = Math.min(width - 132, 860);
-    const helpPanelHeight = Math.min(height - 160, 420);
-    const helpViewportPadding = 34;
-    const helpViewportTop = -helpPanelHeight / 2 + 76;
-    const helpViewportHeight = helpPanelHeight - 134;
-    this.helpPanelHeight = helpPanelHeight;
-    this.helpViewportHeight = helpViewportHeight;
-    this.helpViewportTop = helpViewportTop;
-    const helpViewportWidth = helpPanelWidth - 112;
-    const helpTrackX = helpPanelWidth / 2 - 28;
-    const helpTrackHeight = helpViewportHeight;
-    const helpScrollStep = 56;
-    const helpBackground = this.add
-      .rectangle(0, 0, helpPanelWidth, helpPanelHeight, retro.panel, 0.99)
-      .setStrokeStyle(4, retro.border, 0.92);
-    const helpTitle = this.add
-      .text(0, -helpPanelHeight / 2 + 38, 'Help', {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '26px',
-        color: retro.text,
-        fontStyle: 'bold',
-        letterSpacing: 2,
-      })
-      .setOrigin(0.5);
-    const helpViewport = this.add.container(0, 0);
-    const helpParagraphs = HELP_LINES.map((line) =>
-      this.add
-        .text(-helpPanelWidth / 2 + helpViewportPadding, 0, line, {
-          fontFamily: RETRO_FONT_FAMILY,
-          fontSize: '16px',
-          color: retro.text,
-          align: 'left',
-          lineSpacing: 6,
-          wordWrap: { width: helpViewportWidth },
-        })
-        .setOrigin(0, 0),
-    );
-    helpViewport.add(helpParagraphs);
-    const helpScrollbarTrack = this.add
-      .rectangle(helpTrackX, helpViewportTop + helpTrackHeight / 2, 10, helpTrackHeight, retro.panelAlt, 1)
-      .setOrigin(0.5)
-      .setVisible(false);
-    const helpScrollbarThumb = this.add
-      .rectangle(helpTrackX, helpViewportTop + 36, 14, 72, retro.warm, 1)
-      .setOrigin(0.5)
-      .setVisible(false);
-    helpPanel.add([helpBackground, helpTitle, helpViewport, helpScrollbarTrack, helpScrollbarThumb]);
-
-    let helpContentHeight = 0;
-
-    const syncHelpParagraphLayout = (): void => {
-      let cursorY = helpViewportTop - this.helpScrollOffset;
-      const visibleBottom = helpViewportTop + helpViewportHeight;
-      this.helpParagraphDebug = [];
-
-      for (const paragraph of helpParagraphs) {
-        paragraph.setPosition(-helpPanelWidth / 2 + helpViewportPadding, cursorY);
-        const paragraphBottom = cursorY + paragraph.height;
-        const visibleTop = Math.max(cursorY, helpViewportTop);
-        const clippedBottom = Math.min(paragraphBottom, visibleBottom);
-        const cropY = Math.max(0, visibleTop - cursorY);
-        const cropHeight = Math.max(0, clippedBottom - visibleTop);
-        const isVisible = cropHeight > 0;
-
-        paragraph.setVisible(isVisible);
-        if (isVisible) {
-          paragraph.setCrop(0, cropY, helpViewportWidth, cropHeight);
-        } else {
-          paragraph.setCrop();
-        }
-
-        this.helpParagraphDebug.push({
-          text: paragraph.text,
-          top: cursorY,
-          bottom: paragraphBottom,
-          visible: isVisible,
-          cropY,
-          cropHeight,
-        });
-        cursorY += paragraph.height + 24;
+    const setButtonState = (button: MenuButton, active: boolean): void => {
+      button.text.setColor(active ? '#fff7cc' : UI_COLORS.text);
+      button.text.setStroke(active ? '#5c3a00' : '#11141b', active ? 4 : 2);
+      button.container.setScale(active ? 1.03 : 1);
+      button.container.setAlpha(active ? 1 : 0.92);
+      if ('setTint' in (button.background as any)) {
+        (button.background as any).setTint?.(active ? 0xffd36b : 0xffffff);
       }
     };
 
-    const setHelpScroll = (nextOffset: number): void => {
-      this.helpScrollOffset = clamp(nextOffset, 0, this.helpScrollMax);
-      syncHelpParagraphLayout();
+    const syncSelection = (): void => {
+      rootButtons.forEach((button, index) => {
+        const active = this.view === 'root' && index === this.rootSelectedIndex;
+        button.container.setVisible(this.view === 'root');
+        setButtonState(button, active);
+      });
 
-      if (!this.helpScrollbarVisible) {
-        return;
-      }
+      optionButtons.forEach((button, index) => {
+        const active = this.view === 'options' && index === this.optionsSelectedIndex;
+        button.container.setVisible(this.view === 'options');
+        setButtonState(button, active);
+      });
 
-      const visibleRatio = helpViewportHeight / Math.max(helpContentHeight, helpViewportHeight);
-      const thumbHeight = Math.max(52, Math.min(helpTrackHeight, helpTrackHeight * visibleRatio));
-      const trackTravel = helpTrackHeight - thumbHeight;
-      const scrollRatio = this.helpScrollMax <= 0 ? 0 : this.helpScrollOffset / this.helpScrollMax;
-      helpScrollbarThumb.setSize(14, thumbHeight);
-      helpScrollbarThumb.setPosition(
-        helpTrackX,
-        helpViewportTop + thumbHeight / 2 + trackTravel * scrollRatio,
+      titleText.setText(this.view === 'root' ? 'Main Menu' : this.view === 'options' ? 'Options' : 'Help');
+      subtitleText.setText(
+        this.view === 'root'
+          ? 'Start the next survey run, tune the mission settings, or review powers and alien hazards before drop-in.'
+          : this.view === 'options'
+            ? 'Adjust run settings. Left / Right changes the highlighted row.'
+            : 'Field reference for powers, hazards, and controls.',
       );
+      helpArea.setVisible(this.view === 'help');
+      footerText.setText(
+        this.view === 'root'
+          ? 'Enter selects. Arrow keys move. Press 1, 2, or 3 to jump directly into an unlocked sector.'
+          : this.view === 'options'
+            ? 'ESC returns to the root menu.'
+            : 'Mouse wheel or Up / Down scroll. ESC returns to the root menu.',
+      );
+      syncLayout(authoredGameSize);
     };
-
-    const refreshHelpOverflow = (): void => {
-      let cursorY = helpViewportTop;
-      for (const paragraph of helpParagraphs) {
-        paragraph.setPosition(-helpPanelWidth / 2 + helpViewportPadding, cursorY);
-        cursorY += paragraph.height + 24;
-      }
-
-      helpContentHeight = Math.max(0, cursorY - helpViewportTop - 24);
-      this.helpScrollMax = Math.max(0, helpContentHeight - helpViewportHeight);
-      this.helpScrollbarVisible = this.helpScrollMax > 0;
-      helpScrollbarTrack.setVisible(this.view === 'help' && this.helpScrollbarVisible);
-      helpScrollbarThumb.setVisible(this.view === 'help' && this.helpScrollbarVisible);
-      setHelpScroll(Math.min(this.helpScrollOffset, this.helpScrollMax));
-    };
-
-    const scrollHelp = (delta: number): void => {
-      if (this.view !== 'help' || this.helpScrollMax <= 0) {
-        return;
-      }
-
-      setHelpScroll(this.helpScrollOffset + delta);
-      render();
-    };
-
-    const footerText = this.add
-      .text(width / 2, height - 52, '', {
-        fontFamily: RETRO_FONT_FAMILY,
-        fontSize: '14px',
-        color: retro.text,
-        align: 'center',
-        letterSpacing: 1,
-      })
-      .setOrigin(0.5);
-
 
     const startRun = (stageIndex = bridge.getSession().getState().stageIndex): void => {
       void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
       bridge.startStage(stageIndex);
       this.scene.start('stage-intro');
-    };
-
-    const openView = (nextView: 'options' | 'help'): void => {
-      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
-      this.view = nextView;
-      render();
-    };
-
-    const returnToRoot = (): void => {
-      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuBack);
-      this.view = 'root';
-      setHelpScroll(0);
-      render();
-    };
-
-    const cycleValue = (option: OptionsOptionId, direction: -1 | 1): void => {
-      const state = bridge.getSession().getState();
-      if (option === 'difficulty') {
-        const currentIndex = difficultyValues.indexOf(state.progress.runSettings.difficulty);
-        const nextIndex = wrapIndex(currentIndex + direction, difficultyValues.length);
-        bridge.updateRunSettings({ difficulty: difficultyValues[nextIndex] });
-        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
-        render();
-        return;
-      }
-
-      if (option === 'enemies') {
-        const currentIndex = enemyValues.indexOf(state.progress.runSettings.enemyPressure);
-        const nextIndex = wrapIndex(currentIndex + direction, enemyValues.length);
-        bridge.updateRunSettings({ enemyPressure: enemyValues[nextIndex] });
-        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
-        render();
-        return;
-      }
-
-      if (option === 'musicVolume') {
-        const nextValue = clamp(state.progress.runSettings.musicVolume + direction * 0.1, 0, 1);
-        bridge.updateRunSettings({ musicVolume: nextValue });
-        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
-        render();
-        return;
-      }
-
-      if (option === 'sfxVolume') {
-        const nextValue = clamp(state.progress.runSettings.sfxVolume + direction * 0.1, 0, 1);
-        bridge.updateRunSettings({ sfxVolume: nextValue });
-        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
-        render();
-        return;
-      }
-
-      if (option === 'crtFilter') {
-        toggleCrtFilterForCamera(this.game, this.cameras.main);
-        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
-        render();
-        return;
-      }
-
-      bridge.updateRunSettings({
-        masterVolume: clamp(state.progress.runSettings.masterVolume + direction * 0.1, 0, 1),
-      });
-      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
-      render();
     };
 
     const activateRootOption = (option: RootOptionId): void => {
@@ -456,280 +441,157 @@ export class MenuScene extends Phaser.Scene {
         return;
       }
 
-      openView(option);
-    };
-
-    const handleBack = (): void => {
-      if (this.view !== 'root') {
-        returnToRoot();
+      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
+      this.view = option;
+      if (option === 'help') {
+        resetHelpScroll();
       }
+      syncSelection();
     };
 
-    const render = (): void => {
+    const cycleValue = (option: OptionsOptionId, direction: -1 | 1): void => {
       const state = bridge.getSession().getState();
-      const rootLabels: Record<RootOptionId, string> = {
-        primary: 'Start',
-        options: 'Options',
-        help: 'Help',
-      };
-      const optionLabels: Record<OptionsOptionId, string> = {
-        difficulty: `Difficulty  ${DIFFICULTY_LABELS[state.progress.runSettings.difficulty]}`,
-        enemies: `Enemies  ${ENEMY_PRESSURE_LABELS[state.progress.runSettings.enemyPressure]}`,
-        musicVolume: `Music  ${Math.round(state.progress.runSettings.musicVolume * 100)}% (x${(
-          state.progress.runSettings.musicVolume * 10
-        ).toFixed(1)})`,
-        sfxVolume: `SFX  ${Math.round(state.progress.runSettings.sfxVolume * 100)}%`,
-        crtFilter: `CRT Filter  ${getCrtFilterEnabled(this.game, true) ? 'On' : 'Off'}`,
-      };
-
-      eyebrowText.setText('Orbital Survey');
-      titleText.setText(
-        this.view === 'root'
-          ? 'Main Menu'
-          : this.view === 'options'
-            ? 'Options'
-            : 'Help',
-      );
-      subtitleText.setText(
-        this.view === 'root'
-          ? 'Launch the astronaut survey, tune the run, or review power systems and alien hazards before drop-in.'
-          : this.view === 'options'
-            ? 'Choose the run settings that will be used when the next stage begins.'
-            : 'Shared quick reference for astronaut powers, enemy hazards, and scrolling controls.',
-      );
-
-      this.visibleTexts = [];
-
-      rootOptions.forEach((option, index) => {
-        const text = rootTexts.get(option);
-        if (!text) {
-          return;
-        }
-
-        const selected = this.view === 'root' && index === this.rootSelectedIndex;
-        text.setVisible(this.view === 'root');
-        text.setText(rootLabels[option]);
-        text.setColor(selected ? '#080a0d' : retro.text);
-        text.setBackgroundColor(selected ? '#f0b84b' : '#11161c');
-        if (this.view === 'root') {
-          this.visibleTexts.push(text);
-        }
-      });
-
-      optionEntries.forEach((option, index) => {
-        const text = optionsTexts.get(option);
-        if (!text) {
-          return;
-        }
-
-        const selected = this.view === 'options' && index === this.optionsSelectedIndex;
-        text.setVisible(this.view === 'options');
-        text.setText(optionLabels[option]);
-        text.setColor(selected ? '#080a0d' : retro.text);
-        text.setBackgroundColor(selected ? '#f0b84b' : '#11161c');
-        if (this.view === 'options') {
-          this.visibleTexts.push(text);
-        }
-      });
-
-      const showOptions = this.view === 'options';
-      optionsHintText.setVisible(showOptions);
-      optionsHintText.setText(
-        showOptions
-          ? 'Left / Right adjust the highlighted setting. ESC returns to the main menu root.'
-          : '',
-      );
-
-      helpPanel.setVisible(this.view === 'help');
-      helpScrollbarTrack.setVisible(this.view === 'help' && this.helpScrollbarVisible);
-      helpScrollbarThumb.setVisible(this.view === 'help' && this.helpScrollbarVisible);
-      if (this.view === 'help') {
-        this.visibleTexts.push(helpTitle, ...helpParagraphs.filter((paragraph) => paragraph.visible));
+      if (option === 'difficulty') {
+        const currentIndex = difficultyValues.indexOf(state.progress.runSettings.difficulty);
+        bridge.updateRunSettings({ difficulty: difficultyValues[wrapIndex(currentIndex + direction, difficultyValues.length)] });
+      } else if (option === 'enemies') {
+        const currentIndex = enemyValues.indexOf(state.progress.runSettings.enemyPressure);
+        bridge.updateRunSettings({ enemyPressure: enemyValues[wrapIndex(currentIndex + direction, enemyValues.length)] });
+      } else if (option === 'musicVolume') {
+        bridge.updateRunSettings({ musicVolume: clamp(state.progress.runSettings.musicVolume + direction * 0.1, 0, 1) });
+      } else if (option === 'sfxVolume') {
+        bridge.updateRunSettings({ sfxVolume: clamp(state.progress.runSettings.sfxVolume + direction * 0.1, 0, 1) });
+      } else if (option === 'crt') {
+        const crtEnabled = !state.progress.runSettings.crtEnabled;
+        bridge.updateRunSettings({ crtEnabled });
+        setCrtFilterEnabled(this.game, crtEnabled);
+        applyConfiguredRetroPostFxToCamera(this.game, this.cameras.main);
       }
 
-      footerText.setText(
-        this.view === 'help'
-          ? this.helpScrollbarVisible
-            ? 'Up / Down scroll. Mouse wheel also scrolls. ESC returns to the previous menu layer.'
-            : 'ESC returns to the previous menu layer.'
-          : this.view === 'root'
-          ? 'Enter selects. Arrow keys move through the menu.'
-          : 'ESC returns to the previous menu layer.',
-      );
-
+      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
+      renderOptionLabels();
+      syncSelection();
     };
 
-    const keyboard = this.input.keyboard;
-    const bindKey = (eventName: string, handler: () => void): void => {
-      keyboard?.on(eventName, handler);
-      cleanup.push(() => keyboard?.off(eventName, handler));
+    const returnToRoot = (): void => {
+      if (this.view === 'root') {
+        return;
+      }
+
+      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuBack);
+      this.view = 'root';
+      syncSelection();
     };
 
-    bindKey('keydown-UP', () => {
+    this.input.keyboard?.on('keydown-UP', () => {
       if (this.view === 'help') {
-        scrollHelp(-helpScrollStep);
+        scrollHelp(-1);
         return;
       }
 
       if (this.view === 'root') {
-        updateRootSelection(this.rootSelectedIndex - 1);
+        this.rootSelectedIndex = wrapIndex(this.rootSelectedIndex - 1, rootButtons.length);
       } else {
-        updateOptionsSelection(this.optionsSelectedIndex - 1);
+        this.optionsSelectedIndex = wrapIndex(this.optionsSelectedIndex - 1, optionButtons.length);
       }
+      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuNavigate);
+      syncSelection();
     });
 
-    bindKey('keydown-DOWN', () => {
+    this.input.keyboard?.on('keydown-DOWN', () => {
       if (this.view === 'help') {
-        scrollHelp(helpScrollStep);
+        scrollHelp(1);
         return;
       }
 
       if (this.view === 'root') {
-        updateRootSelection(this.rootSelectedIndex + 1);
+        this.rootSelectedIndex = wrapIndex(this.rootSelectedIndex + 1, rootButtons.length);
       } else {
-        updateOptionsSelection(this.optionsSelectedIndex + 1);
+        this.optionsSelectedIndex = wrapIndex(this.optionsSelectedIndex + 1, optionButtons.length);
       }
+      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuNavigate);
+      syncSelection();
     });
 
-    bindKey('keydown-LEFT', () => {
-      if (this.view !== 'options') {
-        return;
+    this.input.keyboard?.on('keydown-LEFT', () => {
+      if (this.view === 'options') {
+        cycleValue(optionEntries[this.optionsSelectedIndex], -1);
       }
-
-      cycleValue(optionEntries[this.optionsSelectedIndex], -1);
     });
-
-    bindKey('keydown-RIGHT', () => {
-      if (this.view !== 'options') {
-        return;
-      }
-
-      cycleValue(optionEntries[this.optionsSelectedIndex], 1);
-    });
-
-    bindKey('keydown-ENTER', () => {
-      if (this.view === 'root') {
-        activateRootOption(rootOptions[this.rootSelectedIndex]);
-        return;
-      }
-
+    this.input.keyboard?.on('keydown-RIGHT', () => {
       if (this.view === 'options') {
         cycleValue(optionEntries[this.optionsSelectedIndex], 1);
       }
     });
-
-    bindKey('keydown-SPACE', () => {
+    this.input.keyboard?.on('keydown-ENTER', () => {
       if (this.view === 'root') {
         activateRootOption(rootOptions[this.rootSelectedIndex]);
-        return;
-      }
-
-      if (this.view === 'options') {
+      } else if (this.view === 'options') {
         cycleValue(optionEntries[this.optionsSelectedIndex], 1);
       }
     });
-
-    bindKey('keydown-ESC', handleBack);
-
-    const wheelHandler = (
-      _pointer: Phaser.Input.Pointer,
-      _gameObjects: Phaser.GameObjects.GameObject[],
-      _deltaX: number,
-      deltaY: number,
-    ): void => {
-      scrollHelp(deltaY);
-    };
-    this.input.on('wheel', wheelHandler);
-    cleanup.push(() => this.input.off('wheel', wheelHandler));
+    this.input.keyboard?.on('keydown-SPACE', () => {
+      if (this.view === 'root') {
+        activateRootOption(rootOptions[this.rootSelectedIndex]);
+      } else if (this.view === 'options') {
+        cycleValue(optionEntries[this.optionsSelectedIndex], 1);
+      }
+    });
+    this.input.keyboard?.on('keydown-ESC', returnToRoot);
+    this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gos: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
+      if (this.view === 'help') {
+        scrollHelp(dy > 0 ? 1 : -1);
+      }
+    });
 
     for (const key of ['ONE', 'TWO', 'THREE'] as const) {
-      bindKey(`keydown-${key}`, () => {
-        if (this.mode !== 'main' || this.view !== 'root') {
+      this.input.keyboard?.on(`keydown-${key}`, () => {
+        if (this.view !== 'root') {
           return;
         }
-
         const stageIndex = { ONE: 0, TWO: 1, THREE: 2 }[key];
         startRun(stageIndex);
       });
     }
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      cleanup.forEach((dispose) => dispose());
-      this.visibleTexts = [];
       this.audio.stopMusic();
     });
+    const handleResize = (): void => {
+      syncLayout(authoredGameSize);
+    };
+    handleResize();
+    this.scale.on(Phaser.Scale.Events.RESIZE, handleResize);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, handleResize);
+    });
 
-    refreshHelpOverflow();
-    render();
+    renderOptionLabels();
+    syncSelection();
   }
 
   getDebugSnapshot(): {
-    mode: MenuMode;
     view: MenuView;
     selectedText: string | null;
     texts: string[];
     joined: string;
-    helpPanelHeight: number;
-    helpViewportHeight: number;
-    helpViewportTop: number;
-    helpViewportBottom: number;
-    helpScrollOffset: number;
-    helpScrollMax: number;
-    helpScrollbarVisible: boolean;
-    helpParagraphs: Array<{
-      text: string;
-      top: number;
-      bottom: number;
-      visible: boolean;
-      cropY: number;
-      cropHeight: number;
-      visibleTop: number;
-      visibleBottom: number;
-    }>;
   } {
-    const bridge = this.registry.get('bridge') as SceneBridge;
-    const settings = bridge.getSession().getState().progress.runSettings;
     const texts =
       this.view === 'root'
         ? ['Orbital Survey', 'Start', 'Options', 'Help']
         : this.view === 'options'
-          ? [
-              'Options',
-              `Difficulty  ${DIFFICULTY_LABELS[settings.difficulty]}`,
-              `Enemies  ${ENEMY_PRESSURE_LABELS[settings.enemyPressure]}`,
-              `Music  ${Math.round(settings.musicVolume * 100)}% (x${(settings.musicVolume * 10).toFixed(1)})`,
-              `SFX  ${Math.round(settings.sfxVolume * 100)}%`,
-              `CRT Filter  ${getCrtFilterEnabled(this.game, true) ? 'On' : 'Off'}`,
-            ]
-          : ['Help', ...HELP_LINES];
-
+          ? ['Options', ...optionEntries]
+          : ['Help'];
     return {
-      mode: this.mode,
       view: this.view,
       selectedText:
         this.view === 'root'
-          ? rootOptions[this.rootSelectedIndex] === 'primary'
-            ? 'Start'
-            : rootOptions[this.rootSelectedIndex] === 'options'
-              ? 'Options'
-              : 'Help'
+          ? rootOptions[this.rootSelectedIndex]
           : this.view === 'options'
-            ? this.visibleTexts[this.optionsSelectedIndex]?.text ?? null
-            : null,
-      helpPanelHeight: this.helpPanelHeight,
-      helpViewportHeight: this.helpViewportHeight,
-      helpViewportTop: this.helpViewportTop,
-      helpViewportBottom: this.helpViewportTop + this.helpViewportHeight,
+            ? optionEntries[this.optionsSelectedIndex]
+            : 'help',
       texts,
       joined: texts.join('\n'),
-      helpScrollOffset: this.helpScrollOffset,
-      helpScrollMax: this.helpScrollMax,
-      helpScrollbarVisible: this.helpScrollbarVisible,
-      helpParagraphs: this.helpParagraphDebug.map((paragraph) => ({
-        ...paragraph,
-        visibleTop: paragraph.top + paragraph.cropY,
-        visibleBottom: paragraph.top + paragraph.cropY + paragraph.cropHeight,
-      })),
     };
   }
 }

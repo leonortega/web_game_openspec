@@ -38,7 +38,7 @@ The game SHALL present the default player as an original astronaut-themed base v
 - **AND** it does not directly reproduce the reference image
 
 ### Requirement: Player presentation uses bounded retro animation states
-The game SHALL present the base astronaut variant and each supported power variant through a bounded set of readable retro animation states rather than a mostly static pose. At minimum, the player presentation MUST expose visually distinct grounded, moving, airborne, hit-react, and defeat-to-respawn state changes, and power acquisition MAY add a brief matching accent pulse or burst so long as the active power variant remains readable at gameplay scale. Supported player hit-react presentation MAY include one short object-local flash or Beam-assisted accent, but that accent MUST remain brief, MUST preserve the readability of the current base or powered astronaut variant underneath it, and MUST NOT change player mechanics, timing, or collision. These animation states MUST use low-frame pose swaps, restrained tween accents, or both rather than smooth modern smear motion. Any temporary defeat breakup, flash, or pose distortion applied to the astronaut during hit-react or death presentation MUST be fully cleared before the respawned or recovered player returns to active play.
+The game SHALL present the base astronaut variant and each supported power variant through a bounded set of readable retro animation states rather than a mostly static pose. Under the chibi presentation contract, the player MUST keep a compact side-view astronaut silhouette with readable helmet/head mass, segmented torso-limb poses, and power-specific accents that remain clear at gameplay scale. At minimum, the player presentation MUST expose visually distinct grounded, moving, airborne, hit-react, and defeat-to-respawn state changes. The player sheet MUST stay within the existing 32x48 frame envelope and MUST use the frame-budget ranges defined in `art.md` for locomotion, action, hit-react, and defeat clips. Power acquisition MAY add a brief matching accent pulse or burst so long as the active power variant remains readable at gameplay scale. Supported player hit-react presentation MAY include one short object-local flash or Beam-assisted accent, but that accent MUST remain brief, MUST preserve the readability of the current base or powered astronaut variant underneath it, and MUST NOT change player mechanics, timing, or collision. These animation states MUST use low-frame pose swaps, restrained tween accents, or both rather than smooth modern smear motion. Any temporary defeat breakup, flash, or pose distortion applied to the astronaut during hit-react or death presentation MUST be fully cleared before the respawned or recovered player returns to active play.
 
 #### Scenario: Reading a powered player through a hit flash
 - **WHEN** the player takes a hit while a supported power variant is active
@@ -49,3 +49,13 @@ The game SHALL present the base astronaut variant and each supported power varia
 - **WHEN** the player recovers from a survivable hit or respawns after defeat
 - **THEN** the astronaut returns in a complete default or active-power presentation state
 - **AND** no temporary hit-only or defeat-only visual mutations remain visible
+
+#### Scenario: Respecting player frame budgets
+- **WHEN** player clips are authored or revised for richer motion
+- **THEN** each state remains within the min/max frame ranges listed in `art.md`
+- **AND** the player frame envelope remains 32x48 with stable anchors
+
+#### Scenario: Keeping gameplay behavior unchanged
+- **WHEN** the player visual contract is evaluated after chibi/detail upgrades
+- **THEN** movement constants, dash/jump timing windows, and collision semantics are unchanged
+- **AND** only presentation behavior differs

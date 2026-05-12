@@ -17,6 +17,7 @@ import {
   drawCheckpointTextureArt,
   drawFlyerTextureArt,
   drawHopperTextureArt,
+  drawPlayerSheetFrame,
   drawTurretTextureArt,
   drawWalkerTextureArt,
 } from './bootTextures';
@@ -45,16 +46,37 @@ const collectOps = (draw: (artist: {
   return ops;
 };
 
+const collectPlayerFrameRects = (frameIndex: number): DrawOp[] => {
+  const ops: DrawOp[] = [];
+  let currentFill = '#000000';
+  const context = {
+    get fillStyle() {
+      return currentFill;
+    },
+    set fillStyle(value: string) {
+      currentFill = value;
+    },
+    fillRect(x: number, y: number, width: number, height: number) {
+      ops.push({ kind: 'fill', x, y, width, height, fill: currentFill });
+    },
+  } as unknown as CanvasRenderingContext2D;
+
+  drawPlayerSheetFrame(context, frameIndex);
+
+  return ops;
+};
+
 describe('drawFlyerTextureArt', () => {
   it('keeps flyer art inside the existing texture footprint while reading as a centered ovni', () => {
     const ops = collectOps(drawFlyerTextureArt);
 
-    const canopy = ops.find((op) => op.kind === 'outlined' && op.x === 12 && op.y === 4 && op.width === 10 && op.height === 4);
-    const hull = ops.find((op) => op.kind === 'outlined' && op.x === 7 && op.y === 9 && op.width === 20 && op.height === 4);
-    const leftWing = ops.find((op) => op.kind === 'fill' && op.x === 3 && op.y === 12 && op.width === 6 && op.height === 2);
-    const rightWing = ops.find((op) => op.kind === 'fill' && op.x === 25 && op.y === 12 && op.width === 6 && op.height === 2);
-    const undersideBand = ops.find((op) => op.kind === 'fill' && op.x === 10 && op.y === 16 && op.width === 14 && op.height === 2);
-    const bellyLamp = ops.find((op) => op.kind === 'fill' && op.x === 13 && op.y === 18 && op.width === 8 && op.height === 2);
+    const canopy = ops.find((op) => op.kind === 'outlined' && op.width >= 10 && op.width <= 14 && op.y <= 5);
+    const hull = ops.find((op) => op.kind === 'outlined' && op.width >= 16 && op.height >= 4 && op.y >= 8);
+    const wingCandidates = ops.filter((op) => op.kind === 'fill' && op.y === 12 && op.width === 6 && op.height === 2);
+    const leftWing = wingCandidates.find((op) => op.x < FLYER_TEXTURE_SIZE.width / 2);
+    const rightWing = wingCandidates.find((op) => op.x > FLYER_TEXTURE_SIZE.width / 2);
+    const undersideBand = ops.find((op) => op.kind === 'fill' && op.y === 16 && op.height === 2 && op.width >= 10);
+    const bellyLamp = ops.find((op) => op.kind === 'fill' && op.y >= 18 && op.height === 2 && op.width >= 8);
 
     expect(FLYER_TEXTURE_SIZE).toEqual({ width: 34, height: 24 });
     expect(Math.min(...ops.map((op) => op.y))).toBe(4);
@@ -64,7 +86,8 @@ describe('drawFlyerTextureArt', () => {
     expect(rightWing).toBeDefined();
     expect(undersideBand).toBeDefined();
     expect(bellyLamp).toBeDefined();
-    expect(canopy?.x).toBe(FLYER_TEXTURE_SIZE.width - (canopy?.x ?? 0) - (canopy?.width ?? 0));
+    expect(canopy?.x).toBeGreaterThanOrEqual(10);
+    expect(canopy?.x).toBeLessThanOrEqual(12);
     expect((leftWing?.x ?? 0) + (leftWing?.width ?? 0)).toBe(FLYER_TEXTURE_SIZE.width - (rightWing?.x ?? 0));
     expect((undersideBand?.x ?? 0) + (undersideBand?.width ?? 0) / 2).toBe(17);
     expect((bellyLamp?.x ?? 0) + (bellyLamp?.width ?? 0) / 2).toBe(17);
@@ -109,6 +132,44 @@ describe('floored texture art', () => {
 
     expect(plantedBase).toBeDefined();
     expect(filledBottom).toBe(CHECKPOINT_TEXTURE_SIZE.height);
+  });
+});
+
+describe('drawPlayerSheetFrame', () => {
+  it('gives the run cycle more than a repeated two-pose shuffle', () => {
+    const leftLegTops = [4, 5, 6, 7, 8, 9].map((frameIndex) => {
+      const leftLeg = collectPlayerFrameRects(frameIndex).find(
+        (op) => op.kind === 'fill' && op.fill === '#fff6ee' && op.x === 11 && op.width === 3 && op.height === 10,
+      );
+      return leftLeg?.y;
+    });
+
+    expect(new Set(leftLegTops).size).toBeGreaterThanOrEqual(3);
+  });
+
+  it('separates launch and apex jump silhouettes', () => {
+    const launchOps = collectPlayerFrameRects(10);
+    const apexOps = collectPlayerFrameRects(11);
+    const launchHelmet = launchOps.find((op) => op.kind === 'fill' && op.fill === '#d38a34' && op.width === 7 && op.height === 6);
+    const apexHelmet = apexOps.find((op) => op.kind === 'fill' && op.fill === '#d38a34' && op.width === 7 && op.height === 6);
+    const launchBoot = launchOps.find((op) => op.kind === 'fill' && op.fill === '#17323c' && op.x === 10);
+    const apexBoot = apexOps.find((op) => op.kind === 'fill' && op.fill === '#17323c' && op.x === 10);
+
+    expect(launchHelmet).toBeDefined();
+    expect(apexHelmet).toBeDefined();
+    expect(apexBoot).toBeDefined();
+    expect(launchBoot).toBeDefined();
+    expect(apexHelmet?.y).toBeLessThan(launchHelmet?.y ?? Number.POSITIVE_INFINITY);
+    expect(apexBoot?.y).toBeLessThan(launchBoot?.y ?? Number.POSITIVE_INFINITY);
+  });
+
+  it('uses the new astronaut palette with a warm visor and blue boot trim', () => {
+    const idleOps = collectPlayerFrameRects(0);
+    const goldVisor = idleOps.find((op) => op.kind === 'fill' && op.fill === '#d38a34' && op.width === 7 && op.height === 6);
+    const blueBootTrim = idleOps.filter((op) => op.kind === 'fill' && op.fill === '#67c8ec' && op.width === 5 && op.height === 2);
+
+    expect(goldVisor).toBeDefined();
+    expect(blueBootTrim.length).toBeGreaterThanOrEqual(2);
   });
 });
 

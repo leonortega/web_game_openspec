@@ -2,7 +2,7 @@ import type { ActivationNodeState, GravityCapsuleState, GravityFieldState, Platf
 
 export type TraversalVisualCategory = 'terrain' | 'assistedMovement' | 'routeToggle' | 'gravityModifier' | 'neutral';
 
-export const getTerrainTraversalVisualCategory = (_platform: Pick<PlatformState, 'surfaceMechanic'>): TraversalVisualCategory => 'terrain';
+export const getTerrainTraversalVisualCategory = (_platform: Pick<PlatformState, 'kind'>): TraversalVisualCategory => 'terrain';
 
 export const getPlatformTraversalVisualCategory = (
   platform: Pick<PlatformState, 'kind' | 'reveal' | 'temporaryBridge' | 'magnetic'>,
