@@ -571,7 +571,7 @@ export const createDefaultRunSettings = (): RunSettings => ({
   masterVolume: 0.7,
   musicVolume: 0.7,
   sfxVolume: 0.8,
-  crtEnabled: true,
+  crtEnabled: false,
   difficulty: 'standard',
   enemyPressure: 'normal',
 });

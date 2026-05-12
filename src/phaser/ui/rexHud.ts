@@ -279,12 +279,25 @@ export const createRexHud = (scene: Phaser.Scene): RexHudBindings => {
 };
 
 export const updateRexHud = (hud: RexHudBindings, model: HudViewModel): void => {
-  hud.stageValue.setText(model.stageName);
-  hud.coinsValue.setText(model.coins);
-  hud.healthValue.setText(model.health.toString().padStart(2, '0'));
-  hud.powerValue.setText(model.powerLabel);
-  hud.difficultyValue.setText(model.difficultyLabel);
-  hud.segmentValue.setText(model.segmentLabel);
+  if (hud.stageValue.text !== model.stageName) {
+    hud.stageValue.setText(model.stageName);
+  }
+  if (hud.coinsValue.text !== model.coins) {
+    hud.coinsValue.setText(model.coins);
+  }
+  const healthText = model.health.toString().padStart(2, '0');
+  if (hud.healthValue.text !== healthText) {
+    hud.healthValue.setText(healthText);
+  }
+  if (hud.powerValue.text !== model.powerLabel) {
+    hud.powerValue.setText(model.powerLabel);
+  }
+  if (hud.difficultyValue.text !== model.difficultyLabel) {
+    hud.difficultyValue.setText(model.difficultyLabel);
+  }
+  if (hud.segmentValue.text !== model.segmentLabel) {
+    hud.segmentValue.setText(model.segmentLabel);
+  }
 
   const message = model.message ?? '';
   if (message !== hud.messageValue.text) {

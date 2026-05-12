@@ -9,6 +9,8 @@ import type { RexHudBindings } from '../ui/rexHud';
 import type { HudViewModel } from '../../ui/hud/hud';
 
 export class SceneBridge {
+  private static readonly SAVE_THROTTLE_MS = 250;
+
   private readonly session = new GameSession();
   private readonly progressStore?: RunProgressStore;
   private readonly input: InputState = defaultInputState();
@@ -16,6 +18,7 @@ export class SceneBridge {
   private resumeFrameSkipsRemaining = 0;
   private lastSavedProgressJson = '';
   private saveQueue = Promise.resolve();
+  private pendingSaveElapsedMs = 0;
 
   constructor(progressStore?: RunProgressStore) {
     this.progressStore = progressStore;
@@ -63,7 +66,11 @@ export class SceneBridge {
     this.input.thrusterPressed = false;
     this.input.dashPressed = false;
     this.input.shootPressed = false;
-    this.persistProgressIfChanged();
+    this.pendingSaveElapsedMs += deltaMs;
+    if (this.pendingSaveElapsedMs >= SceneBridge.SAVE_THROTTLE_MS) {
+      this.pendingSaveElapsedMs = 0;
+      this.persistProgressIfChanged();
+    }
   }
 
   pauseRun(): boolean {
@@ -103,6 +110,7 @@ export class SceneBridge {
 
     this.session.hydrateProgress(progress);
     this.lastSavedProgressJson = this.serializeProgress(this.session.getState().progress);
+    this.pendingSaveElapsedMs = 0;
   }
 
   startStage(index: number): void {
@@ -110,6 +118,7 @@ export class SceneBridge {
     this.resumeFrameSkipsRemaining = 0;
     this.clearGameplayInput();
     this.session.startStage(index);
+    this.pendingSaveElapsedMs = 0;
     this.persistProgressIfChanged();
   }
 
@@ -118,6 +127,7 @@ export class SceneBridge {
     this.resumeFrameSkipsRemaining = 0;
     this.clearGameplayInput();
     this.session.forceStartStage(index);
+    this.pendingSaveElapsedMs = 0;
     this.persistProgressIfChanged();
   }
 
@@ -126,11 +136,13 @@ export class SceneBridge {
     this.resumeFrameSkipsRemaining = 0;
     this.clearGameplayInput();
     this.session.restartStage();
+    this.pendingSaveElapsedMs = 0;
     this.persistProgressIfChanged();
   }
 
   updateRunSettings(next: Parameters<GameSession['updateRunSettings']>[0]): void {
     this.session.updateRunSettings(next);
+    this.pendingSaveElapsedMs = 0;
     this.persistProgressIfChanged();
   }
 

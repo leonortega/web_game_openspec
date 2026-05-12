@@ -21,6 +21,13 @@ export const buildGameConfig = (parent: HTMLElement): Phaser.Types.Core.GameConf
   antialias: false,
   antialiasGL: false,
   mipmapFilter: 'NEAREST',
+  powerPreference: 'high-performance',
+  fps: {
+    target: 60,
+    min: 30,
+    forceSetTimeOut: false,
+    smoothStep: false,
+  },
   // Register scene-scoped plugin that provides GPU sprite helper, unified filter facade, and lighting shim.
   plugins: {
     global: [

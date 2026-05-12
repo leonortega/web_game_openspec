@@ -62,7 +62,7 @@ export const createWorldLocalRetroRegion = (
   return region;
 };
 
-export const getCrtFilterEnabled = (game: Phaser.Game, fallback = true): boolean => {
+export const getCrtFilterEnabled = (game: Phaser.Game, fallback = false): boolean => {
   const value = (game.registry as any)?.get?.('crtFilterEnabled');
   if (typeof value === 'boolean') {
     return value;
@@ -89,14 +89,14 @@ export const applyConfiguredRetroPostFxToCamera = (
   game: Phaser.Game,
   camera: Phaser.Cameras.Scene2D.Camera,
 ): void => {
-  applyRetroPostFxToCamera(camera, getCrtFilterEnabled(game, true));
+  applyRetroPostFxToCamera(camera, getCrtFilterEnabled(game, false));
 };
 
 export const toggleCrtFilterForCamera = (
   game: Phaser.Game,
   camera: Phaser.Cameras.Scene2D.Camera,
 ): boolean => {
-  const nextEnabled = !getCrtFilterEnabled(game, true);
+  const nextEnabled = !getCrtFilterEnabled(game, false);
   setCrtFilterEnabled(game, nextEnabled);
   applyRetroPostFxToCamera(camera, nextEnabled);
   return nextEnabled;

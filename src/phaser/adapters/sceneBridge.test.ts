@@ -1,10 +1,27 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { SceneBridge } from './sceneBridge';
 
 const getMutableState = (bridge: SceneBridge) => bridge.getSession().getState() as any;
 
 describe('SceneBridge pause flow regression coverage', () => {
+  it('throttles persistence during gameplay frames instead of serializing every update', () => {
+    const save = vi.fn().mockResolvedValue(undefined);
+    const bridge = new SceneBridge({ load: vi.fn(), save } as any);
+    const serializeSpy = vi.spyOn(bridge as any, 'serializeProgress');
+
+    bridge.consumeFrame(16);
+    bridge.consumeFrame(16);
+    bridge.consumeFrame(16);
+
+    expect(serializeSpy).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+
+    bridge.consumeFrame(260);
+
+    expect(serializeSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('pauses the active run, clears latched input, and resumes the exact suspended run in place', () => {
     const bridge = new SceneBridge();
     const state = getMutableState(bridge);

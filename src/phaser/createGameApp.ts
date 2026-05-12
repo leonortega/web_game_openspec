@@ -3,6 +3,7 @@ import { SceneBridge } from './adapters/sceneBridge';
 import { buildGameConfig } from './gameConfig';
 import { RunProgressStore } from './persistence/RunProgressStore';
 import { setCrtFilterEnabled } from './retroPostFx';
+import { createDefaultRunSettings } from '../game/simulation/state';
 
 export const createGameApp = (mountNode: HTMLElement | null): Phaser.Game => {
   if (!mountNode) {
@@ -26,7 +27,7 @@ export const createGameApp = (mountNode: HTMLElement | null): Phaser.Game => {
   }
 
   game.registry.set('bridge', bridge);
-  setCrtFilterEnabled(game, true);
+  setCrtFilterEnabled(game, createDefaultRunSettings().crtEnabled);
   if (isDebug) {
     (window as Window & { __CRYSTAL_RUN_GAME__?: Phaser.Game }).__CRYSTAL_RUN_GAME__ = game;
   }
