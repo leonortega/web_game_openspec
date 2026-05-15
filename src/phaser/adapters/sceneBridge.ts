@@ -2,8 +2,14 @@ import { stageDefinitions } from '../../game/content/stages';
 import { defaultInputState, type InputState } from '../../game/input/actions';
 import { GameSession } from '../../game/simulation/GameSession';
 import type { AudioCue } from '../../audio/audioContract';
-import { DIFFICULTY_LABELS, formatActivePowerSummary, formatHudCollectibleSummary } from '../../game/simulation/state';
-import type { SessionProgress } from '../../game/simulation/state';
+import {
+  DIFFICULTY_LABELS,
+  createDefaultGameplayTelemetry,
+  createDefaultStageTelemetry,
+  formatActivePowerSummary,
+  formatHudCollectibleSummary,
+} from '../../game/simulation/state';
+import type { GameplayTelemetry, SessionProgress, StageTelemetry } from '../../game/simulation/state';
 import type { RunProgressStore } from '../persistence/RunProgressStore';
 import type { RexHudBindings } from '../ui/rexHud';
 import type { HudViewModel } from '../../ui/hud/hud';
@@ -19,10 +25,12 @@ export class SceneBridge {
   private lastSavedProgressJson = '';
   private saveQueue = Promise.resolve();
   private pendingSaveElapsedMs = 0;
+  private telemetrySessionBaseline: GameplayTelemetry;
 
   constructor(progressStore?: RunProgressStore) {
     this.progressStore = progressStore;
     this.lastSavedProgressJson = this.serializeProgress(this.session.getState().progress);
+    this.telemetrySessionBaseline = cloneTelemetry(this.session.getState().progress.telemetry);
   }
 
   setLeft(active: boolean): void {
@@ -105,12 +113,18 @@ export class SceneBridge {
   async loadPersistedProgress(): Promise<void> {
     const progress = await this.progressStore?.load();
     if (!progress) {
+      this.telemetrySessionBaseline = cloneTelemetry(this.session.getState().progress.telemetry);
       return;
     }
 
     this.session.hydrateProgress(progress);
     this.lastSavedProgressJson = this.serializeProgress(this.session.getState().progress);
     this.pendingSaveElapsedMs = 0;
+    this.telemetrySessionBaseline = cloneTelemetry(this.session.getState().progress.telemetry);
+  }
+
+  beginTelemetrySession(): void {
+    this.telemetrySessionBaseline = cloneTelemetry(this.session.getState().progress.telemetry);
   }
 
   startStage(index: number): void {
@@ -179,6 +193,81 @@ export class SceneBridge {
     return this.session.consumeCues();
   }
 
+  getSessionTelemetrySummary(): SessionTelemetrySummary {
+    const currentTelemetry = this.session.getState().progress.telemetry;
+    const stages = stageDefinitions
+      .map<SessionTelemetryStageSummary | null>((stage) => {
+        const currentStage = currentTelemetry.stages[stage.id] ?? createDefaultStageTelemetry();
+        const baselineStage = this.telemetrySessionBaseline.stages[stage.id] ?? createDefaultStageTelemetry();
+        const deathsBySegment = Object.entries(currentStage.deathsBySegment)
+          .map(([segmentId, count]) => ({
+            segmentId,
+            title: stage.segments.find((segment) => segment.id === segmentId)?.title ?? segmentId,
+            count: Math.max(0, count - (baselineStage.deathsBySegment[segmentId] ?? 0)),
+          }))
+          .filter((entry) => entry.count > 0);
+        const checkpointRetries = Object.entries(currentStage.checkpointRetries)
+          .map(([checkpointId, count]) => ({
+            checkpointId,
+            count: Math.max(0, count - (baselineStage.checkpointRetries[checkpointId] ?? 0)),
+          }))
+          .filter((entry) => entry.count > 0);
+        const secretRouteUses = Object.entries(currentStage.secretRouteUses)
+          .map(([routeId, count]) => ({
+            routeId,
+            title: stage.secretRoutes.find((route) => route.id === routeId)?.title ?? routeId,
+            count: Math.max(0, count - (baselineStage.secretRouteUses[routeId] ?? 0)),
+          }))
+          .filter((entry) => entry.count > 0);
+        const objectiveCompletions = Math.max(0, currentStage.objective.completions - baselineStage.objective.completions);
+        const objectiveTotalCompletionMs = Math.max(
+          0,
+          currentStage.objective.totalCompletionMs - baselineStage.objective.totalCompletionMs,
+        );
+        const totalDeaths = deathsBySegment.reduce((total, entry) => total + entry.count, 0);
+        const totalCheckpointRetries = checkpointRetries.reduce((total, entry) => total + entry.count, 0);
+        const totalSecretRouteUses = secretRouteUses.reduce((total, entry) => total + entry.count, 0);
+
+        if (
+          totalDeaths <= 0 &&
+          totalCheckpointRetries <= 0 &&
+          totalSecretRouteUses <= 0 &&
+          objectiveCompletions <= 0
+        ) {
+          return null;
+        }
+
+        return {
+          stageId: stage.id,
+          stageName: stage.name,
+          deathsBySegment,
+          checkpointRetries,
+          secretRouteUses,
+          totalDeaths,
+          totalCheckpointRetries,
+          totalSecretRouteUses,
+          objective:
+            objectiveCompletions > 0
+              ? {
+                  completions: objectiveCompletions,
+                  totalCompletionMs: objectiveTotalCompletionMs,
+                  averageCompletionMs: Math.round(objectiveTotalCompletionMs / objectiveCompletions),
+                  lastCompletionMs: currentStage.objective.lastCompletionMs,
+                }
+              : null,
+        };
+      })
+      .filter((stage): stage is SessionTelemetryStageSummary => stage !== null);
+
+    return {
+      totalDeaths: stages.reduce((total, stage) => total + stage.totalDeaths, 0),
+      totalCheckpointRetries: stages.reduce((total, stage) => total + stage.totalCheckpointRetries, 0),
+      totalSecretRouteUses: stages.reduce((total, stage) => total + stage.totalSecretRouteUses, 0),
+      totalObjectiveCompletions: stages.reduce((total, stage) => total + (stage.objective?.completions ?? 0), 0),
+      stages,
+    };
+  }
+
   resetGameplayInput(): void {
     this.clearGameplayInput();
   }
@@ -212,3 +301,48 @@ export class SceneBridge {
     return JSON.stringify(progress);
   }
 }
+
+type SessionTelemetryStageSummary = {
+  stageId: string;
+  stageName: string;
+  deathsBySegment: Array<{ segmentId: string; title: string; count: number }>;
+  checkpointRetries: Array<{ checkpointId: string; count: number }>;
+  secretRouteUses: Array<{ routeId: string; title: string; count: number }>;
+  totalDeaths: number;
+  totalCheckpointRetries: number;
+  totalSecretRouteUses: number;
+  objective: {
+    completions: number;
+    totalCompletionMs: number;
+    averageCompletionMs: number;
+    lastCompletionMs: number | null;
+  } | null;
+};
+
+export type SessionTelemetrySummary = {
+  totalDeaths: number;
+  totalCheckpointRetries: number;
+  totalSecretRouteUses: number;
+  totalObjectiveCompletions: number;
+  stages: SessionTelemetryStageSummary[];
+};
+
+const cloneTelemetry = (telemetry: GameplayTelemetry | undefined): GameplayTelemetry => ({
+  ...createDefaultGameplayTelemetry(),
+  ...telemetry,
+  stages: Object.fromEntries(
+    Object.entries(telemetry?.stages ?? {}).map(([stageId, stageTelemetry]) => [
+      stageId,
+      cloneStageTelemetry(stageTelemetry),
+    ]),
+  ),
+});
+
+const cloneStageTelemetry = (stageTelemetry: StageTelemetry): StageTelemetry => ({
+  ...createDefaultStageTelemetry(),
+  ...stageTelemetry,
+  deathsBySegment: { ...stageTelemetry.deathsBySegment },
+  checkpointRetries: { ...stageTelemetry.checkpointRetries },
+  secretRouteUses: { ...stageTelemetry.secretRouteUses },
+  objective: { ...stageTelemetry.objective },
+});

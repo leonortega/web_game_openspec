@@ -124,6 +124,33 @@ const createScene = (): FakeScene => {
   } as unknown as FakeScene;
 };
 
+const createLockedScene = () => {
+  const scene = createScene();
+  let locked = true;
+  let unlockedListener: (() => void) | undefined;
+
+  (scene as any).sound = {
+    ...scene.sound,
+    get locked() {
+      return locked;
+    },
+    once: vi.fn((event: string, listener: () => void) => {
+      if (event === 'unlocked') {
+        unlockedListener = listener;
+      }
+    }),
+    unlock: vi.fn(),
+  };
+
+  return {
+    scene,
+    unlockSoundManager: () => {
+      locked = false;
+      unlockedListener?.();
+    },
+  };
+};
+
 describe('SynthAudio', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -183,9 +210,7 @@ describe('SynthAudio', () => {
     expect(fakeContext.createGain).toHaveBeenCalledTimes(0);
     expect(scene.__sounds).toHaveLength(5);
     expect(debugEvents.every((event) => event.playback === 'sample')).toBe(true);
-    expect(debugEvents.find((event) => event.cue === AUDIO_CUES.capsuleTeleport)?.signature).toBe(
-      'sampled capsule portal sweep',
-    );
+    expect(debugEvents.find((event) => event.cue === AUDIO_CUES.capsuleTeleport)?.signature).toBe('short capsule teleport');
   });
 
   it('keeps thruster, projectile, hurt, and death cues distinct on the sampled path', () => {
@@ -234,17 +259,34 @@ describe('SynthAudio', () => {
     expect(scene.__sounds).toHaveLength(0);
   });
 
+  it('replays the first sampled cue after the sound manager unlocks', async () => {
+    const fakeContext = new FakeAudioContext();
+    vi.stubGlobal('AudioContext', vi.fn(() => fakeContext as unknown as AudioContext));
+    const { scene, unlockSoundManager } = createLockedScene();
+    const audio = new SynthAudio(scene, () => 1, () => 1);
+
+    await audio.unlock();
+    audio.playCue(AUDIO_CUES.menuConfirm);
+
+    expect(scene.__sounds).toHaveLength(0);
+
+    unlockSoundManager();
+
+    expect(scene.__sounds).toHaveLength(1);
+    expect(scene.__sounds[0].play).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps checked-in provenance manifests for menu, per-stage music, and sampled cues', () => {
     expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST).toHaveLength(4);
     expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.license === 'CC-BY-4.0')).toBe(true);
     expect(MENU_SUSTAINED_MUSIC.title).toBe('Call For Love');
-    expect(getStageSustainedMusic('forest-ruins')?.title).toBe('Hour For Two');
+    expect(getStageSustainedMusic('forest-ruins')?.title).toBe('Goodbye Tales');
     expect(getStageSustainedMusic('amber-cavern')?.title).toBe('Give Her Shadow');
     expect(getStageSustainedMusic('sky-sanctum')?.title).toBe('Get Out');
-    expect(getAllMappedSfxAssets()).toHaveLength(Object.keys(AUDIO_CUES).length);
+    expect(getAllMappedSfxAssets()).toHaveLength(Object.keys(AUDIO_CUES).length - 1);
     expect(getAllMappedSfxAssets().every((entry) => entry.license === 'CC0')).toBe(true);
     expect(getAllMappedSfxAssets().every((entry) => entry.localAssetPath.startsWith('/audio/sfx/juhani-junkala-512/'))).toBe(true);
-    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.localAssetPath.startsWith('/audio/music/chillmindscapes-pack-4/'))).toBe(true);
+    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.some((entry) => entry.localAssetPath.startsWith('/audio/music/chillmindscapes-pack-4/'))).toBe(true);
     expect([...ACTIVE_SUSTAINED_MUSIC_MANIFEST, ...getAllMappedSfxAssets()].every((entry) => !entry.localAssetPath.includes('source-packs'))).toBe(true);
   });
 

@@ -367,10 +367,19 @@ export class MenuScene extends Phaser.Scene {
     const unlockSceneAudio = () => {
       void runUnlockedAudioAction(this.audio, () => {
         this.audio.startMenuMusic();
+        this.input.keyboard?.off('keydown', unlockSceneAudio);
+        this.input.off('pointerdown', unlockSceneAudio);
+        this.input.off('pointerup', unlockSceneAudio);
       });
     };
-    this.input.keyboard?.once('keydown', unlockSceneAudio);
-    this.input.once('pointerdown', unlockSceneAudio);
+    this.input.keyboard?.on('keydown', unlockSceneAudio);
+    this.input.on('pointerdown', unlockSceneAudio);
+    this.input.on('pointerup', unlockSceneAudio);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.keyboard?.off('keydown', unlockSceneAudio);
+      this.input.off('pointerdown', unlockSceneAudio);
+      this.input.off('pointerup', unlockSceneAudio);
+    });
 
     const renderOptionLabels = (): void => {
       const state = bridge.getSession().getState();
@@ -431,6 +440,7 @@ export class MenuScene extends Phaser.Scene {
 
     const startRun = (stageIndex = bridge.getSession().getState().stageIndex): void => {
       void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
+      bridge.beginTelemetrySession();
       bridge.startStage(stageIndex);
       this.scene.start('stage-intro');
     };

@@ -105,6 +105,40 @@ describe('SceneBridge pause flow regression coverage', () => {
     expect(bridge.isRunPaused()).toBe(false);
   });
 
+  it('summarizes session telemetry as a delta from the started run', () => {
+    const bridge = new SceneBridge();
+    bridge.beginTelemetrySession();
+    const state = getMutableState(bridge);
+
+    state.progress.telemetry.stages['forest-ruins'] = {
+      deathsBySegment: { approach: 2 },
+      checkpointRetries: { 'cp-1': 1 },
+      secretRouteUses: {},
+      objective: {
+        completions: 1,
+        totalCompletionMs: 3200,
+        bestCompletionMs: 3200,
+        lastCompletionMs: 3200,
+      },
+    };
+
+    const summary = bridge.getSessionTelemetrySummary();
+
+    expect(summary.totalDeaths).toBe(2);
+    expect(summary.totalCheckpointRetries).toBe(1);
+    expect(summary.totalObjectiveCompletions).toBe(1);
+    expect(summary.stages[0]).toMatchObject({
+      stageId: 'forest-ruins',
+      totalDeaths: 2,
+      totalCheckpointRetries: 1,
+      objective: {
+        completions: 1,
+        averageCompletionMs: 3200,
+        lastCompletionMs: 3200,
+      },
+    });
+  });
+
   it('drops buffered gameplay input without advancing the active run', () => {
     const bridge = new SceneBridge();
     const state = getMutableState(bridge);

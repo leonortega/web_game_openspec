@@ -339,6 +339,8 @@ export class SynthAudio {
 
   private pendingPlaybackRequest?: PlaybackRequest;
 
+  private pendingSampledCue?: NonNullable<ReturnType<typeof getSfxAsset>>;
+
   private waitingForSoundManagerUnlock = false;
 
   constructor(
@@ -363,7 +365,7 @@ export class SynthAudio {
 
       pushDebugEvent({ type: 'unlock', state: context.state, at: Date.now() });
       if (context.state === 'running') {
-        this.flushPendingPlaybackRequest();
+        this.flushPendingAudio();
       }
       return context.state === 'running';
     } catch {
@@ -452,7 +454,14 @@ export class SynthAudio {
   }
 
   private playSampledCue(asset: NonNullable<ReturnType<typeof getSfxAsset>>): void {
-    if (!this.isPlaybackUnlocked() || this.isSoundManagerLocked()) {
+    if (!this.isPlaybackUnlocked()) {
+      this.pendingSampledCue = asset;
+      return;
+    }
+
+    if (this.isSoundManagerLocked()) {
+      this.pendingSampledCue = asset;
+      this.ensureSoundManagerUnlocked();
       return;
     }
 
@@ -464,6 +473,7 @@ export class SynthAudio {
     try {
       const sound = this.scene.sound.add(asset.assetKey);
       sound.play({ volume: clamp(asset.volume * sfxMasterVolume, 0, 1) });
+      this.pendingSampledCue = undefined;
     } catch {}
   }
 
@@ -508,7 +518,17 @@ export class SynthAudio {
     this.startThemeMusic(request, requestKey);
   }
 
-  private flushPendingPlaybackRequest(): void {
+  private flushPendingAudio(): void {
+    if (!this.isPlaybackUnlocked() || this.isSoundManagerLocked()) {
+      return;
+    }
+
+    const pendingCue = this.pendingSampledCue;
+    this.pendingSampledCue = undefined;
+    if (pendingCue) {
+      this.playSampledCue(pendingCue);
+    }
+
     const request = this.pendingPlaybackRequest;
     if (!request) {
       return;
@@ -802,7 +822,7 @@ export class SynthAudio {
       this.waitingForSoundManagerUnlock = true;
       soundManager.once?.('unlocked', () => {
         this.waitingForSoundManagerUnlock = false;
-        this.flushPendingPlaybackRequest();
+        this.flushPendingAudio();
       });
     }
 
@@ -812,7 +832,7 @@ export class SynthAudio {
 
     if (!soundManager.locked) {
       this.waitingForSoundManagerUnlock = false;
-      this.flushPendingPlaybackRequest();
+      this.flushPendingAudio();
     }
   }
 

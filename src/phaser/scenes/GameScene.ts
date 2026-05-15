@@ -658,7 +658,7 @@ export class GameScene extends Phaser.Scene {
         const session = this.bridge.getSession();
         if (state.stageIndex >= stageDefinitions.length - 1) {
           session.advanceToNextStage();
-          this.scene.start('menu');
+          this.scene.start('telemetry-summary');
           return;
         }
         session.advanceToNextStage();

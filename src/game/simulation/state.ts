@@ -349,6 +349,25 @@ export type SessionProgress = {
   activePowers: PowerInventory;
   powerTimers: PowerTimers;
   runSettings: RunSettings;
+  telemetry: GameplayTelemetry;
+};
+
+export type ObjectiveTelemetry = {
+  completions: number;
+  totalCompletionMs: number;
+  bestCompletionMs: number | null;
+  lastCompletionMs: number | null;
+};
+
+export type StageTelemetry = {
+  deathsBySegment: Record<string, number>;
+  checkpointRetries: Record<string, number>;
+  secretRouteUses: Record<string, number>;
+  objective: ObjectiveTelemetry;
+};
+
+export type GameplayTelemetry = {
+  stages: Record<string, StageTelemetry>;
 };
 
 export const POWER_ORDER: PowerType[] = ['doubleJump', 'shooter', 'invincible', 'dash'];
@@ -576,12 +595,31 @@ export const createDefaultRunSettings = (): RunSettings => ({
   enemyPressure: 'normal',
 });
 
+export const createDefaultObjectiveTelemetry = (): ObjectiveTelemetry => ({
+  completions: 0,
+  totalCompletionMs: 0,
+  bestCompletionMs: null,
+  lastCompletionMs: null,
+});
+
+export const createDefaultStageTelemetry = (): StageTelemetry => ({
+  deathsBySegment: {},
+  checkpointRetries: {},
+  secretRouteUses: {},
+  objective: createDefaultObjectiveTelemetry(),
+});
+
+export const createDefaultGameplayTelemetry = (): GameplayTelemetry => ({
+  stages: {},
+});
+
 export const createDefaultSessionProgress = (): SessionProgress => ({
   unlockedStageIndex: 0,
   totalCoins: 0,
   activePowers: createDefaultPowerInventory(),
   powerTimers: createDefaultPowerTimers(),
   runSettings: createDefaultRunSettings(),
+  telemetry: createDefaultGameplayTelemetry(),
 });
 
 export const getActivePowerLabels = (powers: PowerInventory, timers: PowerTimers): string[] =>

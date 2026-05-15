@@ -7,8 +7,6 @@ import {
   findGroundedEnemySupport,
   findSupportBelowSpan,
   resolveGroundedEnemyRect,
-  resolveCheckpointRect,
-  resolveCheckpointRespawnPoint,
   resolveHazardRect,
 } from '../content/stages/builders';
 import type { InputState } from '../input/actions';
@@ -19,11 +17,13 @@ import { createActor } from 'xstate';
 import {
   BRITTLE_READY_BREAK_DELAY_MS,
   BRITTLE_WARNING_MS,
+  createDefaultGameplayTelemetry,
   SLUDGE_GROUND_ACCEL_MULTIPLIER,
   SLUDGE_MAX_SPEED_MULTIPLIER,
   createDefaultPowerInventory,
   createDefaultPowerTimers,
   createDefaultRunSettings,
+  createDefaultStageTelemetry,
   createDefaultSessionProgress,
   createPlayerStateWithMachine,
   getAllCollectiblesRecoveredMessage,
@@ -32,7 +32,6 @@ import {
   getStageObjectiveBriefing,
   getStageObjectiveCompletionMessage,
   getStageObjectiveExitReminder,
-  type CheckpointState,
   type CollectibleState,
   type DifficultySetting,
   type EnemyPressureSetting,
@@ -56,6 +55,7 @@ import {
   type RewardRevealState,
   type RunSettings,
   type SessionProgress,
+  type StageTelemetry,
   type StageObjectiveState,
   type StageRuntime,
   TURRET_VARIANT_CONFIG,
@@ -70,6 +70,12 @@ import {
   isTimedRevealBridgeLegible,
   normalizeRevealedPlatformIds,
 } from './state';
+import {
+  captureCheckpointRestoreState,
+  createRuntimeCheckpoints,
+  resolvePlayerSpawnFromCheckpoint,
+  type CheckpointRestoreState,
+} from './checkpointRuntime';
 
 const PLAYER_WIDTH = 26;
 const PLAYER_HEIGHT = 42;
@@ -159,6 +165,7 @@ export type SessionSnapshot = {
   stage: StageDefinition;
   stageRuntime: StageRuntime;
   currentSegmentId: string;
+  stageElapsedMs: number;
   player: PlayerState;
   progress: SessionProgress;
   activeCheckpointId: string | null;
@@ -175,14 +182,6 @@ export type SessionSnapshot = {
   stageMessage: string;
   stageMessageTimerMs: number;
   respawnTimerMs: number;
-};
-
-type CheckpointRestoreState = {
-  collectedCollectibleIds: Set<string>;
-  coinRewardBlocks: Map<string, { used: boolean; remainingHits: number }>;
-  collectedCoins: number;
-  allCoinsRecovered: boolean;
-  objectiveCompleted: boolean;
 };
 
 const createStageObjectiveState = (
@@ -680,6 +679,23 @@ const cloneProgress = (progress: SessionProgress): SessionProgress => ({
     ...createDefaultRunSettings(),
     ...progress.runSettings,
   },
+  telemetry: {
+    ...createDefaultGameplayTelemetry(),
+    ...progress.telemetry,
+    stages: Object.fromEntries(
+      Object.entries(progress.telemetry?.stages ?? {}).map(([stageId, stageTelemetry]) => [
+        stageId,
+        {
+          ...createDefaultStageTelemetry(),
+          ...stageTelemetry,
+          deathsBySegment: { ...stageTelemetry.deathsBySegment },
+          checkpointRetries: { ...stageTelemetry.checkpointRetries },
+          secretRouteUses: { ...stageTelemetry.secretRouteUses },
+          objective: { ...stageTelemetry.objective },
+        },
+      ]),
+    ),
+  },
 });
 
 const getActiveTemporaryBridgeIds = (temporaryBridges: readonly TemporaryBridgeState[]): string[] =>
@@ -962,11 +978,14 @@ export class GameSession {
 
   private checkpointRevealIds: string[] = [];
 
+  private telemetrySecretRouteIds = new Set<string>();
+
   private crystalTouchLoopMs = 0;
 
   constructor() {
     this.playerActor = createActor(playerStateMachine);
     this.playerActor.start();
+    this.resetAttemptTelemetry();
     this.snapshot = this.createSnapshot(0, createDefaultSessionProgress());
   }
 
@@ -974,6 +993,7 @@ export class GameSession {
     this.checkpointRevealIds = [];
     this.cameraViewBox = null;
     this.visibleEnemyIds.clear();
+    this.resetAttemptTelemetry();
     this.snapshot = this.createSnapshot(0, cloneProgress(progress));
   }
 
@@ -991,6 +1011,7 @@ export class GameSession {
     this.checkpointRevealIds = [];
     this.cameraViewBox = null;
     this.visibleEnemyIds.clear();
+    this.resetAttemptTelemetry();
     this.snapshot = this.createSnapshot(this.snapshot.stageIndex, cloneProgress(this.snapshot.progress));
   }
 
@@ -999,6 +1020,7 @@ export class GameSession {
     this.checkpointRevealIds = [];
     this.cameraViewBox = null;
     this.visibleEnemyIds.clear();
+    this.resetAttemptTelemetry();
     this.snapshot = this.createSnapshot(clamped, cloneProgress(this.snapshot.progress));
   }
 
@@ -1007,6 +1029,7 @@ export class GameSession {
     this.checkpointRevealIds = [];
     this.cameraViewBox = null;
     this.visibleEnemyIds.clear();
+    this.resetAttemptTelemetry();
     this.snapshot = this.createSnapshot(clamped, cloneProgress(this.snapshot.progress));
   }
 
@@ -1079,6 +1102,7 @@ export class GameSession {
 
     this.syncPlayerContextToMachine(direction as -1 | 0 | 1);
     this.snapshot.levelJustCompleted = false;
+    this.snapshot.stageElapsedMs += deltaMs;
     this.updateMessageTimer(deltaMs);
     this.updatePowerTimers(deltaMs);
     this.updateRewardFeedback(deltaMs);
@@ -1442,6 +1466,7 @@ export class GameSession {
     this.handleGravityCapsules();
     this.handleScannerVolumes();
     this.handleRevealVolumes();
+    this.trackSecretRouteUsage();
     this.finalizeTemporaryBridgeExpiry();
     this.updatePlayerGravityState();
     const contactedSpringPlatform =
@@ -2573,6 +2598,7 @@ export class GameSession {
       return;
     }
 
+    this.recordDeathTelemetry();
     this.clearActivePowers();
     // Force health to 0 so isHealthZero guard is satisfied regardless of call site
     // (e.g. pit deaths bypass damagePlayer and never decrement health first)
@@ -2595,12 +2621,14 @@ export class GameSession {
 
   private respawnPlayer(): void {
     const { progress, stageIndex } = this.snapshot;
+    this.recordCheckpointRetryTelemetry();
     this.playerActor.send({ type: 'RESPAWN' });
+    this.resetAttemptTelemetry();
     this.snapshot = this.createSnapshot(
       stageIndex,
       cloneProgress(progress),
       this.snapshot.activeCheckpointId,
-      this.captureCheckpointRestoreState(),
+      captureCheckpointRestoreState(this.snapshot.stageRuntime),
       this.snapshot.activeCheckpointId ? this.checkpointRevealIds : [],
     );
     this.settleGroundedEnemiesForDeathFreeze();
@@ -2734,30 +2762,6 @@ export class GameSession {
     this.syncPlayerPresentationPower();
   }
 
-  private captureCheckpointRestoreState(): CheckpointRestoreState {
-    const { stageRuntime } = this.snapshot;
-
-    return {
-      collectedCollectibleIds: new Set(
-        stageRuntime.collectibles.filter((collectible) => collectible.collected).map((collectible) => collectible.id),
-      ),
-      coinRewardBlocks: new Map(
-        stageRuntime.rewardBlocks
-          .filter((rewardBlock) => rewardBlock.reward.kind === 'coins')
-          .map((rewardBlock) => [
-            rewardBlock.id,
-            {
-              used: rewardBlock.used,
-              remainingHits: rewardBlock.remainingHits,
-            },
-          ]),
-      ),
-      collectedCoins: stageRuntime.collectedCoins,
-      allCoinsRecovered: stageRuntime.allCoinsRecovered,
-      objectiveCompleted: stageRuntime.objective?.completed ?? false,
-    };
-  }
-
   private completeStageObjective(targetKind: StageObjectiveState['target']['kind'], targetId: string): boolean {
     const objective = this.snapshot.stageRuntime.objective;
     if (!objective || objective.completed) {
@@ -2769,8 +2773,64 @@ export class GameSession {
     }
 
     objective.completed = true;
+    this.recordObjectiveTelemetry();
     this.setStageMessage(getStageObjectiveCompletionMessage(objective.kind), 2200);
     return true;
+  }
+
+  private resetAttemptTelemetry(): void {
+    this.telemetrySecretRouteIds.clear();
+  }
+
+  private getStageTelemetry(stageId = this.snapshot.stage.id): StageTelemetry {
+    const stages = this.snapshot.progress.telemetry.stages;
+    if (!stages[stageId]) {
+      stages[stageId] = createDefaultStageTelemetry();
+    }
+    return stages[stageId];
+  }
+
+  private incrementCounter(counter: Record<string, number>, id: string): void {
+    counter[id] = (counter[id] ?? 0) + 1;
+  }
+
+  private recordDeathTelemetry(): void {
+    this.incrementCounter(this.getStageTelemetry().deathsBySegment, this.snapshot.currentSegmentId);
+  }
+
+  private recordCheckpointRetryTelemetry(): void {
+    if (!this.snapshot.activeCheckpointId) {
+      return;
+    }
+
+    this.incrementCounter(this.getStageTelemetry().checkpointRetries, this.snapshot.activeCheckpointId);
+  }
+
+  private recordObjectiveTelemetry(): void {
+    const objective = this.getStageTelemetry().objective;
+    const elapsedMs = Math.max(0, Math.round(this.snapshot.stageElapsedMs));
+    objective.completions += 1;
+    objective.totalCompletionMs += elapsedMs;
+    objective.lastCompletionMs = elapsedMs;
+    objective.bestCompletionMs =
+      objective.bestCompletionMs == null ? elapsedMs : Math.min(objective.bestCompletionMs, elapsedMs);
+  }
+
+  private trackSecretRouteUsage(): void {
+    const rect = playerRect(this.snapshot.player);
+
+    for (const route of this.snapshot.stage.secretRoutes) {
+      if (this.telemetrySecretRouteIds.has(route.id)) {
+        continue;
+      }
+
+      if (!intersectsRect(rect, route.entry) && !intersectsRect(rect, route.interior)) {
+        continue;
+      }
+
+      this.telemetrySecretRouteIds.add(route.id);
+      this.incrementCounter(this.getStageTelemetry().secretRouteUses, route.id);
+    }
   }
 
   private findSupportSurface(id: string): SolidSurface | null {
@@ -2935,17 +2995,10 @@ export class GameSession {
     const pressure = ENEMY_PRESSURE_CONFIG[runSettings.enemyPressure];
     const speedMultiplier = difficulty.enemySpeedMultiplier * pressure.enemySpeedMultiplier;
     const intervalMultiplier = difficulty.enemyIntervalMultiplier * pressure.enemyIntervalMultiplier;
-    const respawnCheckpoint = activeCheckpointId
-      ? stage.checkpoints.find((checkpoint) => checkpoint.id === activeCheckpointId) ?? null
-      : null;
-    const respawnAnchor = respawnCheckpoint
-      ? resolveCheckpointRespawnPoint(stage, respawnCheckpoint.rect, PLAYER_WIDTH, PLAYER_HEIGHT)
-      : null;
-    const spawnX = respawnAnchor?.x ?? stage.playerSpawn.x;
-    const spawnY = respawnAnchor?.y ?? stage.playerSpawn.y;
+    const spawn = resolvePlayerSpawnFromCheckpoint(stage, activeCheckpointId, PLAYER_WIDTH, PLAYER_HEIGHT);
     const player: PlayerState = {
-      x: spawnX,
-      y: spawnY,
+      x: spawn.x,
+      y: spawn.y,
       vx: 0,
       vy: 0,
       width: PLAYER_WIDTH,
@@ -3167,6 +3220,7 @@ export class GameSession {
       activePowers: powerInventory,
       powerTimers,
       runSettings,
+      telemetry: progress.telemetry ?? createDefaultGameplayTelemetry(),
     };
     const objective = createStageObjectiveState(stage, checkpointRestore?.objectiveCompleted ?? false);
 
@@ -3193,6 +3247,7 @@ export class GameSession {
       stageMessage: objective && !objective.completed ? getStageObjectiveBriefing(objective.kind) : '',
       stageMessageTimerMs: objective && !objective.completed ? 2600 : 0,
       respawnTimerMs: 0,
+      stageElapsedMs: 0,
       stageRuntime: {
         platforms,
         lowGravityZones: stage.lowGravityZones.map<LowGravityZoneState>((zone) => ({ ...zone })),
@@ -3213,24 +3268,7 @@ export class GameSession {
         activationNodes: stage.activationNodes.map<ActivationNodeState>((node) => createInactiveActivationNodeState(node)),
         temporaryBridges,
         revealedPlatformIds: activeRevealIds,
-        checkpoints: stage.checkpoints.map<CheckpointState>((checkpoint) => {
-          const checkpointRect = resolveCheckpointRect(stage, checkpoint.rect);
-          const checkpointRespawn = resolveCheckpointRespawnPoint(stage, checkpoint.rect, PLAYER_WIDTH, PLAYER_HEIGHT);
-          if (!checkpointRespawn || !checkpointRect) {
-            throw new Error(`Checkpoint is missing grounded visible support at runtime: ${checkpoint.id}`);
-          }
-
-          return {
-            ...checkpoint,
-            rect: checkpointRect,
-            activated: checkpoint.id === activeCheckpointId,
-            supportPlatformId: checkpointRespawn.supportPlatformId,
-            respawn: {
-              x: checkpointRespawn.x,
-              y: checkpointRespawn.y,
-            },
-          };
-        }),
+        checkpoints: createRuntimeCheckpoints(stage, activeCheckpointId, PLAYER_WIDTH, PLAYER_HEIGHT),
         collectibles: stage.collectibles.map<CollectibleState>((collectible) => ({
           ...collectible,
           collected: checkpointRestore?.collectedCollectibleIds.has(collectible.id) ?? false,
