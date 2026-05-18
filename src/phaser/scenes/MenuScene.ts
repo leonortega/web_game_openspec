@@ -240,7 +240,7 @@ export class MenuScene extends Phaser.Scene {
         0,
         0,
         620,
-        54,
+        48,
         '',
         () => {
           this.optionsSelectedIndex = index;
@@ -374,9 +374,9 @@ export class MenuScene extends Phaser.Scene {
       });
 
       optionButtons.forEach((button, index) => {
-        resizePanel(button.background, optionButtonWidth, 54);
-        button.hitArea.setSize(optionButtonWidth, 54);
-        button.container.setPosition(centerX, optionsStartY + index * 62);
+        resizePanel(button.background, optionButtonWidth, 48);
+        button.hitArea.setSize(optionButtonWidth, 48);
+        button.container.setPosition(centerX, optionsStartY + index * 54);
       });
 
       const levelButtonWidth = Math.min(620, Math.max(280, frameWidth - 92));
@@ -544,6 +544,8 @@ export class MenuScene extends Phaser.Scene {
       this.view = option;
       if (option === 'help') {
         resetHelpScroll();
+      } else {
+        renderOptionLabels();
       }
       syncSelection();
     };
@@ -558,6 +560,7 @@ export class MenuScene extends Phaser.Scene {
         bridge.updateRunSettings({ enemyPressure: enemyValues[wrapIndex(currentIndex + direction, enemyValues.length)] });
       } else if (option === 'musicVolume') {
         bridge.updateRunSettings({ musicVolume: clamp(state.progress.runSettings.musicVolume + direction * 0.1, 0, 1) });
+        this.audio.applyMusicVolume();
       } else if (option === 'sfxVolume') {
         bridge.updateRunSettings({ sfxVolume: clamp(state.progress.runSettings.sfxVolume + direction * 0.1, 0, 1) });
       } else if (option === 'crt') {
@@ -644,14 +647,20 @@ export class MenuScene extends Phaser.Scene {
         cycleValue(optionEntries[this.optionsSelectedIndex], 1);
       }
     });
-    this.input.keyboard?.on('keydown-S', (event: KeyboardEvent) => {
-      if (!event.ctrlKey || this.view !== 'root') {
+    const escCtrlSHandler = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' || event.keyCode === 27) {
+        returnToRoot();
         return;
       }
-      event.preventDefault();
-      openLevelSelect();
+      if ((event.key === 's' || event.key === 'S') && event.ctrlKey && !event.metaKey && !event.altKey && this.view === 'root') {
+        event.preventDefault();
+        openLevelSelect();
+      }
+    };
+    window.addEventListener('keydown', escCtrlSHandler, true);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      window.removeEventListener('keydown', escCtrlSHandler, true);
     });
-    this.input.keyboard?.on('keydown-ESC', returnToRoot);
     this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gos: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
       if (this.view === 'help') {
         scrollHelp(dy > 0 ? 1 : -1);

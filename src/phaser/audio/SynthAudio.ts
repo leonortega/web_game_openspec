@@ -343,6 +343,8 @@ export class SynthAudio {
 
   private waitingForSoundManagerUnlock = false;
 
+  private activeAssetSound?: { sound: Phaser.Sound.BaseSound & { volume: number }; assetVolume: number };
+
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly getMusicVolume: () => number,
@@ -416,6 +418,17 @@ export class SynthAudio {
     }
 
     this.requestThemeMusic({ kind: 'theme', owner: 'transition', profile, phrase: 'stage-clear', stageId: source.id });
+  }
+
+  applyMusicVolume(): void {
+    if (!this.activeAssetSound) {
+      return;
+    }
+    const musicSetting = clamp(this.getMusicVolume(), 0, 1);
+    const musicMultiplier = musicSetting * MUSIC_MULTIPLIER_SCALE;
+    try {
+      this.activeAssetSound.sound.volume = clamp(this.activeAssetSound.assetVolume * musicMultiplier, 0, 1);
+    } catch {}
   }
 
   stopMusic(): void {
@@ -587,7 +600,9 @@ export class SynthAudio {
         sourceUrl: asset.sourceUrl,
         at: Date.now(),
       });
+      this.activeAssetSound = { sound: sound as Phaser.Sound.BaseSound & { volume: number }, assetVolume: asset.volume };
       this.startOwnedMusic(owner, requestKey, () => {
+        this.activeAssetSound = undefined;
         try {
           sound.stop();
         } catch {}
