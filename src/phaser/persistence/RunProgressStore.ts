@@ -141,6 +141,7 @@ export class RunProgressStore {
 
     return {
       ...(progress as SessionProgress),
+      unlockedStageIndex: Math.max(5, progress.unlockedStageIndex),
       runSettings: {
         ...defaultRunSettings,
         ...(progress.runSettings as SessionProgress['runSettings']),

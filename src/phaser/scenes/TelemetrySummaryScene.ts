@@ -7,12 +7,26 @@ import { applyConfiguredRetroPostFxToCamera } from '../retroPostFx';
 import {
   bindScaleOuter,
   createNinePatch,
-  createTagText,
   getAuthoredGameSize,
   getViewportMetrics,
   RETRO_TEXT_STYLE,
   UI_COLORS,
 } from '../ui/rexUiTheme';
+
+const stripMarkup = (value: string): string => value.replace(/\[[^\]]+\]/g, '');
+
+const resizePanel = (panel: any, width: number, height: number): void => {
+  if (typeof panel.resize === 'function') {
+    panel.resize(width, height);
+    return;
+  }
+  if (typeof panel.setSize === 'function') {
+    panel.setSize(width, height);
+  }
+  if (typeof panel.setDisplaySize === 'function') {
+    panel.setDisplaySize(width, height);
+  }
+};
 
 const formatDuration = (milliseconds: number | null): string => {
   if (milliseconds == null || milliseconds <= 0) {
@@ -143,15 +157,18 @@ export class TelemetrySummaryScene extends Phaser.Scene {
     let viewportHeight = 224;
     const panelBackground = createNinePatch(this, 0, 0, panelWidth, panelHeight).setDepth?.(3)
       ?? createNinePatch(this, 0, 0, panelWidth, panelHeight);
-    const reportText = createTagText(this, 0, 0, buildTelemetryCopy(summary), viewportWidth, {
+    const reportText = this.add.text(0, 0, stripMarkup(buildTelemetryCopy(summary)), {
+      ...RETRO_TEXT_STYLE,
       fontSize: '11px',
+      color: UI_COLORS.text,
       lineSpacing: 8,
+      wordWrap: { width: viewportWidth, useAdvancedWrap: true },
     }).setDepth(4);
     let scrollOffset = 0;
     let maxScroll = Math.max(0, reportText.height - viewportHeight);
     const applyScroll = (): void => {
       reportText.setPosition(-viewportWidth / 2, -viewportHeight / 2 - scrollOffset);
-      reportText.setCrop?.(0, scrollOffset, viewportWidth, viewportHeight);
+      reportText.setCrop(0, scrollOffset, viewportWidth, viewportHeight);
     };
     const scroll = (direction: -1 | 1): void => {
       scrollOffset = Phaser.Math.Clamp(scrollOffset + direction * 28, 0, maxScroll);
@@ -180,11 +197,7 @@ export class TelemetrySummaryScene extends Phaser.Scene {
       baseBackdrop.setPosition(centerX, centerY).setSize(width + 24, height + 24);
       baseBackdropGlow.setPosition(centerX, centerY).setSize(width + 24, height + 24);
       menuBackdrop.setPosition(centerX, centerY).setSize(Math.min(width - 12, 1000), Math.min(height - 12, 740));
-      if (typeof (menuFrame as any).resize === 'function') {
-        (menuFrame as any).resize(frameWidth, frameHeight);
-      } else {
-        (menuFrame as any).setSize?.(frameWidth, frameHeight);
-      }
+      resizePanel(menuFrame, frameWidth, frameHeight);
       menuFrame.setPosition(centerX, centerY);
 
       backdropStars.forEach((star, index) => {
@@ -197,19 +210,16 @@ export class TelemetrySummaryScene extends Phaser.Scene {
       subtitleText.setPosition(centerX, frameTop + 128);
 
       panelWidth = Math.min(780, Math.max(300, frameWidth - 72));
-      panelHeight = Math.min(420, Math.max(240, frameHeight - 208));
+      panelHeight = Math.min(420, Math.max(220, frameHeight - 228));
       viewportWidth = Math.max(240, panelWidth - 96);
-      viewportHeight = Math.max(140, panelHeight - 72);
-      if (typeof (panelBackground as any).resize === 'function') {
-        (panelBackground as any).resize(panelWidth, panelHeight);
-      } else {
-        (panelBackground as any).setSize?.(panelWidth, panelHeight);
-      }
-      reportText.setWordWrapWidth?.(viewportWidth);
+      viewportHeight = Math.max(120, panelHeight - 72);
+      resizePanel(panelBackground, panelWidth, panelHeight);
+      reportText.setWordWrapWidth(viewportWidth, true);
       maxScroll = Math.max(0, reportText.height - viewportHeight);
       scrollOffset = Phaser.Math.Clamp(scrollOffset, 0, maxScroll);
       applyScroll();
-      reportArea.setPosition(centerX, frameTop + 350);
+      const reportTop = frameTop + 162;
+      reportArea.setPosition(centerX, reportTop + panelHeight / 2);
 
       footerText.setPosition(centerX, centerY + frameHeight / 2 - 20);
       footerText.setWordWrapWidth(Math.max(280, Math.min(760, frameWidth - 120)), true);

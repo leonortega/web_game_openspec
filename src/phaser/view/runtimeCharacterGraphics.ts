@@ -89,14 +89,12 @@ export const drawAstronautGraphic = (
   const backArmLift = jumpPose ? 4 : dashPose ? 3 : fallPose ? -1 : runA ? 2 : runB ? -2 : 0;
   const leftLegLift = jumpPose ? -6 : dashPose ? -3 : runA ? -2 : runB ? 2 : 0;
   const rightLegLift = jumpPose ? -3 : dashPose ? -1 : runA ? 2 : runB ? -2 : 0;
-  const forwardFacing = params.facing === 1;
-
   clearGraphics(graphics, params.alpha, bodyColor);
 
   roundedRect(graphics, mirroredX(3, 6, width, params.facing), backpackY, 6, 14, 3, trim.deep, 0.72);
   roundedRect(graphics, mirroredX(4, 4, width, params.facing), backpackY + 2, 4, 9, 2, trim.base, 0.9);
 
-  const backArmX = mirroredX(forwardFacing ? 2 : width - 6, 4, width, params.facing);
+  const backArmX = mirroredX(2, 4, width, params.facing);
   roundedRect(graphics, backArmX, torsoY + 2 + backArmLift, 4, jumpPose ? 12 : 11, 2, suit.deep, 0.9);
 
   roundedRect(graphics, 5, torsoY, 14, torsoH, 5, suit.base);
@@ -109,12 +107,12 @@ export const drawAstronautGraphic = (
   roundedRect(graphics, 5, helmetY + 1, 14, 10, 5, suit.base);
   roundedRect(graphics, 6, helmetY + 2, 12, 2, 2, suit.light, 0.72);
   const visorWidth = 8;
-  const visorLocalX = mirroredX(forwardFacing ? 9 : 7, visorWidth, width, params.facing);
+  const visorLocalX = mirroredX(9, visorWidth, width, params.facing);
   roundedRect(graphics, visorLocalX, helmetY + 4, visorWidth, 5, 2, visor.deep, 1);
   roundedRect(graphics, visorLocalX + (params.facing === 1 ? 1 : 2), helmetY + 5, 4, 2, 1, visor.glow, 0.72);
   roundedRect(graphics, mirroredX(6, 2, width, params.facing), helmetY + 5, 2, 3, 1, trim.glow, 0.8);
 
-  const frontArmX = mirroredX(forwardFacing ? width - 6 : 2, 4, width, params.facing);
+  const frontArmX = mirroredX(width - 6, 4, width, params.facing);
   roundedRect(graphics, frontArmX, torsoY + 1 + frontArmLift, 4, jumpPose ? 11 : 12, 2, suit.base, 1);
   roundedRect(graphics, frontArmX, torsoY + 9 + frontArmLift, 4, 3, 1, trim.base, 0.9);
 
@@ -136,10 +134,10 @@ export const drawAstronautGraphic = (
       roundedRect(graphics, mirroredX(6, 3, width, params.facing), backpackY + 12, 3, 3, 1, visor.glow, 0.72);
       break;
     case 'shooter':
-      roundedRect(graphics, mirroredX(forwardFacing ? width - 5 : 1, 5, width, params.facing), torsoY + 5 + frontArmLift, 5, 10, 2, trim.deep, 1);
-      roundedRect(graphics, mirroredX(forwardFacing ? width - 7 : 0, 7, width, params.facing), torsoY + 9 + frontArmLift, 7, 4, 2, trim.base, 1);
-      roundedRect(graphics, mirroredX(forwardFacing ? width - 2 : 0, 2, width, params.facing), torsoY + 10 + frontArmLift, 2, 2, 1, visor.glow, 0.9);
-      roundedRect(graphics, mirroredX(forwardFacing ? 1 : width - 8, 7, width, params.facing), backpackY + 3, 7, 8, 3, trim.base, 0.94);
+      roundedRect(graphics, mirroredX(width - 5, 5, width, params.facing), torsoY + 5 + frontArmLift, 5, 10, 2, trim.deep, 1);
+      roundedRect(graphics, mirroredX(width - 7, 7, width, params.facing), torsoY + 9 + frontArmLift, 7, 4, 2, trim.base, 1);
+      roundedRect(graphics, mirroredX(width - 2, 2, width, params.facing), torsoY + 10 + frontArmLift, 2, 2, 1, visor.glow, 0.9);
+      roundedRect(graphics, mirroredX(1, 7, width, params.facing), backpackY + 3, 7, 8, 3, trim.base, 0.94);
       break;
     case 'invincible':
       roundedRect(graphics, mirroredX(1, 3, width, params.facing), torsoY + 7, 3, 8, 2, visor.glow, 0.26);

@@ -614,7 +614,7 @@ export const createDefaultGameplayTelemetry = (): GameplayTelemetry => ({
 });
 
 export const createDefaultSessionProgress = (): SessionProgress => ({
-  unlockedStageIndex: 0,
+  unlockedStageIndex: 5,
   totalCoins: 0,
   activePowers: createDefaultPowerInventory(),
   powerTimers: createDefaultPowerTimers(),

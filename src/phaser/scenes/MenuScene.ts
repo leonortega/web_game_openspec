@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
 import { AUDIO_CUES } from '../../audio/audioContract';
+import { stageDefinitions } from '../../game/content/stages';
 import {
   DIFFICULTY_LABELS,
   ENEMY_PRESSURE_LABELS,
@@ -15,7 +16,7 @@ import {
 } from '../retroPostFx';
 import { bindScaleOuter, createNinePatch, getAuthoredGameSize, getViewportMetrics, RETRO_TEXT_STYLE, UI_COLORS } from '../ui/rexUiTheme';
 
-type MenuView = 'root' | 'options' | 'help';
+type MenuView = 'root' | 'options' | 'help' | 'levelSelect';
 type RootOptionId = 'primary' | 'options' | 'help';
 type OptionsOptionId = 'difficulty' | 'enemies' | 'musicVolume' | 'sfxVolume' | 'crt';
 
@@ -31,6 +32,8 @@ const difficultyValues = ['casual', 'standard', 'expert'] as const;
 const enemyValues = ['low', 'normal', 'high'] as const;
 const rootOptions: RootOptionId[] = ['primary', 'options', 'help'];
 const optionEntries: OptionsOptionId[] = ['difficulty', 'enemies', 'musicVolume', 'sfxVolume', 'crt'];
+const stageShortcutKeys = ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX'] as const;
+const stageTierLabels = ['Easy', 'Easy+', 'Medium', 'Medium+', 'Hard', 'Hardest'] as const;
 
 const HELP_TEXT = [
   '[title]Controls[/title]',
@@ -80,6 +83,8 @@ export class MenuScene extends Phaser.Scene {
   private rootSelectedIndex = 0;
 
   private optionsSelectedIndex = 0;
+
+  private levelSelectedIndex = 0;
 
   private createMenuButton(
     x: number,
@@ -256,6 +261,32 @@ export class MenuScene extends Phaser.Scene {
       };
     });
 
+    const levelButtons: MenuButton[] = stageDefinitions.map((stage, index) => {
+      const button = this.createMenuButton(
+        0,
+        0,
+        620,
+        50,
+        '',
+        () => {
+          this.levelSelectedIndex = index;
+          syncSelection();
+        },
+        () => {
+          this.levelSelectedIndex = index;
+          startSelectedLevel();
+        },
+      );
+      button.text.setFontSize('14px');
+      return {
+        id: stage.id,
+        container: button.container,
+        background: button.background,
+        hitArea: button.hitArea,
+        text: button.text,
+      };
+    });
+
     let helpPanelWidth = 760;
     let helpPanelHeight = 326;
     let helpViewportWidth = 660;
@@ -348,6 +379,14 @@ export class MenuScene extends Phaser.Scene {
         button.container.setPosition(centerX, optionsStartY + index * 62);
       });
 
+      const levelButtonWidth = Math.min(620, Math.max(280, frameWidth - 92));
+      const levelStartY = frameTop + 166;
+      levelButtons.forEach((button, index) => {
+        resizePanel(button.background, levelButtonWidth, 50);
+        button.hitArea.setSize(levelButtonWidth, 50);
+        button.container.setPosition(centerX, levelStartY + index * 56);
+      });
+
       helpPanelWidth = Math.min(760, Math.max(300, frameWidth - 72));
       helpPanelHeight = Math.min(326, Math.max(220, frameHeight - 192));
       helpViewportWidth = Math.max(240, helpPanelWidth - 100);
@@ -396,6 +435,17 @@ export class MenuScene extends Phaser.Scene {
       });
     };
 
+    const renderLevelLabels = (): void => {
+      const unlockedStageIndex = bridge.getSession().getState().progress.unlockedStageIndex;
+      levelButtons.forEach((button, index) => {
+        const stage = stageDefinitions[index];
+        const locked = index > unlockedStageIndex;
+        const tierLabel = stageTierLabels[index] ?? 'Survey';
+        button.text.setText(`${index + 1}. ${stage.name}  ${tierLabel}${locked ? '  [LOCKED]' : ''}`);
+        button.container.setAlpha(locked ? 0.7 : 0.92);
+      });
+    };
+
     const setButtonState = (button: MenuButton, active: boolean): void => {
       button.text.setColor(active ? '#fff7cc' : UI_COLORS.text);
       button.text.setStroke(active ? '#5c3a00' : '#11141b', active ? 4 : 2);
@@ -419,21 +469,39 @@ export class MenuScene extends Phaser.Scene {
         setButtonState(button, active);
       });
 
-      titleText.setText(this.view === 'root' ? 'Main Menu' : this.view === 'options' ? 'Options' : 'Help');
+      levelButtons.forEach((button, index) => {
+        const active = this.view === 'levelSelect' && index === this.levelSelectedIndex;
+        button.container.setVisible(this.view === 'levelSelect');
+        setButtonState(button, active);
+      });
+
+      titleText.setText(
+        this.view === 'root'
+          ? 'Main Menu'
+          : this.view === 'options'
+            ? 'Options'
+            : this.view === 'help'
+              ? 'Help'
+              : 'Level Select',
+      );
       subtitleText.setText(
         this.view === 'root'
           ? 'Start the next survey run, tune the mission settings, or review powers and alien hazards before drop-in.'
           : this.view === 'options'
             ? 'Adjust run settings. Left / Right changes the highlighted row.'
-            : 'Field reference for powers, hazards, and controls.',
+            : this.view === 'help'
+              ? 'Field reference for powers, hazards, and controls.'
+              : 'Choose an unlocked stage.',
       );
       helpArea.setVisible(this.view === 'help');
       footerText.setText(
         this.view === 'root'
-          ? 'Enter selects. Arrow keys move. Press 1, 2, or 3 to jump directly into an unlocked sector.'
+          ? 'Enter selects. Arrow keys move.'
           : this.view === 'options'
             ? 'ESC returns to the root menu.'
-            : 'Mouse wheel or Up / Down scroll. ESC returns to the root menu.',
+            : this.view === 'help'
+              ? 'Mouse wheel or Up / Down scroll. ESC returns to the root menu.'
+              : 'Enter starts the highlighted unlocked stage. ESC returns to the root menu.',
       );
       syncLayout(authoredGameSize);
     };
@@ -443,6 +511,27 @@ export class MenuScene extends Phaser.Scene {
       bridge.beginTelemetrySession();
       bridge.startStage(stageIndex);
       this.scene.start('stage-intro');
+    };
+
+    const startSelectedLevel = (): void => {
+      const unlockedStageIndex = bridge.getSession().getState().progress.unlockedStageIndex;
+      if (this.levelSelectedIndex > unlockedStageIndex) {
+        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuBack);
+        return;
+      }
+      startRun(this.levelSelectedIndex);
+    };
+
+    const openLevelSelect = (): void => {
+      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
+      this.levelSelectedIndex = clamp(
+        bridge.getSession().getState().stageIndex,
+        0,
+        Math.max(0, stageDefinitions.length - 1),
+      );
+      this.view = 'levelSelect';
+      renderLevelLabels();
+      syncSelection();
     };
 
     const activateRootOption = (option: RootOptionId): void => {
@@ -501,6 +590,8 @@ export class MenuScene extends Phaser.Scene {
 
       if (this.view === 'root') {
         this.rootSelectedIndex = wrapIndex(this.rootSelectedIndex - 1, rootButtons.length);
+      } else if (this.view === 'levelSelect') {
+        this.levelSelectedIndex = wrapIndex(this.levelSelectedIndex - 1, levelButtons.length);
       } else {
         this.optionsSelectedIndex = wrapIndex(this.optionsSelectedIndex - 1, optionButtons.length);
       }
@@ -516,6 +607,8 @@ export class MenuScene extends Phaser.Scene {
 
       if (this.view === 'root') {
         this.rootSelectedIndex = wrapIndex(this.rootSelectedIndex + 1, rootButtons.length);
+      } else if (this.view === 'levelSelect') {
+        this.levelSelectedIndex = wrapIndex(this.levelSelectedIndex + 1, levelButtons.length);
       } else {
         this.optionsSelectedIndex = wrapIndex(this.optionsSelectedIndex + 1, optionButtons.length);
       }
@@ -536,6 +629,8 @@ export class MenuScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ENTER', () => {
       if (this.view === 'root') {
         activateRootOption(rootOptions[this.rootSelectedIndex]);
+      } else if (this.view === 'levelSelect') {
+        startSelectedLevel();
       } else if (this.view === 'options') {
         cycleValue(optionEntries[this.optionsSelectedIndex], 1);
       }
@@ -543,9 +638,18 @@ export class MenuScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-SPACE', () => {
       if (this.view === 'root') {
         activateRootOption(rootOptions[this.rootSelectedIndex]);
+      } else if (this.view === 'levelSelect') {
+        startSelectedLevel();
       } else if (this.view === 'options') {
         cycleValue(optionEntries[this.optionsSelectedIndex], 1);
       }
+    });
+    this.input.keyboard?.on('keydown-S', (event: KeyboardEvent) => {
+      if (!event.ctrlKey || this.view !== 'root') {
+        return;
+      }
+      event.preventDefault();
+      openLevelSelect();
     });
     this.input.keyboard?.on('keydown-ESC', returnToRoot);
     this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gos: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
@@ -554,12 +658,12 @@ export class MenuScene extends Phaser.Scene {
       }
     });
 
-    for (const key of ['ONE', 'TWO', 'THREE'] as const) {
+    for (const key of stageShortcutKeys.slice(0, stageDefinitions.length)) {
       this.input.keyboard?.on(`keydown-${key}`, () => {
         if (this.view !== 'root') {
           return;
         }
-        const stageIndex = { ONE: 0, TWO: 1, THREE: 2 }[key];
+        const stageIndex = stageShortcutKeys.indexOf(key);
         startRun(stageIndex);
       });
     }
@@ -577,6 +681,7 @@ export class MenuScene extends Phaser.Scene {
     });
 
     renderOptionLabels();
+    renderLevelLabels();
     syncSelection();
   }
 
@@ -591,7 +696,9 @@ export class MenuScene extends Phaser.Scene {
         ? ['Orbital Survey', 'Start', 'Options', 'Help']
         : this.view === 'options'
           ? ['Options', ...optionEntries]
-          : ['Help'];
+          : this.view === 'levelSelect'
+            ? ['Level Select', ...stageDefinitions.map((stage) => stage.name)]
+            : ['Help'];
     return {
       view: this.view,
       selectedText:

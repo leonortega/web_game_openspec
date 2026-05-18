@@ -323,6 +323,16 @@ const placePlayerOffPlatformSupport = (state: any, platform: any) => {
 };
 
 describe('GameSession regression coverage', () => {
+  it('can force-start the hidden menu endgame stages', () => {
+    const session = new GameSession();
+
+    for (const stageIndex of [4, 5]) {
+      expect(() => session.forceStartStage(stageIndex)).not.toThrow();
+      expect(session.getState().stageIndex).toBe(stageIndex);
+      expect(session.getState().stage.id).toBe(stageDefinitions[stageIndex].id);
+    }
+  });
+
   it('rebuilds fresh starts and auto-advance from stage spawn while checkpoint respawn stays on the checkpoint path', () => {
     const session = new GameSession();
     const initial = getMutableState(session);
@@ -3433,15 +3443,16 @@ describe('GameSession regression coverage', () => {
   });
 
   it('resets brittle floors from warning or broken back to the intact baseline on death respawn, checkpoint respawn, and manual restart', () => {
-    const originalStage = stageDefinitions[2];
+    const skyStageIndex = stageDefinitions.findIndex((stage) => stage.id === 'sky-sanctum');
+    const originalStage = stageDefinitions[skyStageIndex];
     const stageFixture = JSON.parse(JSON.stringify(originalStage));
     const fixturePlatform = stageFixture.platforms.find((platform: any) => platform.id === 'platform-10340-550');
     fixturePlatform.surfaceMechanic = { kind: 'brittleCrystal' };
-    (stageDefinitions as any)[2] = stageFixture;
+    (stageDefinitions as any)[skyStageIndex] = stageFixture;
 
     try {
       const session = new GameSession();
-      session.forceStartStage(2);
+      session.forceStartStage(skyStageIndex);
 
       let state = getMutableState(session);
       const brittlePlatform = state.stageRuntime.platforms.find((platform: any) => platform.id === 'platform-10340-550');
@@ -3474,7 +3485,7 @@ describe('GameSession regression coverage', () => {
       expect(state.stageRuntime.platforms.find((platform: any) => platform.id === brittlePlatform.id).brittle.phase).toBe('intact');
       expect(state.stageRuntime.platforms.find((platform: any) => platform.id === brittlePlatform.id).brittle.warningMs).toBeGreaterThan(1);
     } finally {
-      (stageDefinitions as any)[2] = originalStage;
+      (stageDefinitions as any)[skyStageIndex] = originalStage;
     }
   });
 

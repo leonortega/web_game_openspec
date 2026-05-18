@@ -219,6 +219,69 @@ export const STAGE_MUSIC_THEMES: Record<string, AuthoredMusicTheme> = {
 };
 
 export const STAGE_AUDIO_METADATA: Record<string, StageAudioThemeMetadata> = {
+  'surveyors-runoff': {
+    themeId: 'verdant-runner',
+    signature: STAGE_MUSIC_THEMES['verdant-runner'].signature,
+    transitionPhrases: {
+      intro: {
+        label: 'runoff wake-up phrase',
+        signature: STAGE_MUSIC_THEMES['verdant-runner'].surfaces['stage-intro']!.signature,
+        relationship: STAGE_MUSIC_THEMES['verdant-runner'].surfaces['stage-intro']!.relationship,
+      },
+      clear: {
+        label: 'spillway survey fanfare',
+        signature: STAGE_MUSIC_THEMES['verdant-runner'].surfaces['stage-clear']!.signature,
+        relationship: STAGE_MUSIC_THEMES['verdant-runner'].surfaces['stage-clear']!.relationship,
+      },
+      final: {
+        label: 'runoff crown salute',
+        signature: STAGE_MUSIC_THEMES['verdant-runner'].surfaces['final-congrats']!.signature,
+        relationship: STAGE_MUSIC_THEMES['verdant-runner'].surfaces['final-congrats']!.relationship,
+      },
+    },
+  },
+  'signal-weir': {
+    themeId: 'resin-descent',
+    signature: STAGE_MUSIC_THEMES['resin-descent'].signature,
+    transitionPhrases: {
+      intro: {
+        label: 'weir ignition phrase',
+        signature: STAGE_MUSIC_THEMES['resin-descent'].surfaces['stage-intro']!.signature,
+        relationship: STAGE_MUSIC_THEMES['resin-descent'].surfaces['stage-intro']!.relationship,
+      },
+      clear: {
+        label: 'relay gate salute',
+        signature: STAGE_MUSIC_THEMES['resin-descent'].surfaces['stage-clear']!.signature,
+        relationship: STAGE_MUSIC_THEMES['resin-descent'].surfaces['stage-clear']!.relationship,
+      },
+      final: {
+        label: 'weir crown salute',
+        signature: STAGE_MUSIC_THEMES['resin-descent'].surfaces['final-congrats']!.signature,
+        relationship: STAGE_MUSIC_THEMES['resin-descent'].surfaces['final-congrats']!.relationship,
+      },
+    },
+  },
+  'prism-liftworks': {
+    themeId: 'halo-ascension',
+    signature: STAGE_MUSIC_THEMES['halo-ascension'].signature,
+    transitionPhrases: {
+      intro: {
+        label: 'liftworks ascent phrase',
+        signature: STAGE_MUSIC_THEMES['halo-ascension'].surfaces['stage-intro']!.signature,
+        relationship: STAGE_MUSIC_THEMES['halo-ascension'].surfaces['stage-intro']!.relationship,
+      },
+      clear: {
+        label: 'prism span fanfare',
+        signature: STAGE_MUSIC_THEMES['halo-ascension'].surfaces['stage-clear']!.signature,
+        relationship: STAGE_MUSIC_THEMES['halo-ascension'].surfaces['stage-clear']!.relationship,
+      },
+      final: {
+        label: 'liftworks crown congratulations',
+        signature: STAGE_MUSIC_THEMES['halo-ascension'].surfaces['final-congrats']!.signature,
+        relationship: STAGE_MUSIC_THEMES['halo-ascension'].surfaces['final-congrats']!.relationship,
+      },
+    },
+  },
   'forest-ruins': {
     themeId: 'verdant-runner',
     signature: STAGE_MUSIC_THEMES['verdant-runner'].signature,

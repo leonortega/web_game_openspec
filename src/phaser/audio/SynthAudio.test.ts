@@ -277,9 +277,12 @@ describe('SynthAudio', () => {
   });
 
   it('keeps checked-in provenance manifests for menu, per-stage music, and sampled cues', () => {
-    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST).toHaveLength(4);
+    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST).toHaveLength(7);
     expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.license === 'CC-BY-4.0')).toBe(true);
     expect(MENU_SUSTAINED_MUSIC.title).toBe('Call For Love');
+    expect(getStageSustainedMusic('surveyors-runoff')?.title).toBe('Call For Love');
+    expect(getStageSustainedMusic('signal-weir')?.title).toBe('Goodbye Tales');
+    expect(getStageSustainedMusic('prism-liftworks')?.title).toBe('Give Her Shadow');
     expect(getStageSustainedMusic('forest-ruins')?.title).toBe('Goodbye Tales');
     expect(getStageSustainedMusic('amber-cavern')?.title).toBe('Give Her Shadow');
     expect(getStageSustainedMusic('sky-sanctum')?.title).toBe('Get Out');
@@ -313,9 +316,9 @@ describe('SynthAudio', () => {
     const completeAudio = new SynthAudio(completeScene, () => 1, () => 1);
 
     menuAudio.startMenuMusic();
-    gameplayAudio.startStageMusic(stageDefinitions[0]);
-    introAudio.playStageIntro(stageDefinitions[1]);
-    completeAudio.playStageClear(stageDefinitions[2], true);
+    gameplayAudio.startStageMusic(stageDefinitions.find((stage) => stage.id === 'surveyors-runoff')!);
+    introAudio.playStageIntro(stageDefinitions.find((stage) => stage.id === 'forest-ruins')!);
+    completeAudio.playStageClear(stageDefinitions.find((stage) => stage.id === 'sky-sanctum')!, true);
 
     await Promise.all([menuAudio.unlock(), gameplayAudio.unlock(), introAudio.unlock(), completeAudio.unlock()]);
 
@@ -337,8 +340,9 @@ describe('SynthAudio', () => {
     const introAudio = new SynthAudio(introScene, () => 1, () => 1);
     const finalAudio = new SynthAudio(finalScene, () => 1, () => 1);
 
-    introAudio.playStageIntro(stageDefinitions[2]);
-    finalAudio.playStageClear(stageDefinitions[2], true);
+    const skyStage = stageDefinitions.find((stage) => stage.id === 'sky-sanctum')!;
+    introAudio.playStageIntro(skyStage);
+    finalAudio.playStageClear(skyStage, true);
 
     await introAudio.unlock();
     await finalAudio.unlock();
