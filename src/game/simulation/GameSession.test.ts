@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { AUDIO_CUES } from '../../audio/audioContract';
 import { stageDefinitions } from '../content/stages';
@@ -3800,5 +3800,244 @@ describe('GameSession regression coverage', () => {
         expect(state.player.springContactPlatformId).toBeNull();
       },
     );
+  });
+
+  it('removes power reward blocks when collected, expired, or the player dies', () => {
+    const session = new GameSession();
+    session.forceStartStage(0);
+
+    let state = getMutableState(session);
+    const collectedBlock = {
+      id: 'fixture-power-collected',
+      x: 300,
+      y: 300,
+      width: 40,
+      height: 40,
+      used: false,
+      remainingHits: 1,
+      hitFlashMs: 0,
+      expiresInMs: 20_000,
+      reward: { kind: 'power', power: 'shooter' },
+    };
+    state.stageRuntime.rewardBlocks.push(collectedBlock);
+
+    (session as any).activateRewardBlock(collectedBlock);
+    expect(getMutableState(session).stageRuntime.rewardBlocks.some((block: any) => block.id === collectedBlock.id)).toBe(false);
+
+    state = getMutableState(session);
+    state.stageRuntime.enemies = [];
+    state.stageRuntime.hazards = [];
+    state.stageRuntime.projectiles = [];
+    const safeSupport = state.stageRuntime.platforms[0];
+    state.player.x = safeSupport.x + 80;
+    state.player.y = safeSupport.y - state.player.height;
+    state.player.vx = 0;
+    state.player.vy = 0;
+    state.player.supportPlatformId = safeSupport.id;
+    state.stageRuntime.rewardBlocks.push({
+      id: 'fixture-power-expiring',
+      x: 340,
+      y: 300,
+      width: 40,
+      height: 40,
+      used: false,
+      remainingHits: 1,
+      hitFlashMs: 0,
+      expiresInMs: 20_000,
+      reward: { kind: 'power', power: 'doubleJump' },
+    });
+
+    (session as any).updateRewardFeedback(19_999);
+    expect(getMutableState(session).stageRuntime.rewardBlocks.some((block: any) => block.id === 'fixture-power-expiring')).toBe(true);
+    (session as any).updateRewardFeedback(1);
+    expect(getMutableState(session).stageRuntime.rewardBlocks.some((block: any) => block.id === 'fixture-power-expiring')).toBe(false);
+
+    state = getMutableState(session);
+    state.stageRuntime.rewardBlocks.push(
+      {
+        id: 'fixture-power-death-cleanup',
+        x: 380,
+        y: 300,
+        width: 40,
+        height: 40,
+        used: false,
+        remainingHits: 1,
+        hitFlashMs: 0,
+        expiresInMs: 20_000,
+        reward: { kind: 'power', power: 'dash' },
+      },
+      {
+        id: 'fixture-coin-survives',
+        x: 420,
+        y: 300,
+        width: 40,
+        height: 40,
+        used: false,
+        remainingHits: 1,
+        hitFlashMs: 0,
+        reward: { kind: 'coins', amount: 1 },
+      },
+    );
+    state.player.y = state.stage.world.height + 140;
+
+    session.update(16, defaultInputState());
+
+    state = getMutableState(session);
+    expect(state.player.dead).toBe(true);
+    expect(state.stageRuntime.rewardBlocks.some((block: any) => block.reward.kind === 'power')).toBe(false);
+    expect(state.stageRuntime.rewardBlocks.some((block: any) => block.id === 'fixture-coin-survives')).toBe(true);
+  });
+
+  it('uses randomized visible arena positions for boss power blocks', () => {
+    const session = new GameSession();
+    session.forceStartStage(3);
+    session.setCameraViewBox({ x: 0, y: 0, width: 1500, height: 540 });
+
+    const randomValues = [
+      0.1, 0.1, 0.1, 0.1, 0.05, 0.1, 0.5,
+      0.1, 0.1, 0.1, 0.1, 0.95, 0.2, 0.5,
+    ];
+    const randomSpy = vi.spyOn(Math, 'random').mockImplementation(() => randomValues.shift() ?? 0.5);
+
+    try {
+      let state = getMutableState(session);
+      const boss = state.stageRuntime.enemies.find((enemy: any) => enemy.kind === 'boss');
+      boss.boss.timerMs = 0;
+      boss.boss.powerShotChance = 1;
+      boss.boss.powerShots = ['shooter'];
+      boss.boss.shotHeights = [50];
+
+      session.update(16, defaultInputState());
+      state = getMutableState(session);
+      const firstBlock = state.stageRuntime.rewardBlocks.find((block: any) => block.reward.kind === 'power');
+      expect(firstBlock).toBeTruthy();
+
+      boss.boss.timerMs = 0;
+      session.update(16, defaultInputState());
+
+      const powerBlocks = getMutableState(session).stageRuntime.rewardBlocks.filter((block: any) => block.reward.kind === 'power');
+      expect(powerBlocks).toHaveLength(2);
+      expect(powerBlocks[1].x).not.toBe(firstBlock.x);
+      expect(powerBlocks.every((block: any) => block.expiresInMs <= 20_000 && block.expiresInMs > 0)).toBe(true);
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
+  it('adds boss-2 after stage 6 and damages it only when spawned walkers are stomped', () => {
+    const bossTwoIndex = stageDefinitions.findIndex((stage) => stage.id === 'boss-2');
+    const stageSixIndex = stageDefinitions.findIndex((stage) => stage.id === 'prism-liftworks');
+    expect(bossTwoIndex).toBe(stageSixIndex + 1);
+
+    const session = new GameSession();
+    session.forceStartStage(bossTwoIndex);
+
+    let state = getMutableState(session);
+    const boss = state.stageRuntime.enemies.find((enemy: any) => enemy.kind === 'boss');
+    expect(boss.boss.health).toBe(50);
+    expect(boss.boss.visualStyle).toBe('crab');
+    expect(boss.boss.walkerSpawn).toBeTruthy();
+    expect(boss.boss.shotHeights).toEqual([]);
+    expect(boss.boss.powerShots).toEqual([]);
+    expect(boss.boss.left).toBe(80);
+
+    boss.boss.movementPhase = undefined;
+    boss.boss.movementPhaseTimerMs = undefined;
+    (session as any).updateBossMovement(boss, state.stageRuntime.platforms, 16, 16 / 1000);
+    expect(boss.boss.movementPhase).toBe('random-hold');
+    expect(boss.boss.movementPhaseTimerMs).toBe(5_000 - 16);
+
+    boss.x = boss.boss.right - boss.width - 24;
+    boss.vx = 0;
+    boss.boss.timerMs = 0;
+    boss.boss.movementPhase = 'random-hold';
+    boss.boss.movementPhaseTimerMs = 1000;
+    (session as any).updateEnemies(16, 16 / 1000);
+    expect(boss.boss.movementPhase).toBe('random-hold');
+    expect(boss.vx).toBe(0);
+
+    boss.boss.movementPhase = 'random-hold';
+    boss.boss.movementPhaseTimerMs = 0;
+    boss.boss.movementTargetX = undefined;
+    (session as any).updateBossMovement(boss, state.stageRuntime.platforms, 16, 16 / 1000);
+    expect(boss.boss.movementPhase).toBe('random-jump');
+    expect(boss.boss.movementTargetX).toBeGreaterThanOrEqual(boss.boss.left);
+    expect(boss.boss.movementTargetX).toBeLessThanOrEqual(boss.boss.right - boss.width);
+    expect(Math.abs(boss.vx)).toBeGreaterThan(boss.boss.runSpeed);
+    expect(boss.vy).toBeLessThan(-boss.boss.jumpImpulse);
+
+    boss.x = (boss.boss.movementTargetX ?? boss.boss.left) - boss.width / 2;
+    boss.y = state.stageRuntime.platforms[0].y - boss.height;
+    boss.vx = 0;
+    boss.vy = 0;
+    boss.supportPlatformId = state.stageRuntime.platforms[0].id;
+    boss.supportY = boss.y;
+    boss.boss.movementPhase = 'random-jump';
+    (session as any).updateBossMovement(boss, state.stageRuntime.platforms, 16, 16 / 1000);
+    expect(boss.boss.movementPhase).toBe('random-hold');
+    expect(boss.boss.movementPhaseTimerMs).toBeGreaterThanOrEqual(5_000);
+    expect(boss.boss.movementPhaseTimerMs).toBeLessThanOrEqual(15_000);
+
+    boss.x = 840;
+    boss.y = state.stageRuntime.platforms[0].y - boss.height;
+    boss.vx = 0;
+    boss.vy = 0;
+    boss.supportPlatformId = state.stageRuntime.platforms[0].id;
+    boss.supportY = boss.y;
+    state.stageRuntime.enemies = state.stageRuntime.enemies.filter((enemy: any) => !enemy.bossSpawn);
+
+    (session as any).spawnBossWalker(state.stageRuntime, boss);
+    state = getMutableState(session);
+    const walker = state.stageRuntime.enemies.find((enemy: any) => enemy.bossSpawn?.sourceBossId === boss.id);
+    expect(walker).toBeTruthy();
+    expect(walker.x + walker.width / 2).toBeCloseTo(boss.x + boss.width / 2, 0);
+    expect(walker.y + walker.height).toBeCloseTo(boss.y + boss.height, 0);
+    expect(walker.direction).toBe(-1);
+
+    state.player.x = walker.x + 4;
+    state.player.y = walker.y - state.player.height + 8;
+    state.player.vx = 0;
+    state.player.vy = 180;
+    state.player.supportPlatformId = null;
+
+    (session as any).handleEnemyInteractions();
+
+    expect(walker.alive).toBe(false);
+    expect(boss.boss.health).toBe(49);
+    expect(session.consumeCues()).toContain(AUDIO_CUES.bossPain);
+
+    (session as any).spawnBossWalker(state.stageRuntime, boss);
+    const secondWalker = state.stageRuntime.enemies.find(
+      (enemy: any) => enemy.alive && enemy.bossSpawn?.sourceBossId === boss.id,
+    );
+    expect(secondWalker).toBeTruthy();
+    expect(secondWalker.laneLeft).toBe(0);
+    expect(secondWalker.laneRight).toBe(state.stage.world.width - secondWalker.width);
+
+    state.player.x = secondWalker.x - 180;
+    (session as any).updateEnemies(16, 16 / 1000);
+    expect(secondWalker.direction).toBe(-1);
+
+    state.player.x = secondWalker.x + 180;
+    (session as any).updateEnemies(16, 16 / 1000);
+    expect(secondWalker.direction).toBe(1);
+
+    (session as any).killPlayer();
+    expect(state.stageRuntime.enemies.some((enemy: any) => enemy.bossSpawn?.sourceBossId === boss.id)).toBe(false);
+
+    const projectile = {
+      id: 'fixture-boss-2-shot',
+      owner: 'player',
+      x: boss.x + 20,
+      y: boss.y + 20,
+      vx: 0,
+      width: 12,
+      height: 12,
+      alive: true,
+    };
+    state.stageRuntime.projectiles.push(projectile);
+    (session as any).updateProjectiles(0);
+
+    expect(boss.boss.health).toBe(49);
   });
 });

@@ -112,6 +112,7 @@ import {
   type GameSceneInputContext,
 } from './gameScene/bootstrap';
 import {
+  BOSS_PAIN_ANIMATION_MS,
   drawHazard as drawHazardRendering,
   syncEnemy as syncEnemyRendering,
   syncProjectile as syncProjectileRendering,
@@ -215,6 +216,8 @@ export class GameScene extends Phaser.Scene {
 
   private enemyHitFlashUntilMs = new Map<string, number>();
 
+  private bossPainUntilMs = new Map<string, number>();
+
   private platformSprites = new Map<string, Phaser.GameObjects.Graphics>();
 
   private platformShadowSprites = new Map<string, Phaser.GameObjects.Rectangle | { layer: any; index: number }>();
@@ -315,6 +318,14 @@ export class GameScene extends Phaser.Scene {
   private hud!: ReturnType<typeof createRexHud>;
 
   private uiCamera!: Phaser.Cameras.Scene2D.Camera;
+
+  private bossEnergyBar?: Phaser.GameObjects.Graphics;
+
+  private bossEnergyLabel?: Phaser.GameObjects.Text;
+
+  private bossGroundedState = new Map<string, boolean>();
+
+  private bossLandingFallSpeed = new Map<string, number>();
 
   private completeTransitionEvent?: Phaser.Time.TimerEvent;
 
@@ -546,6 +557,7 @@ export class GameScene extends Phaser.Scene {
     void this.projectileSprites;
     void this.enemyDefeatVisibleUntilMs;
     void this.enemyHitFlashUntilMs;
+    void this.bossPainUntilMs;
     return this as unknown as GameSceneEnemyRenderingContext;
   }
 
@@ -579,6 +591,10 @@ export class GameScene extends Phaser.Scene {
     this.playerDefeatResetPending = false;
     this.enemyDefeatVisibleUntilMs.clear();
     this.enemyHitFlashUntilMs.clear();
+    this.bossPainUntilMs.clear();
+    this.bossGroundedState.clear();
+    this.bossLandingFallSpeed.clear();
+    this.destroyBossEnergyBar();
     this.clearBeamEffects();
     this.lastStageStartPhase = null;
     this.exitTeleportBeamTriggered = false;
@@ -946,6 +962,16 @@ export class GameScene extends Phaser.Scene {
       this.syncRewardBlock(rewardBlock);
     }
 
+    for (const [id, sprite] of this.rewardBlockSprites.entries()) {
+      if (!state.stageRuntime.rewardBlocks.find((rewardBlock) => rewardBlock.id === id)) {
+        sprite.destroy();
+        this.rewardBlockSprites.delete(id);
+        const icon = this.rewardBlockIcons.get(id);
+        icon?.destroy();
+        this.rewardBlockIcons.delete(id);
+      }
+    }
+
     for (const rewardReveal of state.stageRuntime.rewardReveals) {
       this.syncRewardReveal(rewardReveal);
     }
@@ -954,9 +980,32 @@ export class GameScene extends Phaser.Scene {
       this.syncEnemy(enemy);
     }
 
+    for (const [id, sprite] of this.enemySprites.entries()) {
+      if (state.stageRuntime.enemies.some((enemy) => enemy.id === id)) {
+        continue;
+      }
+
+      sprite.destroy();
+      this.enemySprites.delete(id);
+      this.enemyDefeatVisibleUntilMs.delete(id);
+      this.enemyHitFlashUntilMs.delete(id);
+      this.bossPainUntilMs.delete(id);
+      const contactStrip = this.enemyContactStrips.get(id);
+      contactStrip?.destroy();
+      this.enemyContactStrips.delete(id);
+      const accents = this.enemyAccentSprites.get(id) ?? [];
+      for (const accent of accents) {
+        accent.destroy();
+      }
+      this.enemyAccentSprites.delete(id);
+    }
+
     for (const projectile of state.stageRuntime.projectiles) {
       this.syncProjectile(projectile);
     }
+
+    this.syncBossLandingFeedback(state);
+    this.syncBossEnergyBar(state);
 
     for (const [id, sprite] of this.projectileSprites.entries()) {
       if (!state.stageRuntime.projectiles.find((projectile) => projectile.id === id && projectile.alive)) {
@@ -978,6 +1027,16 @@ export class GameScene extends Phaser.Scene {
     if (!state.exitFinish.active) {
       this.exitTeleportBeamTriggered = false;
       if (this.exitBase && this.exitBaseShadow && this.exitBeacon && this.exitShell && this.exitDoor) {
+        const exitUnlocked = !state.stageRuntime.enemies.some((enemy) => enemy.kind === 'boss' && enemy.alive);
+        this.exitBase.setVisible(exitUnlocked);
+        this.exitBaseShadow.setVisible(exitUnlocked);
+        this.exitBeacon.setVisible(exitUnlocked);
+        this.exitShell.setVisible(exitUnlocked);
+        this.exitDoor.setVisible(exitUnlocked);
+        if (!exitUnlocked) {
+          return;
+        }
+
         this.exitBase
           .setTint(this.retroPalette.panelAlt)
           .setScale(1, 1)
@@ -1007,7 +1066,7 @@ export class GameScene extends Phaser.Scene {
         });
         this.exitDoor
           .setAlpha(state.stageRuntime.exitReached ? 0.76 : 0.88)
-          .setVisible(true);
+          .setVisible(exitUnlocked);
         drawTeleportShutterGraphic(this.exitDoor, {
           width: EXIT_CAPSULE_ART_BOUNDS.door.width,
           height: 48,
@@ -1468,6 +1527,106 @@ export class GameScene extends Phaser.Scene {
     syncRewardBlockRendering(this.getRewardRenderingContext(), rewardBlock);
   }
 
+  private syncBossLandingFeedback(state: SessionSnapshot): void {
+    const liveBossIds = new Set<string>();
+    for (const boss of state.stageRuntime.enemies.filter((enemy) => enemy.kind === 'boss' && enemy.alive)) {
+      liveBossIds.add(boss.id);
+      const grounded = boss.supportPlatformId !== null && boss.supportY !== null && Math.abs(boss.y - boss.supportY) <= 4;
+      const wasGrounded = this.bossGroundedState.get(boss.id) ?? grounded;
+      const fallSpeed = Math.max(this.bossLandingFallSpeed.get(boss.id) ?? 0, boss.vy);
+
+      if (!grounded) {
+        this.bossLandingFallSpeed.set(boss.id, fallSpeed);
+      } else {
+        if (!wasGrounded && fallSpeed >= 620) {
+          this.cameras.main.shake(260, Math.min(0.018, 0.007 + fallSpeed / 120000), true);
+        }
+        this.bossLandingFallSpeed.set(boss.id, 0);
+      }
+
+      this.bossGroundedState.set(boss.id, grounded);
+    }
+
+    for (const id of this.bossGroundedState.keys()) {
+      if (!liveBossIds.has(id)) {
+        this.bossGroundedState.delete(id);
+        this.bossLandingFallSpeed.delete(id);
+      }
+    }
+  }
+
+  private syncBossEnergyBar(state: SessionSnapshot): void {
+    const boss = state.stageRuntime.enemies.find((enemy) => enemy.kind === 'boss' && enemy.alive && enemy.boss);
+    if (!boss?.boss) {
+      this.bossEnergyBar?.setVisible(false);
+      this.bossEnergyLabel?.setVisible(false);
+      return;
+    }
+
+    this.ensureBossEnergyBar();
+    if (!this.bossEnergyBar || !this.bossEnergyLabel) {
+      return;
+    }
+
+    const authoredWidth = Number(this.game.config.width) || 960;
+    const authoredHeight = Number(this.game.config.height) || 540;
+    const { left, top, width } = getViewportMetrics(this, { width: authoredWidth, height: authoredHeight });
+    const barWidth = Math.min(360, Math.max(220, Math.floor(width * 0.38)));
+    const barHeight = 16;
+    const x = Math.round(left + width / 2 - barWidth / 2);
+    const y = Math.round(top + 78);
+    const ratio = Phaser.Math.Clamp(boss.boss.health / Math.max(1, boss.boss.maxHealth), 0, 1);
+
+    this.bossEnergyBar
+      .clear()
+      .setVisible(true)
+      .setPosition(x, y)
+      .setDepth(210);
+    this.bossEnergyBar.fillStyle(0x150d21, 0.92);
+    this.bossEnergyBar.fillRoundedRect(0, 0, barWidth, barHeight, 4);
+    this.bossEnergyBar.lineStyle(2, this.retroPalette.border, 1);
+    this.bossEnergyBar.strokeRoundedRect(0, 0, barWidth, barHeight, 4);
+    this.bossEnergyBar.fillStyle(0x56215e, 1);
+    this.bossEnergyBar.fillRoundedRect(4, 4, barWidth - 8, barHeight - 8, 2);
+    this.bossEnergyBar.fillStyle(ratio > 0.34 ? 0xd75cc8 : this.retroPalette.alert, 1);
+    this.bossEnergyBar.fillRoundedRect(4, 4, Math.max(0, (barWidth - 8) * ratio), barHeight - 8, 2);
+    this.bossEnergyBar.fillStyle(0xffffff, 0.22);
+    this.bossEnergyBar.fillRect(6, 5, Math.max(0, (barWidth - 12) * ratio), 2);
+
+    this.bossEnergyLabel
+      .setVisible(true)
+      .setDepth(211)
+      .setText(`BOSS ENERGY ${boss.boss.health}/${boss.boss.maxHealth}`)
+      .setPosition(x + 8, y - 14);
+  }
+
+  private ensureBossEnergyBar(): void {
+    if (!this.bossEnergyBar) {
+      this.bossEnergyBar = this.add.graphics().setScrollFactor(0);
+      this.cameras.main.ignore(this.bossEnergyBar);
+    }
+    if (!this.bossEnergyLabel) {
+      this.bossEnergyLabel = this.add
+        .text(0, 0, '', {
+          fontFamily: 'monospace',
+          fontSize: '10px',
+          color: '#f7d7ff',
+          fontStyle: 'bold',
+          stroke: '#150d21',
+          strokeThickness: 3,
+        })
+        .setScrollFactor(0);
+      this.cameras.main.ignore(this.bossEnergyLabel);
+    }
+  }
+
+  private destroyBossEnergyBar(): void {
+    this.bossEnergyBar?.destroy();
+    this.bossEnergyLabel?.destroy();
+    this.bossEnergyBar = undefined;
+    this.bossEnergyLabel = undefined;
+  }
+
   private syncRewardReveal(rewardReveal: RewardRevealState): void {
     syncRewardRevealRendering(this.getRewardRenderingContext(), rewardReveal);
   }
@@ -1496,7 +1655,13 @@ export class GameScene extends Phaser.Scene {
     const speed = Math.hypot(vx, vy);
     const directionX = speed > 0 ? vx / speed : 1;
     const directionY = speed > 0 ? vy / speed : 0;
-    const color = projectile.variant ? 0x9dd9ff : this.retroPalette.warm;
+    const color = projectile.power
+      ? projectile.power === 'doubleJump'
+        ? 0xdfe8bf
+        : 0xf0c6a1
+      : projectile.variant
+        ? 0x9dd9ff
+        : this.retroPalette.warm;
 
     let emitter = this.projectileTrailEmitters.get(projectile.id);
     if (!emitter) {
@@ -1505,7 +1670,7 @@ export class GameScene extends Phaser.Scene {
         x: centerX,
         y: centerY,
         color,
-        alpha: projectile.variant ? 0.62 : 0.5,
+        alpha: projectile.variant || projectile.power ? 0.62 : 0.5,
         depth: 8,
         speed: speed * 0.15,
         lifespan: 300,
@@ -1666,6 +1831,11 @@ export class GameScene extends Phaser.Scene {
       this.spawnBeamPulse('hit-flash', centerX, feetY - 2, this.retroPalette.bright, 34, 10, 110, 11);
       playRetroTweenPreset(this, this.getPlayerVisualTargets(), 'land');
       this.recordFeedback('land');
+      return;
+    }
+
+    if (cue === AUDIO_CUES.bossPain) {
+      this.triggerBossPainFeedback(state);
       return;
     }
 
@@ -2228,6 +2398,25 @@ export class GameScene extends Phaser.Scene {
       depth: 10,
       durationMs: 120,
     });
+  }
+
+  private triggerBossPainFeedback(state: Readonly<SessionSnapshot>): void {
+    const boss = state.stageRuntime.enemies.find(
+      (enemy) => enemy.alive && enemy.kind === 'boss' && enemy.boss?.visualStyle === 'crab',
+    );
+    if (!boss) {
+      return;
+    }
+
+    const centerX = boss.x + boss.width / 2;
+    const centerY = boss.y + boss.height * 0.45;
+    this.enemyHitFlashUntilMs.set(boss.id, this.time.now + getRetroHitFlashPreset('enemy-hit').durationMs * 1.35);
+    this.bossPainUntilMs.set(boss.id, this.time.now + BOSS_PAIN_ANIMATION_MS);
+    this.spawnBeamPulse('hit-flash', centerX, centerY, this.retroPalette.alert, Math.max(54, boss.width * 0.55), 14, 140, 12);
+    this.spawnBeamPulse('distortion', centerX, centerY + 8, this.retroPalette.bright, Math.max(28, boss.width * 0.28), 24, 110, 12);
+    spawnRetroParticleBurst(this, centerX, centerY, this.retroPalette.alert, 'enemy-defeat-stomp');
+    this.cameras.main.shake(120, 0.0045, true);
+    this.recordFeedback('enemyHit');
   }
 
   private resetPlayerDefeatPresentation(): void {

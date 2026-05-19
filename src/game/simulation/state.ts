@@ -11,7 +11,7 @@ export type Rect = {
 };
 
 export type HazardKind = 'spikes';
-export type EnemyKind = 'walker' | 'hopper' | 'turret' | 'charger' | 'flyer';
+export type EnemyKind = 'walker' | 'hopper' | 'turret' | 'charger' | 'flyer' | 'boss';
 export type TurretVariantId = 'resinBurst' | 'ionPulse';
 export type PlatformKind = 'static' | 'moving' | 'falling' | 'spring' | 'magnet' | 'crystal';
 export type PlatformSurfaceTerrainKind = 'magnet' | 'crystal';
@@ -184,6 +184,7 @@ export type RewardBlockState = Rect & {
   used: boolean;
   remainingHits: number;
   hitFlashMs: number;
+  expiresInMs?: number;
   reward: RewardDefinition;
 };
 
@@ -269,12 +270,44 @@ export type EnemyState = {
     bobPhase: number;
     originY: number;
   };
+  boss?: {
+    health: number;
+    maxHealth: number;
+    visualStyle?: 'core' | 'crab';
+    minIntervalMs: number;
+    maxIntervalMs: number;
+    minMoveIntervalMs: number;
+    maxMoveIntervalMs: number;
+    moveTimerMs: number;
+    movementPhase?: 'random-hold' | 'random-jump';
+    movementPhaseTimerMs?: number;
+    movementTargetX?: number;
+    runSpeed: number;
+    jumpImpulse: number;
+    left: number;
+    right: number;
+    timerMs: number;
+    projectileSpeed: number;
+    shotHeights: number[];
+    powerShotChance: number;
+    powerShots: PowerType[];
+    walkerSpawn?: {
+      speed: number;
+      maxAlive: number;
+      damageOnStomp: number;
+    };
+  };
+  bossSpawn?: {
+    sourceBossId: string;
+    damageOnStomp: number;
+  };
 };
 
 export type ProjectileState = {
   id: string;
   owner: 'enemy' | 'player';
   variant?: TurretVariantId;
+  power?: PowerType;
   x: number;
   y: number;
   vx: number;
@@ -614,7 +647,7 @@ export const createDefaultGameplayTelemetry = (): GameplayTelemetry => ({
 });
 
 export const createDefaultSessionProgress = (): SessionProgress => ({
-  unlockedStageIndex: 5,
+  unlockedStageIndex: 6,
   totalCoins: 0,
   activePowers: createDefaultPowerInventory(),
   powerTimers: createDefaultPowerTimers(),

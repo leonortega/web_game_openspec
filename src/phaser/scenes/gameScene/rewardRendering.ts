@@ -115,10 +115,18 @@ export function syncCollectible(scene: GameSceneRewardRenderingContext, collecti
 }
 
 export function syncRewardBlock(scene: GameSceneRewardRenderingContext, rewardBlock: RewardBlockState): void {
-  const sprite = scene.rewardBlockSprites.get(rewardBlock.id);
-  const icon = scene.rewardBlockIcons.get(rewardBlock.id);
-  if (!sprite || !icon) {
-    return;
+  let sprite = scene.rewardBlockSprites.get(rewardBlock.id);
+  if (!sprite) {
+    sprite = scene.add.graphics().setDepth(4.12);
+    ignoreFromUiCamera(scene, sprite);
+    scene.rewardBlockSprites.set(rewardBlock.id, sprite);
+  }
+
+  let icon = scene.rewardBlockIcons.get(rewardBlock.id);
+  if (!icon) {
+    icon = scene.add.graphics().setDepth(4.15);
+    ignoreFromUiCamera(scene, icon);
+    scene.rewardBlockIcons.set(rewardBlock.id, icon);
   }
 
   const flashProgress = Phaser.Math.Clamp(rewardBlock.hitFlashMs / 180, 0, 1);

@@ -78,6 +78,8 @@ export type GameSceneCleanupContext = Phaser.Scene & {
   enemyDefeatVisibleUntilMs: Map<string, number>;
   playerDefeatVisibleUntilMs: number;
   playerDefeatResetPending: boolean;
+  bossEnergyBar?: Phaser.GameObjects.Graphics;
+  bossEnergyLabel?: Phaser.GameObjects.Text;
   feedbackCounts: Record<string, number>;
   setPauseOverlayVisible(visible: boolean): void;
   setStageStartArrivalVisible(visible: boolean): void;
@@ -244,6 +246,10 @@ export function cleanupGameScene(scene: GameSceneCleanupContext): void {
   scene.audio.stopMusic();
   scene.setPauseOverlayVisible(false);
   scene.hud.root.destroy(true);
+  scene.bossEnergyBar?.destroy();
+  scene.bossEnergyLabel?.destroy();
+  scene.bossEnergyBar = undefined;
+  scene.bossEnergyLabel = undefined;
   // Destroy any GPU layers created at runtime.
   try {
     (scene as any).tileGPULayer?.destroy?.();
@@ -738,38 +744,43 @@ function createRewardRenderables(scene: GameSceneBaseDisplayContext, state: Read
 
 function createEnemyRenderables(scene: GameSceneBaseDisplayContext, state: Readonly<SessionSnapshot>): void {
   for (const enemy of state.stageRuntime.enemies) {
-    const sprite = scene.add.graphics().setDepth(0);
+    const sprite = scene.add.graphics().setDepth(enemy.kind === 'boss' ? 4.8 : 2.8);
     scene.enemySprites.set(enemy.id, sprite);
     scene.enemyAccentSprites.set(enemy.id, []);
   }
 }
 
 function createExitAndArrivalRenderables(scene: GameSceneBaseDisplayContext, stage: SessionSnapshot['stage']): void {
+  const exitInitiallyVisible = stage.id !== 'boss-1';
   scene.exitBaseShadow = scene.add
     .rectangle(stage.exit.x + stage.exit.width / 2, stage.exit.y + stage.exit.height + 10, stage.exit.width + 28, 10, scene.retroPalette.ink, 0.26)
     .setOrigin(0.5)
-    .setDepth(1.1);
+    .setDepth(1.1)
+    .setVisible(exitInitiallyVisible);
   scene.exitBase = scene.add
     .image(stage.exit.x + stage.exit.width / 2, stage.exit.y + stage.exit.height + 4, 'exit-base')
     .setDisplaySize(stage.exit.width + 24, 12)
     .setTint(scene.retroPalette.panelAlt)
     .setAlpha(0.94)
     .setOrigin(0.5)
-    .setDepth(1.2);
+    .setDepth(1.2)
+    .setVisible(exitInitiallyVisible);
   scene.exitBeacon = scene.add
     .image(stage.exit.x + stage.exit.width / 2, stage.exit.y + 18, 'exit-beacon')
     .setDisplaySize(14, 8)
     .setTint(scene.retroPalette.bright)
     .setAlpha(0.82)
     .setOrigin(0.5)
-    .setDepth(2.2);
+    .setDepth(2.2)
+    .setVisible(exitInitiallyVisible);
   scene.exitShell = scene.add
     .graphics()
     .setPosition(
       stage.exit.x + EXIT_CAPSULE_ART_BOUNDS.shell.x + EXIT_CAPSULE_ART_BOUNDS.shell.width / 2,
       stage.exit.y + EXIT_CAPSULE_ART_BOUNDS.shell.y + EXIT_CAPSULE_ART_BOUNDS.shell.height / 2,
     )
-    .setDepth(1.25);
+    .setDepth(1.25)
+    .setVisible(exitInitiallyVisible);
   scene.exitShell.setData('debugWidth', EXIT_CAPSULE_ART_BOUNDS.shell.width);
   scene.exitShell.setData('debugTextureKey', 'shared-teleport-machine');
   scene.exitDoor = scene.add
@@ -778,7 +789,8 @@ function createExitAndArrivalRenderables(scene: GameSceneBaseDisplayContext, sta
       stage.exit.x + EXIT_CAPSULE_ART_BOUNDS.door.x + EXIT_CAPSULE_ART_BOUNDS.door.width / 2,
       stage.exit.y + EXIT_CAPSULE_ART_BOUNDS.door.y + EXIT_CAPSULE_ART_BOUNDS.door.height / 2,
     )
-    .setDepth(1.3);
+    .setDepth(1.3)
+    .setVisible(exitInitiallyVisible);
   scene.exitDoor.setData('debugWidth', EXIT_CAPSULE_ART_BOUNDS.door.width);
   scene.exitDoor.setData('debugTextureKey', 'shared-teleport-shutter');
     

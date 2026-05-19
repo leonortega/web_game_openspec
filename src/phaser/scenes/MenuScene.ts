@@ -360,7 +360,7 @@ export class MenuScene extends Phaser.Scene {
       const rootStartY = frameTop + 232;
       const optionsStartY = frameTop + 168;
       const helpCenterY = frameTop + Math.min(frameHeight - 178, 310);
-      const footerY = centerY + frameHeight / 2 - (this.view === 'help' ? 14 : 12);
+      const footerY = centerY + frameHeight / 2 - (this.view === 'help' || this.view === 'levelSelect' ? 18 : 12);
 
       menuTitleText.setPosition(centerX, titleY);
       subtitleText.setPosition(centerX, subtitleY);
@@ -379,12 +379,30 @@ export class MenuScene extends Phaser.Scene {
         button.container.setPosition(centerX, optionsStartY + index * 54);
       });
 
-      const levelButtonWidth = Math.min(620, Math.max(280, frameWidth - 92));
-      const levelStartY = frameTop + 166;
+      const levelColumns = frameWidth >= 640 && levelButtons.length > 6 ? 2 : 1;
+      const levelRows = Math.max(1, Math.ceil(levelButtons.length / levelColumns));
+      const levelTop = frameTop + 166;
+      const levelBottom = frameTop + frameHeight - 54;
+      const levelAvailableHeight = Math.max(160, levelBottom - levelTop);
+      const levelRowPitch = levelColumns > 1
+        ? Math.min(54, Math.floor(levelAvailableHeight / levelRows))
+        : Math.min(56, Math.floor(levelAvailableHeight / levelRows));
+      const levelButtonHeight = Math.max(32, Math.min(levelColumns > 1 ? 44 : 50, levelRowPitch - 6));
+      const levelColumnGap = 24;
+      const levelButtonWidth =
+        levelColumns > 1
+          ? Math.min(360, Math.max(240, (frameWidth - 112 - levelColumnGap) / 2))
+          : Math.min(620, Math.max(280, frameWidth - 92));
       levelButtons.forEach((button, index) => {
-        resizePanel(button.background, levelButtonWidth, 50);
-        button.hitArea.setSize(levelButtonWidth, 50);
-        button.container.setPosition(centerX, levelStartY + index * 56);
+        const column = index % levelColumns;
+        const row = Math.floor(index / levelColumns);
+        const columnOffset =
+          levelColumns === 1 ? 0 : (column - (levelColumns - 1) / 2) * (levelButtonWidth + levelColumnGap);
+        resizePanel(button.background, levelButtonWidth, levelButtonHeight);
+        button.hitArea.setSize(levelButtonWidth, levelButtonHeight);
+        button.text.setFontSize(levelColumns > 1 ? '12px' : levelButtonHeight <= 36 ? '12px' : '14px');
+        button.text.setWordWrapWidth(Math.max(180, levelButtonWidth - 24), true);
+        button.container.setPosition(centerX + columnOffset, levelTop + row * levelRowPitch);
       });
 
       helpPanelWidth = Math.min(760, Math.max(300, frameWidth - 72));
@@ -436,13 +454,11 @@ export class MenuScene extends Phaser.Scene {
     };
 
     const renderLevelLabels = (): void => {
-      const unlockedStageIndex = bridge.getSession().getState().progress.unlockedStageIndex;
       levelButtons.forEach((button, index) => {
         const stage = stageDefinitions[index];
-        const locked = index > unlockedStageIndex;
         const tierLabel = stageTierLabels[index] ?? 'Survey';
-        button.text.setText(`${index + 1}. ${stage.name}  ${tierLabel}${locked ? '  [LOCKED]' : ''}`);
-        button.container.setAlpha(locked ? 0.7 : 0.92);
+        button.text.setText(`${index + 1}. ${stage.name}  ${tierLabel}`);
+        button.container.setAlpha(0.92);
       });
     };
 
@@ -501,7 +517,7 @@ export class MenuScene extends Phaser.Scene {
             ? 'ESC returns to the root menu.'
             : this.view === 'help'
               ? 'Mouse wheel or Up / Down scroll. ESC returns to the root menu.'
-              : 'Enter starts the highlighted unlocked stage. ESC returns to the root menu.',
+              : 'Enter starts stage. ESC returns.',
       );
       syncLayout(authoredGameSize);
     };
@@ -513,13 +529,15 @@ export class MenuScene extends Phaser.Scene {
       this.scene.start('stage-intro');
     };
 
+    const startSecretLevel = (stageIndex: number): void => {
+      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
+      bridge.beginTelemetrySession();
+      bridge.forceStartStage(stageIndex);
+      this.scene.start('stage-intro');
+    };
+
     const startSelectedLevel = (): void => {
-      const unlockedStageIndex = bridge.getSession().getState().progress.unlockedStageIndex;
-      if (this.levelSelectedIndex > unlockedStageIndex) {
-        void playMenuInteractionCue(this.audio, AUDIO_CUES.menuBack);
-        return;
-      }
-      startRun(this.levelSelectedIndex);
+      startSecretLevel(this.levelSelectedIndex);
     };
 
     const openLevelSelect = (): void => {

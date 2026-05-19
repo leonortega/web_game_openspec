@@ -559,8 +559,15 @@ export const drawProjectileGraphic = (
 ): void => {
   const bolt = colorPair(params.color, params.brightColor, params.borderColor);
   clearGraphics(graphics, params.alpha);
-  const width = params.projectile.variant ? 14 : 12;
-  const height = params.projectile.variant ? 10 : 8;
+  if (params.projectile.power) {
+    roundedRect(graphics, 0, 0, 18, 18, 3, bolt.deep, 0.95);
+    roundedRect(graphics, 3, 3, 12, 12, 2, bolt.base, 1);
+    rect(graphics, 5, 5, 8, 3, bolt.glow, 0.9);
+    rect(graphics, 7, 9, 4, 4, params.borderColor, 0.82);
+    return;
+  }
+  const width = params.projectile.power ? 16 : params.projectile.variant ? 14 : 12;
+  const height = params.projectile.power ? 12 : params.projectile.variant ? 10 : 8;
   roundedRect(graphics, 0, 1, width, Math.max(4, height - 2), 3, bolt.deep, 0.88);
   roundedRect(graphics, 2, 2, Math.max(6, width - 4), Math.max(3, height - 4), 2, bolt.base, 1);
   rect(graphics, width - 3, 3, 2, Math.max(2, height - 6), bolt.glow, 0.84);

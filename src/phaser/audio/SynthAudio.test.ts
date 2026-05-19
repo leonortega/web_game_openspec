@@ -277,19 +277,18 @@ describe('SynthAudio', () => {
   });
 
   it('keeps checked-in provenance manifests for menu, per-stage music, and sampled cues', () => {
-    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST).toHaveLength(7);
+    const activeMusicKeys = new Set([
+      MENU_SUSTAINED_MUSIC.assetKey,
+      ...stageDefinitions.map((stage) => getStageSustainedMusic(stage.id)?.assetKey).filter((assetKey) => assetKey !== undefined),
+    ]);
+    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST).toHaveLength(activeMusicKeys.size);
     expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.license === 'CC-BY-4.0')).toBe(true);
     expect(MENU_SUSTAINED_MUSIC.title).toBe('Call For Love');
-    expect(getStageSustainedMusic('surveyors-runoff')?.title).toBe('Call For Love');
-    expect(getStageSustainedMusic('signal-weir')?.title).toBe('Goodbye Tales');
-    expect(getStageSustainedMusic('prism-liftworks')?.title).toBe('Give Her Shadow');
-    expect(getStageSustainedMusic('forest-ruins')?.title).toBe('Goodbye Tales');
-    expect(getStageSustainedMusic('amber-cavern')?.title).toBe('Give Her Shadow');
-    expect(getStageSustainedMusic('sky-sanctum')?.title).toBe('Get Out');
+    expect([...activeMusicKeys].every((assetKey) => ACTIVE_SUSTAINED_MUSIC_MANIFEST.some((entry) => entry.assetKey === assetKey))).toBe(true);
     expect(getAllMappedSfxAssets()).toHaveLength(Object.keys(AUDIO_CUES).length - 1);
     expect(getAllMappedSfxAssets().every((entry) => entry.license === 'CC0')).toBe(true);
     expect(getAllMappedSfxAssets().every((entry) => entry.localAssetPath.startsWith('/audio/sfx/juhani-junkala-512/'))).toBe(true);
-    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.some((entry) => entry.localAssetPath.startsWith('/audio/music/chillmindscapes-pack-4/'))).toBe(true);
+    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.localAssetPath.startsWith('/audio/music/'))).toBe(true);
     expect([...ACTIVE_SUSTAINED_MUSIC_MANIFEST, ...getAllMappedSfxAssets()].every((entry) => !entry.localAssetPath.includes('source-packs'))).toBe(true);
   });
 

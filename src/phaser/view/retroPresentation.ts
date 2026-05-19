@@ -463,9 +463,31 @@ export type RetroEnemyPose = {
 };
 
 export const getRetroEnemyPose = (
-  enemy: Pick<EnemyState, 'kind' | 'vx' | 'vy' | 'x' | 'turret' | 'charger' | 'flyer' | 'hop'>,
+  enemy: Pick<EnemyState, 'kind' | 'vx' | 'vy' | 'x' | 'turret' | 'charger' | 'flyer' | 'hop' | 'boss'>,
   timeMs: number,
 ): RetroEnemyPose => {
+  if (enemy.kind === 'boss' && enemy.boss) {
+    if (enemy.vy < -40) {
+      return { state: 'hop-rise', yOffset: -8, scaleX: 0.96, scaleY: 1.06, alpha: 1, accentAlpha: 0, accentOffsetX: 0, accentOffsetY: 0 };
+    }
+    if (enemy.vy > 40) {
+      return { state: 'hop-fall', yOffset: 4, scaleX: 1.04, scaleY: 0.94, alpha: 1, accentAlpha: 0, accentOffsetX: 0, accentOffsetY: 0 };
+    }
+    if (Math.abs(enemy.vx) >= 16) {
+      const runStep = getRetroMotionStep(timeMs + enemy.x, 90, 2);
+      return {
+        state: runStep === 0 ? 'walk-a' : 'walk-b',
+        yOffset: runStep === 0 ? -5 : 3,
+        scaleX: runStep === 0 ? 1.04 : 0.98,
+        scaleY: runStep === 0 ? 0.97 : 1.03,
+        alpha: 1,
+        accentAlpha: 0,
+        accentOffsetX: 0,
+        accentOffsetY: 0,
+      };
+    }
+  }
+
   if (enemy.kind === 'turret' && enemy.turret && enemy.turret.telegraphMs > 0) {
     const progress = 1 - enemy.turret.telegraphMs / Math.max(enemy.turret.telegraphDurationMs, 1);
     const pulse = Math.min(2, Math.floor(progress * 3));

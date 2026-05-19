@@ -103,6 +103,36 @@
       "webFormat": "wav",
       "intendedMapping": "sky-sanctum gameplay",
       "volume": 0.28
+    },
+    {
+      "assetKey": "music-stage-boss-1",
+      "surface": "stage",
+      "stageId": "boss-1",
+      "title": "Boss 1",
+      "creator": "Unknown",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "",
+      "originalFileName": "boss-1.mp3",
+      "originalSourcePackRelativePath": "boss-1.mp3",
+      "localAssetPath": "/audio/music/boss-1.mp3",
+      "webFormat": "mp3",
+      "intendedMapping": "boss-1 gameplay",
+      "volume": 0.3
+    },
+    {
+      "assetKey": "music-stage-boss-2",
+      "surface": "stage",
+      "stageId": "boss-2",
+      "title": "Boss 2",
+      "creator": "Unknown",
+      "license": "CC-BY-4.0",
+      "sourceUrl": "",
+      "originalFileName": "boss-2.mp3",
+      "originalSourcePackRelativePath": "boss-2.mp3",
+      "localAssetPath": "/audio/music/boss-2.mp3",
+      "webFormat": "mp3",
+      "intendedMapping": "boss-2 gameplay",
+      "volume": 0.3
     }
   ],
   "backups": [

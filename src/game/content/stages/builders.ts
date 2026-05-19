@@ -371,8 +371,8 @@ export const normalizeRewardBlocks = (
 export const enemyRect = (enemy: EnemyDefinition): Rect => ({
   x: enemy.position.x,
   y: enemy.position.y,
-  width: enemy.kind === 'turret' ? 28 : 34,
-  height: enemy.kind === 'turret' ? 38 : enemy.kind === 'flyer' ? 24 : 30,
+  width: enemy.kind === 'boss' ? 220 : enemy.kind === 'turret' ? 28 : 34,
+  height: enemy.kind === 'boss' ? 260 : enemy.kind === 'turret' ? 38 : enemy.kind === 'flyer' ? 24 : 30,
 });
 
 export const intersectsRect = (a: Rect, b: Rect): boolean =>

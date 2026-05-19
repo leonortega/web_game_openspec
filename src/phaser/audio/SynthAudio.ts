@@ -98,6 +98,15 @@ const CUE_PROFILES: Record<AudioCue, CueProfile> = {
       { frequency: 246.94, durationMs: 120, type: 'triangle', volume: 0.018, offsetMs: 30 },
     ],
   },
+  [AUDIO_CUES.bossPain]: {
+    family: 'boss',
+    signature: 'heavy crab pain rasp',
+    tones: [
+      { frequency: 146.83, durationMs: 90, type: 'sawtooth', volume: 0.03 },
+      { frequency: 110, durationMs: 150, type: 'triangle', volume: 0.024, offsetMs: 24 },
+      { frequency: 73.42, durationMs: 190, type: 'sine', volume: 0.018, offsetMs: 70 },
+    ],
+  },
   [AUDIO_CUES.turretFire]: { family: 'danger', signature: 'mechanical cannon bark', tones: [{ frequency: 349.23, durationMs: 90, type: 'square', volume: 0.026 }, { frequency: 233.08, durationMs: 110, type: 'triangle', volume: 0.018, offsetMs: 20 }] },
   [AUDIO_CUES.enemyPatrol]: { family: 'danger', signature: 'patrol turn tick', tones: [{ frequency: 277.18, durationMs: 60, type: 'square', volume: 0.02 }, { frequency: 233.08, durationMs: 70, type: 'triangle', volume: 0.015, offsetMs: 28 }] },
   [AUDIO_CUES.enemyHop]: { family: 'danger', signature: 'enemy leap boing', tones: [{ frequency: 392, durationMs: 70, type: 'square', volume: 0.022 }, { frequency: 523.25, durationMs: 90, type: 'triangle', volume: 0.018, offsetMs: 34 }] },

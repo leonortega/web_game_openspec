@@ -68,6 +68,7 @@ export const SFX_ASSET_MANIFEST: SfxAssetManifestEntry[] = [
   defineSfx(AUDIO_CUES.thrusterImpact, 'combat', 'short thruster impact', 'General Sounds\\Impacts\\sfx_sounds_impact4.wav', 'thruster-impact.wav', 0.42),
   defineSfx(AUDIO_CUES.shoot, 'combat', 'short shoot', 'Weapons\\Lasers\\sfx_laser1.wav', 'shoot.wav', 0.38),
   defineSfx(AUDIO_CUES.shootHit, 'combat', 'short shoot hit', 'General Sounds\\Impacts\\sfx_sounds_impact5.wav', 'shoot-hit.wav', 0.4),
+  defineSfx(AUDIO_CUES.bossPain, 'boss', 'short boss pain', 'General Sounds\\Simple Damage Sounds\\sfx_damage_hit2.wav', 'hurt.wav', 0.54),
   defineSfx(AUDIO_CUES.turretFire, 'danger', 'short turret fire', 'Weapons\\Single Shot Sounds\\sfx_shot_single1.wav', 'turret-fire.wav', 0.4),
   defineSfx(AUDIO_CUES.enemyPatrol, 'danger', 'short enemy patrol', 'Movement\\Footsteps\\sfx_footstep1.wav', 'enemy-patrol.wav', 0.24),
   defineSfx(AUDIO_CUES.enemyHop, 'danger', 'short enemy hop', 'Movement\\Jumping and Landing\\sfx_movement_jump2.wav', 'enemy-hop.wav', 0.32),
