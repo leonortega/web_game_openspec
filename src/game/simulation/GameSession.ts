@@ -7,8 +7,6 @@ import {
   findGroundedEnemySupport,
   findSupportBelowSpan,
   resolveGroundedEnemyRect,
-  resolveCheckpointRect,
-  resolveCheckpointRespawnPoint,
   resolveHazardRect,
 } from '../content/stages/builders';
 import type { InputState } from '../input/actions';
@@ -19,11 +17,13 @@ import { createActor } from 'xstate';
 import {
   BRITTLE_READY_BREAK_DELAY_MS,
   BRITTLE_WARNING_MS,
+  createDefaultGameplayTelemetry,
   SLUDGE_GROUND_ACCEL_MULTIPLIER,
   SLUDGE_MAX_SPEED_MULTIPLIER,
   createDefaultPowerInventory,
   createDefaultPowerTimers,
   createDefaultRunSettings,
+  createDefaultStageTelemetry,
   createDefaultSessionProgress,
   createPlayerStateWithMachine,
   getAllCollectiblesRecoveredMessage,
@@ -32,7 +32,6 @@ import {
   getStageObjectiveBriefing,
   getStageObjectiveCompletionMessage,
   getStageObjectiveExitReminder,
-  type CheckpointState,
   type CollectibleState,
   type DifficultySetting,
   type EnemyPressureSetting,
@@ -56,6 +55,7 @@ import {
   type RewardRevealState,
   type RunSettings,
   type SessionProgress,
+  type StageTelemetry,
   type StageObjectiveState,
   type StageRuntime,
   TURRET_VARIANT_CONFIG,
@@ -70,6 +70,12 @@ import {
   isTimedRevealBridgeLegible,
   normalizeRevealedPlatformIds,
 } from './state';
+import {
+  captureCheckpointRestoreState,
+  createRuntimeCheckpoints,
+  resolvePlayerSpawnFromCheckpoint,
+  type CheckpointRestoreState,
+} from './checkpointRuntime';
 
 const PLAYER_WIDTH = 26;
 const PLAYER_HEIGHT = 42;
@@ -94,6 +100,7 @@ const THRUSTER_IMPACT_WINDOW_MS = 180;
 const THRUSTER_IMPACT_MIN_SPEED = 140;
 const PLAYER_PROJECTILE_SPEED = 520;
 const POWER_INVINCIBLE_MS = 10_000;
+const BOSS_POWER_BLOCK_LIFETIME_MS = 20_000;
 const REWARD_REVEAL_MS = 1000;
 const REWARD_BLOCK_FLASH_MS = 180;
 const EXIT_FINISH_DURATION_MS = 720;
@@ -117,6 +124,13 @@ const CRYSTAL_TOUCH_REPEAT_MS = 260;
 const INCLUDE_OVERLAPPING_AUTHORED_OCCUPANTS = true;
 const PLAYER_PRESENTATION_ORDER: PowerType[] = ['invincible', 'shooter', 'doubleJump', 'dash'];
 const DEFAULT_TURRET_PROJECTILE_SPEED = 260;
+const WALKER_WIDTH = 34;
+const WALKER_HEIGHT = 30;
+const BOSS_TWO_INITIAL_JUMP_INTERVAL_MS = 5_000;
+const BOSS_TWO_MIN_JUMP_INTERVAL_MS = 5_000;
+const BOSS_TWO_MAX_JUMP_INTERVAL_MS = 15_000;
+const BOSS_TWO_TRAVEL_SPEED_MULTIPLIER = 4.35;
+const BOSS_TWO_HIGH_JUMP_MULTIPLIER = 1.35;
 const GRAVITY_FIELD_SCALE: Record<GravityFieldKind, number> = {
   'anti-grav-stream': -0.38,
   'gravity-inversion-column': -1,
@@ -159,6 +173,7 @@ export type SessionSnapshot = {
   stage: StageDefinition;
   stageRuntime: StageRuntime;
   currentSegmentId: string;
+  stageElapsedMs: number;
   player: PlayerState;
   progress: SessionProgress;
   activeCheckpointId: string | null;
@@ -175,14 +190,6 @@ export type SessionSnapshot = {
   stageMessage: string;
   stageMessageTimerMs: number;
   respawnTimerMs: number;
-};
-
-type CheckpointRestoreState = {
-  collectedCollectibleIds: Set<string>;
-  coinRewardBlocks: Map<string, { used: boolean; remainingHits: number }>;
-  collectedCoins: number;
-  allCoinsRecovered: boolean;
-  objectiveCompleted: boolean;
 };
 
 const createStageObjectiveState = (
@@ -438,7 +445,10 @@ const expandRect = (rect: Rect, paddingX: number, paddingY = paddingX): Rect => 
   height: rect.height + paddingY * 2,
 });
 
-const groundedEnemyKinds: EnemyState['kind'][] = ['walker', 'hopper', 'turret', 'charger'];
+const BOSS_WIDTH = 220;
+const BOSS_HEIGHT = 260;
+
+const groundedEnemyKinds: EnemyState['kind'][] = ['walker', 'hopper', 'turret', 'charger', 'boss'];
 
 const isGroundedEnemy = (enemy: Pick<EnemyState, 'kind'>): boolean => groundedEnemyKinds.includes(enemy.kind);
 
@@ -473,7 +483,7 @@ const clampLaneToSupport = (
 };
 
 const isGroundedSpacingEnemy = (enemy: Pick<EnemyState, 'kind'>): boolean =>
-  enemy.kind === 'walker' || enemy.kind === 'turret' || enemy.kind === 'charger';
+  enemy.kind === 'walker' || enemy.kind === 'turret' || enemy.kind === 'charger' || enemy.kind === 'boss';
 
 const createTurretVariantRuntime = (
   variant: TurretVariantId,
@@ -492,6 +502,25 @@ const resetVariantTurretCycle = (
   turret.burstGapMs = 0;
   turret.pendingShots = Math.max(0, TURRET_VARIANT_CONFIG[variant].burstShots - 1);
 };
+
+const randomBossInterval = (boss: Pick<NonNullable<EnemyState['boss']>, 'minIntervalMs' | 'maxIntervalMs'>): number => {
+  const min = Math.min(boss.minIntervalMs, boss.maxIntervalMs);
+  const max = Math.max(boss.minIntervalMs, boss.maxIntervalMs);
+  return min + Math.random() * (max - min);
+};
+
+const randomBossMoveInterval = (
+  boss: Pick<NonNullable<EnemyState['boss']>, 'minMoveIntervalMs' | 'maxMoveIntervalMs'>,
+): number => {
+  const min = Math.min(boss.minMoveIntervalMs, boss.maxMoveIntervalMs);
+  const max = Math.max(boss.minMoveIntervalMs, boss.maxMoveIntervalMs);
+  return min + Math.random() * (max - min);
+};
+
+const hasAliveBoss = (stageRuntime: Pick<StageRuntime, 'enemies'>): boolean =>
+  stageRuntime.enemies.some((enemy) => enemy.kind === 'boss' && enemy.alive);
+
+const isPowerRewardBlock = (block: RewardBlockState): boolean => block.reward.kind === 'power';
 
 const resolveTurretPosition = (
   turret: EnemyState,
@@ -679,6 +708,23 @@ const cloneProgress = (progress: SessionProgress): SessionProgress => ({
   runSettings: {
     ...createDefaultRunSettings(),
     ...progress.runSettings,
+  },
+  telemetry: {
+    ...createDefaultGameplayTelemetry(),
+    ...progress.telemetry,
+    stages: Object.fromEntries(
+      Object.entries(progress.telemetry?.stages ?? {}).map(([stageId, stageTelemetry]) => [
+        stageId,
+        {
+          ...createDefaultStageTelemetry(),
+          ...stageTelemetry,
+          deathsBySegment: { ...stageTelemetry.deathsBySegment },
+          checkpointRetries: { ...stageTelemetry.checkpointRetries },
+          secretRouteUses: { ...stageTelemetry.secretRouteUses },
+          objective: { ...stageTelemetry.objective },
+        },
+      ]),
+    ),
   },
 });
 
@@ -962,11 +1008,14 @@ export class GameSession {
 
   private checkpointRevealIds: string[] = [];
 
+  private telemetrySecretRouteIds = new Set<string>();
+
   private crystalTouchLoopMs = 0;
 
   constructor() {
     this.playerActor = createActor(playerStateMachine);
     this.playerActor.start();
+    this.resetAttemptTelemetry();
     this.snapshot = this.createSnapshot(0, createDefaultSessionProgress());
   }
 
@@ -974,6 +1023,7 @@ export class GameSession {
     this.checkpointRevealIds = [];
     this.cameraViewBox = null;
     this.visibleEnemyIds.clear();
+    this.resetAttemptTelemetry();
     this.snapshot = this.createSnapshot(0, cloneProgress(progress));
   }
 
@@ -991,6 +1041,7 @@ export class GameSession {
     this.checkpointRevealIds = [];
     this.cameraViewBox = null;
     this.visibleEnemyIds.clear();
+    this.resetAttemptTelemetry();
     this.snapshot = this.createSnapshot(this.snapshot.stageIndex, cloneProgress(this.snapshot.progress));
   }
 
@@ -999,6 +1050,7 @@ export class GameSession {
     this.checkpointRevealIds = [];
     this.cameraViewBox = null;
     this.visibleEnemyIds.clear();
+    this.resetAttemptTelemetry();
     this.snapshot = this.createSnapshot(clamped, cloneProgress(this.snapshot.progress));
   }
 
@@ -1007,6 +1059,7 @@ export class GameSession {
     this.checkpointRevealIds = [];
     this.cameraViewBox = null;
     this.visibleEnemyIds.clear();
+    this.resetAttemptTelemetry();
     this.snapshot = this.createSnapshot(clamped, cloneProgress(this.snapshot.progress));
   }
 
@@ -1079,6 +1132,7 @@ export class GameSession {
 
     this.syncPlayerContextToMachine(direction as -1 | 0 | 1);
     this.snapshot.levelJustCompleted = false;
+    this.snapshot.stageElapsedMs += deltaMs;
     this.updateMessageTimer(deltaMs);
     this.updatePowerTimers(deltaMs);
     this.updateRewardFeedback(deltaMs);
@@ -1442,6 +1496,7 @@ export class GameSession {
     this.handleGravityCapsules();
     this.handleScannerVolumes();
     this.handleRevealVolumes();
+    this.trackSecretRouteUsage();
     this.finalizeTemporaryBridgeExpiry();
     this.updatePlayerGravityState();
     const contactedSpringPlatform =
@@ -1521,7 +1576,14 @@ export class GameSession {
   private updateRewardFeedback(deltaMs: number): void {
     for (const block of this.snapshot.stageRuntime.rewardBlocks) {
       block.hitFlashMs = Math.max(0, block.hitFlashMs - deltaMs);
+      if (block.expiresInMs !== undefined) {
+        block.expiresInMs = Math.max(0, block.expiresInMs - deltaMs);
+      }
     }
+
+    this.snapshot.stageRuntime.rewardBlocks = this.snapshot.stageRuntime.rewardBlocks.filter(
+      (block) => !isPowerRewardBlock(block) || (!block.used && (block.expiresInMs === undefined || block.expiresInMs > 0)),
+    );
 
     for (const reveal of this.snapshot.stageRuntime.rewardReveals) {
       reveal.timerMs = Math.max(0, reveal.timerMs - deltaMs);
@@ -1962,6 +2024,13 @@ export class GameSession {
       }
 
       if (enemy.kind === 'walker' && enemy.patrol) {
+        if (enemy.bossSpawn) {
+          const playerCenterX = player.x + player.width / 2;
+          const enemyCenterX = enemy.x + enemy.width / 2;
+          if (Math.abs(playerCenterX - enemyCenterX) > 6) {
+            enemy.direction = playerCenterX >= enemyCenterX ? 1 : -1;
+          }
+        }
         enemy.vx = enemy.direction * enemy.patrol.speed;
         enemy.x += enemy.vx * deltaSec;
         const laneLeft = enemy.laneLeft ?? enemy.patrol.left;
@@ -2078,6 +2147,26 @@ export class GameSession {
           this.spawnTurretProjectile(stageRuntime, enemy);
           enemy.direction = enemy.direction === 1 ? -1 : 1;
           this.emitCue(AUDIO_CUES.turretFire);
+        }
+      }
+
+      if (enemy.kind === 'boss' && enemy.boss) {
+        if (!this.isEnemyVisible(enemy)) {
+          continue;
+        }
+
+        this.updateBossMovement(enemy, traversablePlatforms, deltaMs, deltaSec);
+        enemy.boss.timerMs -= deltaMs;
+        if (enemy.boss.timerMs <= 0) {
+          if (enemy.boss.walkerSpawn) {
+            this.spawnBossWalker(stageRuntime, enemy);
+          } else {
+            enemy.direction = player.x + player.width / 2 >= enemy.x + enemy.width / 2 ? 1 : -1;
+            enemy.vx = enemy.direction * Math.abs(enemy.vx || enemy.boss.runSpeed);
+            this.spawnBossProjectile(stageRuntime, enemy);
+            this.emitCue(AUDIO_CUES.turretFire);
+          }
+          enemy.boss.timerMs = randomBossInterval(enemy.boss);
         }
       }
 
@@ -2206,7 +2295,11 @@ export class GameSession {
       if (projectile.owner === 'enemy') {
         if (intersectsRect(shotRect, playerRect(player))) {
           projectile.alive = false;
-          this.damagePlayer();
+          if (projectile.power) {
+            this.grantPower(projectile.power);
+          } else {
+            this.damagePlayer();
+          }
         }
         continue;
       }
@@ -2217,7 +2310,21 @@ export class GameSession {
         }
 
         projectile.alive = false;
-        this.defeatEnemy(enemy, 'plasma-blast', AUDIO_CUES.shootHit);
+        if (enemy.kind === 'boss' && enemy.boss) {
+          if (enemy.boss.walkerSpawn) {
+            this.emitCue(AUDIO_CUES.shootHit);
+            break;
+          }
+          enemy.boss.health = Math.max(0, enemy.boss.health - 1);
+          this.emitCue(AUDIO_CUES.shootHit);
+          if (enemy.boss.health <= 0) {
+            this.defeatEnemy(enemy, 'plasma-blast', AUDIO_CUES.shootHit);
+            this.setStageMessage('Boss defeated - exit online', 2200);
+            this.emitCue(AUDIO_CUES.unlock);
+          }
+        } else {
+          this.defeatEnemy(enemy, 'plasma-blast', AUDIO_CUES.shootHit);
+        }
         break;
       }
     }
@@ -2378,6 +2485,18 @@ export class GameSession {
     const { player, stageRuntime } = this.snapshot;
     const rect = playerRect(player);
     for (const enemy of stageRuntime.enemies) {
+      if (!enemy.alive || !intersectsRect(rect, enemyRect(enemy)) || !this.canStompBossSpawnedWalker(enemy)) {
+        continue;
+      }
+
+      this.defeatEnemy(enemy, 'stomp', AUDIO_CUES.stomp);
+      this.damageBossFromSpawnedWalker(enemy);
+      player.vy = -THRUSTER_IMPACT_REBOUND;
+      player.supportPlatformId = null;
+      return;
+    }
+
+    for (const enemy of stageRuntime.enemies) {
       if (!enemy.alive || !intersectsRect(rect, enemyRect(enemy))) {
         continue;
       }
@@ -2386,7 +2505,7 @@ export class GameSession {
         player.thrusterImpactWindowMs > 0 &&
         player.vy > THRUSTER_IMPACT_MIN_SPEED &&
         player.y + player.height <= enemy.y + 14;
-      if (thrusterImpactWindow && enemy.kind !== 'turret') {
+      if (thrusterImpactWindow && enemy.kind !== 'turret' && enemy.kind !== 'boss') {
         this.defeatEnemy(enemy, 'thruster-impact', AUDIO_CUES.thrusterImpact);
         player.vy = -THRUSTER_IMPACT_REBOUND;
         player.thrusterImpactWindowMs = 0;
@@ -2413,6 +2532,362 @@ export class GameSession {
       height: 12,
       alive: true,
     });
+  }
+
+  private spawnBossProjectile(stageRuntime: StageRuntime, enemy: EnemyState): void {
+    const boss = enemy.boss;
+    if (!boss || boss.shotHeights.length === 0) {
+      return;
+    }
+
+    const shotHeight = boss.shotHeights[Math.floor(Math.random() * boss.shotHeights.length)] ?? 42;
+    const power =
+      boss.powerShots.length > 0 && Math.random() < boss.powerShotChance
+        ? boss.powerShots[Math.floor(Math.random() * boss.powerShots.length)]
+        : undefined;
+
+    if (power) {
+      this.spawnBossPowerBlock(stageRuntime, enemy, power);
+      return;
+    }
+
+    stageRuntime.projectiles.push({
+      id: `${enemy.id}-boss-shot-${Math.random().toString(36).slice(2, 7)}`,
+      owner: 'enemy',
+      x: enemy.direction === 1 ? enemy.x + enemy.width : enemy.x - 16,
+      y: enemy.y + shotHeight,
+      vx: enemy.direction * boss.projectileSpeed,
+      width: 14,
+      height: 10,
+      alive: true,
+    });
+  }
+
+  private spawnBossPowerBlock(stageRuntime: StageRuntime, enemy: EnemyState, power: PowerType): void {
+    const blockWidth = 40;
+    const blockHeight = 40;
+    const floorClearance = 76;
+    const stageWidth = this.snapshot.stage.world.width;
+    const viewBox = this.cameraViewBox ?? { x: 0, y: 0, width: stageWidth, height: this.snapshot.stage.world.height };
+    const minX = Math.max(72, viewBox.x + 120);
+    const maxX = Math.min(stageWidth - blockWidth - 72, viewBox.x + viewBox.width - blockWidth - 120);
+    const safeMaxX = Math.max(minX, maxX);
+    const bossAvoidLeft = enemy.x - 64;
+    const bossAvoidRight = enemy.x + enemy.width + 64;
+    const visibleSupports = stageRuntime.platforms.filter(
+      (platform) =>
+        isStableEnemySupport(platform) &&
+        platform.width >= blockWidth + 24 &&
+        platform.x + platform.width >= minX &&
+        platform.x <= safeMaxX + blockWidth &&
+        platform.y >= viewBox.y + 80 &&
+        platform.y <= viewBox.y + viewBox.height + 80,
+    );
+    const support = visibleSupports.length > 0 ? visibleSupports[Math.floor(Math.random() * visibleSupports.length)] : null;
+    const supportMinX = support ? Math.max(minX, support.x + 12) : minX;
+    const supportMaxX = support ? Math.min(safeMaxX, support.x + support.width - blockWidth - 12) : safeMaxX;
+    let x = supportMinX + Math.random() * Math.max(0, supportMaxX - supportMinX);
+
+    if (x + blockWidth > bossAvoidLeft && x < bossAvoidRight) {
+      const leftCandidate = Math.min(supportMaxX, bossAvoidLeft - blockWidth);
+      const rightCandidate = Math.max(supportMinX, bossAvoidRight);
+      const canUseLeft = leftCandidate >= supportMinX;
+      const canUseRight = rightCandidate <= supportMaxX;
+      if (canUseLeft && canUseRight) {
+        x = Math.random() < 0.5 ? leftCandidate : rightCandidate;
+      } else if (canUseLeft) {
+        x = leftCandidate;
+      } else if (canUseRight) {
+        x = rightCandidate;
+      }
+    }
+
+    const floorY = support?.y ?? this.snapshot.stage.world.height - 40;
+    const y = Math.max(80, floorY - blockHeight - floorClearance);
+
+    stageRuntime.rewardBlocks.push({
+      id: `${enemy.id}-power-block-${power}-${Math.random().toString(36).slice(2, 7)}`,
+      x,
+      y,
+      width: blockWidth,
+      height: blockHeight,
+      reward: { kind: 'power', power },
+      used: false,
+      remainingHits: 1,
+      hitFlashMs: 0,
+      expiresInMs: BOSS_POWER_BLOCK_LIFETIME_MS,
+    });
+  }
+
+  private spawnBossWalker(stageRuntime: StageRuntime, enemy: EnemyState): void {
+    const boss = enemy.boss;
+    const spawn = boss?.walkerSpawn;
+    if (!boss || !spawn) {
+      return;
+    }
+
+    const spawnedWalkers = stageRuntime.enemies.filter((candidate) => candidate.bossSpawn?.sourceBossId === enemy.id);
+    const aliveSpawnCount = spawnedWalkers.filter((candidate) => candidate.alive).length;
+    if (aliveSpawnCount >= spawn.maxAlive) {
+      return;
+    }
+    if (enemy.supportPlatformId === null || enemy.supportY === null || Math.abs(enemy.y - enemy.supportY) > 4) {
+      return;
+    }
+
+    const laneLeft = 0;
+    const laneRight = this.snapshot.stage.world.width;
+    const centerX = enemy.x + enemy.width / 2 - WALKER_WIDTH / 2;
+    const supportY = enemy.supportY + enemy.height - WALKER_HEIGHT;
+    const playerCenterX = this.snapshot.player.x + this.snapshot.player.width / 2;
+    const bossCenterX = enemy.x + enemy.width / 2;
+    const direction = Math.abs(playerCenterX - bossCenterX) > 6 ? (playerCenterX >= bossCenterX ? 1 : -1) : 1;
+
+    stageRuntime.enemies.push({
+      id: `${enemy.id}-walker-${Math.random().toString(36).slice(2, 7)}`,
+      kind: 'walker',
+      x: clamp(centerX, laneLeft, Math.max(laneLeft, laneRight - WALKER_WIDTH)),
+      y: supportY,
+      vx: 0,
+      vy: 0,
+      width: WALKER_WIDTH,
+      height: WALKER_HEIGHT,
+      alive: true,
+      defeatCause: null,
+      direction,
+      supportY,
+      supportPlatformId: enemy.supportPlatformId,
+      laneLeft,
+      laneRight: laneRight - WALKER_WIDTH,
+      patrol: {
+        left: laneLeft,
+        right: laneRight,
+        speed: spawn.speed,
+      },
+      bossSpawn: {
+        sourceBossId: enemy.id,
+        damageOnStomp: spawn.damageOnStomp,
+      },
+    });
+
+    this.emitCue(AUDIO_CUES.enemyPatrol);
+  }
+
+  private canStompBossSpawnedWalker(enemy: EnemyState): boolean {
+    const { player } = this.snapshot;
+    return Boolean(
+      enemy.kind === 'walker' &&
+        enemy.bossSpawn &&
+        player.vy >= 0 &&
+        player.y + player.height <= enemy.y + Math.max(16, enemy.height * 0.55),
+    );
+  }
+
+  private damageBossFromSpawnedWalker(enemy: EnemyState): void {
+    const spawn = enemy.bossSpawn;
+    if (!spawn) {
+      return;
+    }
+
+    const boss = this.snapshot.stageRuntime.enemies.find(
+      (candidate) => candidate.id === spawn.sourceBossId && candidate.kind === 'boss' && candidate.alive && candidate.boss,
+    );
+    if (!boss?.boss) {
+      return;
+    }
+
+    boss.boss.health = Math.max(0, boss.boss.health - spawn.damageOnStomp);
+    this.emitCue(AUDIO_CUES.bossPain);
+    if (boss.boss.health <= 0) {
+      this.defeatEnemy(boss, 'stomp', AUDIO_CUES.shootHit);
+      this.setStageMessage('Boss defeated - exit online', 2200);
+      this.emitCue(AUDIO_CUES.unlock);
+    }
+  }
+
+  private updateBossMovement(
+    enemy: EnemyState,
+    traversablePlatforms: PlatformState[],
+    deltaMs: number,
+    deltaSec: number,
+  ): void {
+    const boss = enemy.boss;
+    if (!boss) {
+      return;
+    }
+
+    if (boss.visualStyle === 'crab') {
+      this.updateBossTwoMovement(enemy, boss, traversablePlatforms, deltaMs, deltaSec);
+      return;
+    }
+
+    boss.moveTimerMs -= deltaMs;
+    if (boss.moveTimerMs <= 0) {
+      boss.moveTimerMs = randomBossMoveInterval(boss);
+      const laneCenter = (boss.left + boss.right - enemy.width) / 2;
+      const rightBias = 0.5;
+      enemy.direction = enemy.x < laneCenter ? 1 : Math.random() < rightBias ? 1 : -1;
+      enemy.vx = enemy.direction * boss.runSpeed;
+      if (enemy.supportPlatformId && Math.random() < 0.46) {
+        enemy.vy = -boss.jumpImpulse;
+        enemy.supportPlatformId = null;
+        enemy.supportY = null;
+        this.emitCue(AUDIO_CUES.enemyHop);
+      }
+    }
+
+    const laneLeft = boss.left;
+    const laneRight = Math.max(laneLeft, boss.right - enemy.width);
+    if (enemy.supportPlatformId) {
+      enemy.x += enemy.vx * deltaSec;
+      enemy.y = enemy.supportY ?? enemy.y;
+    } else {
+      const previousBottom = enemy.y + enemy.height;
+      enemy.vy = Math.min(enemy.vy + this.snapshot.stage.world.gravity * deltaSec, MAX_FALL_SPEED);
+      enemy.x += enemy.vx * deltaSec;
+      enemy.y += enemy.vy * deltaSec;
+
+      for (const platform of traversablePlatforms.filter(isStableEnemySupport)) {
+        const crossedPlatformTop =
+          enemy.vy >= 0 &&
+          previousBottom <= platform.y + 12 &&
+          enemy.y + enemy.height >= platform.y &&
+          enemy.x + enemy.width > platform.x &&
+          enemy.x < platform.x + platform.width;
+        if (crossedPlatformTop) {
+          enemy.y = platform.y - enemy.height;
+          enemy.vy = 0;
+          enemy.supportY = enemy.y;
+          enemy.supportPlatformId = platform.id;
+          break;
+        }
+      }
+    }
+
+    if (enemy.x <= laneLeft) {
+      enemy.x = laneLeft;
+      enemy.direction = 1;
+      enemy.vx = boss.runSpeed;
+    } else if (enemy.x >= laneRight) {
+      enemy.x = laneRight;
+      enemy.direction = -1;
+      enemy.vx = -boss.runSpeed;
+    }
+  }
+
+  private updateBossTwoMovement(
+    enemy: EnemyState,
+    boss: NonNullable<EnemyState['boss']>,
+    traversablePlatforms: PlatformState[],
+    deltaMs: number,
+    deltaSec: number,
+  ): void {
+    const phase = boss.movementPhase ?? 'random-hold';
+    boss.movementPhase = phase;
+    boss.movementPhaseTimerMs =
+      (boss.movementPhaseTimerMs ?? this.randomBossTwoInitialJumpInterval()) - deltaMs;
+
+    const laneLeft = boss.left;
+    const laneRight = Math.max(laneLeft, boss.right - enemy.width);
+    const grounded = enemy.supportPlatformId !== null && enemy.supportY !== null && Math.abs(enemy.y - enemy.supportY) <= 4;
+
+    if (phase === 'random-hold') {
+      enemy.vx = 0;
+      if ((boss.movementPhaseTimerMs ?? 0) <= 0 && grounded) {
+        const targetX = this.pickBossTwoJumpTargetX(enemy, laneLeft, laneRight);
+        boss.movementPhase = 'random-jump';
+        boss.movementPhaseTimerMs = 0;
+        boss.movementTargetX = targetX;
+        enemy.direction = targetX >= enemy.x + enemy.width / 2 ? 1 : -1;
+        enemy.vx = enemy.direction * boss.runSpeed * BOSS_TWO_TRAVEL_SPEED_MULTIPLIER;
+        enemy.vy = -boss.jumpImpulse * BOSS_TWO_HIGH_JUMP_MULTIPLIER;
+        enemy.supportPlatformId = null;
+        enemy.supportY = null;
+        this.emitCue(AUDIO_CUES.enemyHop);
+      }
+    } else {
+      const targetX = boss.movementTargetX ?? this.pickBossTwoJumpTargetX(enemy, laneLeft, laneRight);
+      boss.movementTargetX = targetX;
+      const centerX = enemy.x + enemy.width / 2;
+      if (Math.abs(centerX - targetX) <= 22) {
+        enemy.vx = 0;
+      } else {
+        enemy.direction = targetX >= centerX ? 1 : -1;
+        enemy.vx = enemy.direction * boss.runSpeed * BOSS_TWO_TRAVEL_SPEED_MULTIPLIER;
+      }
+      if (grounded && Math.abs(centerX - targetX) <= 90) {
+        boss.movementPhase = 'random-hold';
+        boss.movementPhaseTimerMs = this.randomBossTwoJumpInterval();
+        boss.movementTargetX = undefined;
+        enemy.vx = 0;
+      }
+    }
+
+    this.moveBossWithGravity(enemy, traversablePlatforms, deltaSec, laneLeft, laneRight);
+  }
+
+  private randomBossTwoJumpInterval(): number {
+    return BOSS_TWO_MIN_JUMP_INTERVAL_MS + Math.random() * (BOSS_TWO_MAX_JUMP_INTERVAL_MS - BOSS_TWO_MIN_JUMP_INTERVAL_MS);
+  }
+
+  private randomBossTwoInitialJumpInterval(): number {
+    return BOSS_TWO_INITIAL_JUMP_INTERVAL_MS;
+  }
+
+  private pickBossTwoJumpTargetX(enemy: EnemyState, laneLeft: number, laneRight: number): number {
+    const centerX = enemy.x + enemy.width / 2;
+    const zones = [
+      laneLeft + 120,
+      laneLeft + (laneRight - laneLeft) * 0.5,
+      laneRight - 120,
+    ];
+    const distantZones = zones.filter((targetX) => Math.abs(targetX - centerX) >= 260);
+    const candidates = distantZones.length > 0 ? distantZones : zones;
+    return candidates[Math.floor(Math.random() * candidates.length)] ?? laneLeft + (laneRight - laneLeft) * 0.5;
+  }
+
+  private moveBossWithGravity(
+    enemy: EnemyState,
+    traversablePlatforms: PlatformState[],
+    deltaSec: number,
+    laneLeft: number,
+    laneRight: number,
+  ): void {
+    if (enemy.supportPlatformId) {
+      enemy.x += enemy.vx * deltaSec;
+      enemy.y = enemy.supportY ?? enemy.y;
+    } else {
+      const previousBottom = enemy.y + enemy.height;
+      enemy.vy = Math.min(enemy.vy + this.snapshot.stage.world.gravity * deltaSec, MAX_FALL_SPEED);
+      enemy.x += enemy.vx * deltaSec;
+      enemy.y += enemy.vy * deltaSec;
+
+      for (const platform of traversablePlatforms.filter(isStableEnemySupport)) {
+        const crossedPlatformTop =
+          enemy.vy >= 0 &&
+          previousBottom <= platform.y + 12 &&
+          enemy.y + enemy.height >= platform.y &&
+          enemy.x + enemy.width > platform.x &&
+          enemy.x < platform.x + platform.width;
+        if (crossedPlatformTop) {
+          enemy.y = platform.y - enemy.height;
+          enemy.vy = 0;
+          enemy.supportY = enemy.y;
+          enemy.supportPlatformId = platform.id;
+          break;
+        }
+      }
+    }
+
+    if (enemy.x <= laneLeft) {
+      enemy.x = laneLeft;
+      enemy.direction = 1;
+      enemy.vx = Math.abs(enemy.vx);
+    } else if (enemy.x >= laneRight) {
+      enemy.x = laneRight;
+      enemy.direction = -1;
+      enemy.vx = -Math.abs(enemy.vx);
+    }
   }
 
   private updateVariantTurret(enemy: EnemyState, stageRuntime: StageRuntime, deltaMs: number): void {
@@ -2464,6 +2939,10 @@ export class GameSession {
 
   private handleExit(): void {
     const { stage, stageRuntime } = this.snapshot;
+    if (hasAliveBoss(stageRuntime)) {
+      return;
+    }
+
     if (!stageRuntime.exitReached && intersectsRect(playerRect(this.snapshot.player), stage.exit)) {
       if (stageRuntime.objective && !stageRuntime.objective.completed) {
         this.setStageMessage(getStageObjectiveExitReminder(stageRuntime.objective.kind), 2200);
@@ -2573,7 +3052,12 @@ export class GameSession {
       return;
     }
 
+    this.recordDeathTelemetry();
     this.clearActivePowers();
+    this.snapshot.stageRuntime.rewardBlocks = this.snapshot.stageRuntime.rewardBlocks.filter(
+      (block) => !isPowerRewardBlock(block),
+    );
+    this.snapshot.stageRuntime.enemies = this.snapshot.stageRuntime.enemies.filter((enemy) => !enemy.bossSpawn);
     // Force health to 0 so isHealthZero guard is satisfied regardless of call site
     // (e.g. pit deaths bypass damagePlayer and never decrement health first)
     player.health = 0;
@@ -2595,12 +3079,14 @@ export class GameSession {
 
   private respawnPlayer(): void {
     const { progress, stageIndex } = this.snapshot;
+    this.recordCheckpointRetryTelemetry();
     this.playerActor.send({ type: 'RESPAWN' });
+    this.resetAttemptTelemetry();
     this.snapshot = this.createSnapshot(
       stageIndex,
       cloneProgress(progress),
       this.snapshot.activeCheckpointId,
-      this.captureCheckpointRestoreState(),
+      captureCheckpointRestoreState(this.snapshot.stageRuntime),
       this.snapshot.activeCheckpointId ? this.checkpointRevealIds : [],
     );
     this.settleGroundedEnemiesForDeathFreeze();
@@ -2625,6 +3111,7 @@ export class GameSession {
     block.used = true;
     this.spawnRewardReveal(block, block.reward);
     this.grantPower(block.reward.power);
+    this.snapshot.stageRuntime.rewardBlocks = this.snapshot.stageRuntime.rewardBlocks.filter((item) => item.id !== block.id);
   }
 
   private grantPower(power: PowerType): void {
@@ -2734,30 +3221,6 @@ export class GameSession {
     this.syncPlayerPresentationPower();
   }
 
-  private captureCheckpointRestoreState(): CheckpointRestoreState {
-    const { stageRuntime } = this.snapshot;
-
-    return {
-      collectedCollectibleIds: new Set(
-        stageRuntime.collectibles.filter((collectible) => collectible.collected).map((collectible) => collectible.id),
-      ),
-      coinRewardBlocks: new Map(
-        stageRuntime.rewardBlocks
-          .filter((rewardBlock) => rewardBlock.reward.kind === 'coins')
-          .map((rewardBlock) => [
-            rewardBlock.id,
-            {
-              used: rewardBlock.used,
-              remainingHits: rewardBlock.remainingHits,
-            },
-          ]),
-      ),
-      collectedCoins: stageRuntime.collectedCoins,
-      allCoinsRecovered: stageRuntime.allCoinsRecovered,
-      objectiveCompleted: stageRuntime.objective?.completed ?? false,
-    };
-  }
-
   private completeStageObjective(targetKind: StageObjectiveState['target']['kind'], targetId: string): boolean {
     const objective = this.snapshot.stageRuntime.objective;
     if (!objective || objective.completed) {
@@ -2769,8 +3232,64 @@ export class GameSession {
     }
 
     objective.completed = true;
+    this.recordObjectiveTelemetry();
     this.setStageMessage(getStageObjectiveCompletionMessage(objective.kind), 2200);
     return true;
+  }
+
+  private resetAttemptTelemetry(): void {
+    this.telemetrySecretRouteIds.clear();
+  }
+
+  private getStageTelemetry(stageId = this.snapshot.stage.id): StageTelemetry {
+    const stages = this.snapshot.progress.telemetry.stages;
+    if (!stages[stageId]) {
+      stages[stageId] = createDefaultStageTelemetry();
+    }
+    return stages[stageId];
+  }
+
+  private incrementCounter(counter: Record<string, number>, id: string): void {
+    counter[id] = (counter[id] ?? 0) + 1;
+  }
+
+  private recordDeathTelemetry(): void {
+    this.incrementCounter(this.getStageTelemetry().deathsBySegment, this.snapshot.currentSegmentId);
+  }
+
+  private recordCheckpointRetryTelemetry(): void {
+    if (!this.snapshot.activeCheckpointId) {
+      return;
+    }
+
+    this.incrementCounter(this.getStageTelemetry().checkpointRetries, this.snapshot.activeCheckpointId);
+  }
+
+  private recordObjectiveTelemetry(): void {
+    const objective = this.getStageTelemetry().objective;
+    const elapsedMs = Math.max(0, Math.round(this.snapshot.stageElapsedMs));
+    objective.completions += 1;
+    objective.totalCompletionMs += elapsedMs;
+    objective.lastCompletionMs = elapsedMs;
+    objective.bestCompletionMs =
+      objective.bestCompletionMs == null ? elapsedMs : Math.min(objective.bestCompletionMs, elapsedMs);
+  }
+
+  private trackSecretRouteUsage(): void {
+    const rect = playerRect(this.snapshot.player);
+
+    for (const route of this.snapshot.stage.secretRoutes) {
+      if (this.telemetrySecretRouteIds.has(route.id)) {
+        continue;
+      }
+
+      if (!intersectsRect(rect, route.entry) && !intersectsRect(rect, route.interior)) {
+        continue;
+      }
+
+      this.telemetrySecretRouteIds.add(route.id);
+      this.incrementCounter(this.getStageTelemetry().secretRouteUses, route.id);
+    }
   }
 
   private findSupportSurface(id: string): SolidSurface | null {
@@ -2912,6 +3431,9 @@ export class GameSession {
       case 'charger':
         this.emitCue(enemy.charger?.state === 'charge' ? AUDIO_CUES.enemyCharge : AUDIO_CUES.danger);
         break;
+      case 'boss':
+        this.emitCue(AUDIO_CUES.danger);
+        break;
       default:
         break;
     }
@@ -2935,17 +3457,10 @@ export class GameSession {
     const pressure = ENEMY_PRESSURE_CONFIG[runSettings.enemyPressure];
     const speedMultiplier = difficulty.enemySpeedMultiplier * pressure.enemySpeedMultiplier;
     const intervalMultiplier = difficulty.enemyIntervalMultiplier * pressure.enemyIntervalMultiplier;
-    const respawnCheckpoint = activeCheckpointId
-      ? stage.checkpoints.find((checkpoint) => checkpoint.id === activeCheckpointId) ?? null
-      : null;
-    const respawnAnchor = respawnCheckpoint
-      ? resolveCheckpointRespawnPoint(stage, respawnCheckpoint.rect, PLAYER_WIDTH, PLAYER_HEIGHT)
-      : null;
-    const spawnX = respawnAnchor?.x ?? stage.playerSpawn.x;
-    const spawnY = respawnAnchor?.y ?? stage.playerSpawn.y;
+    const spawn = resolvePlayerSpawnFromCheckpoint(stage, activeCheckpointId, PLAYER_WIDTH, PLAYER_HEIGHT);
     const player: PlayerState = {
-      x: spawnX,
-      y: spawnY,
+      x: spawn.x,
+      y: spawn.y,
       vx: 0,
       vy: 0,
       width: PLAYER_WIDTH,
@@ -3050,8 +3565,8 @@ export class GameSession {
     const filteredEnemies = stage.enemies.filter((_, index) => pressure.keepEnemy(index));
     const enemies = filteredEnemies.map<EnemyState>((enemy) => {
       const variantRuntime = enemy.variant ? createTurretVariantRuntime(enemy.variant, intervalMultiplier) : null;
-      const width = enemy.kind === 'turret' ? 28 : 34;
-      const height = enemy.kind === 'turret' ? 38 : enemy.kind === 'flyer' ? 24 : 30;
+      const width = enemy.kind === 'boss' ? BOSS_WIDTH : enemy.kind === 'turret' ? 28 : WALKER_WIDTH;
+      const height = enemy.kind === 'boss' ? BOSS_HEIGHT : enemy.kind === 'turret' ? 38 : enemy.kind === 'flyer' ? 24 : WALKER_HEIGHT;
       const resolvedGroundedRect = isGroundedEnemy(enemy) ? resolveGroundedEnemyRect(stage, enemy) : null;
       const authoredSupport = isGroundedEnemy(enemy) ? findGroundedEnemySupport(stage, enemy) : null;
       const support = authoredSupport
@@ -3144,6 +3659,33 @@ export class GameSession {
               originY: enemy.position.y,
             }
           : undefined,
+        boss: enemy.boss
+          ? {
+              ...enemy.boss,
+              health: enemy.boss.health,
+              maxHealth: enemy.boss.health,
+              minIntervalMs: enemy.boss.minIntervalMs * intervalMultiplier,
+              maxIntervalMs: enemy.boss.maxIntervalMs * intervalMultiplier,
+              minMoveIntervalMs: enemy.boss.minMoveIntervalMs * intervalMultiplier,
+              maxMoveIntervalMs: enemy.boss.maxMoveIntervalMs * intervalMultiplier,
+              moveTimerMs: randomBossMoveInterval({
+                minMoveIntervalMs: enemy.boss.minMoveIntervalMs * intervalMultiplier,
+                maxMoveIntervalMs: enemy.boss.maxMoveIntervalMs * intervalMultiplier,
+              }),
+              runSpeed: enemy.boss.runSpeed * speedMultiplier,
+              jumpImpulse: enemy.boss.jumpImpulse,
+              left: enemy.boss.left,
+              right: enemy.boss.right,
+              timerMs: randomBossInterval({
+                minIntervalMs: enemy.boss.minIntervalMs * intervalMultiplier,
+                maxIntervalMs: enemy.boss.maxIntervalMs * intervalMultiplier,
+              }),
+              projectileSpeed: enemy.boss.projectileSpeed * speedMultiplier,
+              shotHeights: [...enemy.boss.shotHeights],
+              powerShots: [...enemy.boss.powerShots],
+              walkerSpawn: enemy.boss.walkerSpawn ? { ...enemy.boss.walkerSpawn } : undefined,
+            }
+          : undefined,
       };
     });
 
@@ -3167,6 +3709,7 @@ export class GameSession {
       activePowers: powerInventory,
       powerTimers,
       runSettings,
+      telemetry: progress.telemetry ?? createDefaultGameplayTelemetry(),
     };
     const objective = createStageObjectiveState(stage, checkpointRestore?.objectiveCompleted ?? false);
 
@@ -3193,6 +3736,7 @@ export class GameSession {
       stageMessage: objective && !objective.completed ? getStageObjectiveBriefing(objective.kind) : '',
       stageMessageTimerMs: objective && !objective.completed ? 2600 : 0,
       respawnTimerMs: 0,
+      stageElapsedMs: 0,
       stageRuntime: {
         platforms,
         lowGravityZones: stage.lowGravityZones.map<LowGravityZoneState>((zone) => ({ ...zone })),
@@ -3213,24 +3757,7 @@ export class GameSession {
         activationNodes: stage.activationNodes.map<ActivationNodeState>((node) => createInactiveActivationNodeState(node)),
         temporaryBridges,
         revealedPlatformIds: activeRevealIds,
-        checkpoints: stage.checkpoints.map<CheckpointState>((checkpoint) => {
-          const checkpointRect = resolveCheckpointRect(stage, checkpoint.rect);
-          const checkpointRespawn = resolveCheckpointRespawnPoint(stage, checkpoint.rect, PLAYER_WIDTH, PLAYER_HEIGHT);
-          if (!checkpointRespawn || !checkpointRect) {
-            throw new Error(`Checkpoint is missing grounded visible support at runtime: ${checkpoint.id}`);
-          }
-
-          return {
-            ...checkpoint,
-            rect: checkpointRect,
-            activated: checkpoint.id === activeCheckpointId,
-            supportPlatformId: checkpointRespawn.supportPlatformId,
-            respawn: {
-              x: checkpointRespawn.x,
-              y: checkpointRespawn.y,
-            },
-          };
-        }),
+        checkpoints: createRuntimeCheckpoints(stage, activeCheckpointId, PLAYER_WIDTH, PLAYER_HEIGHT),
         collectibles: stage.collectibles.map<CollectibleState>((collectible) => ({
           ...collectible,
           collected: checkpointRestore?.collectedCollectibleIds.has(collectible.id) ?? false,
@@ -3246,6 +3773,7 @@ export class GameSession {
               ? (checkpointRestore?.coinRewardBlocks.get(rewardBlock.id)?.remainingHits ?? rewardBlock.reward.amount)
               : 1,
           hitFlashMs: 0,
+          expiresInMs: undefined,
         })),
         rewardReveals: [],
         hazards: stage.hazards.map<HazardState>((hazard) => {

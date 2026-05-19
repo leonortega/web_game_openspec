@@ -1,5 +1,11 @@
 import type Phaser from 'phaser';
-import { createDefaultRunSettings, type SessionProgress } from '../../game/simulation/state';
+import {
+  createDefaultGameplayTelemetry,
+  createDefaultObjectiveTelemetry,
+  createDefaultRunSettings,
+  createDefaultStageTelemetry,
+  type SessionProgress,
+} from '../../game/simulation/state';
 
 const STORAGE_NAMESPACE = 'crystal-run-progress';
 const FILE_ID = 'session-progress';
@@ -15,6 +21,45 @@ const isBooleanRecord = (value: unknown): value is Record<string, boolean> =>
   isObject(value) && Object.values(value).every((entry) => typeof entry === 'boolean');
 
 const isString = (value: unknown): value is string => typeof value === 'string';
+
+const isNumberRecord = (value: unknown): value is Record<string, number> =>
+  isObject(value) && Object.values(value).every((entry) => isNumber(entry));
+
+const normalizeTelemetry = (value: unknown): SessionProgress['telemetry'] => {
+  const fallback = createDefaultGameplayTelemetry();
+  if (!isObject(value) || !isObject(value.stages)) {
+    return fallback;
+  }
+
+  const stages = Object.fromEntries(
+    Object.entries(value.stages).flatMap(([stageId, stageValue]) => {
+      if (!isObject(stageValue)) {
+        return [];
+      }
+
+      const objective = isObject(stageValue.objective) ? stageValue.objective : {};
+      const normalizedStage = {
+        ...createDefaultStageTelemetry(),
+        deathsBySegment: isNumberRecord(stageValue.deathsBySegment) ? stageValue.deathsBySegment : {},
+        checkpointRetries: isNumberRecord(stageValue.checkpointRetries) ? stageValue.checkpointRetries : {},
+        secretRouteUses: isNumberRecord(stageValue.secretRouteUses) ? stageValue.secretRouteUses : {},
+        objective: {
+          ...createDefaultObjectiveTelemetry(),
+          completions: isNumber(objective.completions) ? objective.completions : 0,
+          totalCompletionMs: isNumber(objective.totalCompletionMs) ? objective.totalCompletionMs : 0,
+          bestCompletionMs: isNumber(objective.bestCompletionMs) ? objective.bestCompletionMs : null,
+          lastCompletionMs: isNumber(objective.lastCompletionMs) ? objective.lastCompletionMs : null,
+        },
+      };
+
+      return [[stageId, normalizedStage]];
+    }),
+  );
+
+  return {
+    stages,
+  };
+};
 
 export class RunProgressStore {
   private readonly files: {
@@ -96,11 +141,13 @@ export class RunProgressStore {
 
     return {
       ...(progress as SessionProgress),
+      unlockedStageIndex: Math.max(5, progress.unlockedStageIndex),
       runSettings: {
         ...defaultRunSettings,
         ...(progress.runSettings as SessionProgress['runSettings']),
         crtEnabled: typeof runSettings.crtEnabled === 'boolean' ? runSettings.crtEnabled : defaultRunSettings.crtEnabled,
       },
+      telemetry: normalizeTelemetry(progress.telemetry),
     };
   }
 }

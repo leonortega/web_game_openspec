@@ -11,7 +11,7 @@ export type Rect = {
 };
 
 export type HazardKind = 'spikes';
-export type EnemyKind = 'walker' | 'hopper' | 'turret' | 'charger' | 'flyer';
+export type EnemyKind = 'walker' | 'hopper' | 'turret' | 'charger' | 'flyer' | 'boss';
 export type TurretVariantId = 'resinBurst' | 'ionPulse';
 export type PlatformKind = 'static' | 'moving' | 'falling' | 'spring' | 'magnet' | 'crystal';
 export type PlatformSurfaceTerrainKind = 'magnet' | 'crystal';
@@ -184,6 +184,7 @@ export type RewardBlockState = Rect & {
   used: boolean;
   remainingHits: number;
   hitFlashMs: number;
+  expiresInMs?: number;
   reward: RewardDefinition;
 };
 
@@ -269,12 +270,44 @@ export type EnemyState = {
     bobPhase: number;
     originY: number;
   };
+  boss?: {
+    health: number;
+    maxHealth: number;
+    visualStyle?: 'core' | 'crab';
+    minIntervalMs: number;
+    maxIntervalMs: number;
+    minMoveIntervalMs: number;
+    maxMoveIntervalMs: number;
+    moveTimerMs: number;
+    movementPhase?: 'random-hold' | 'random-jump';
+    movementPhaseTimerMs?: number;
+    movementTargetX?: number;
+    runSpeed: number;
+    jumpImpulse: number;
+    left: number;
+    right: number;
+    timerMs: number;
+    projectileSpeed: number;
+    shotHeights: number[];
+    powerShotChance: number;
+    powerShots: PowerType[];
+    walkerSpawn?: {
+      speed: number;
+      maxAlive: number;
+      damageOnStomp: number;
+    };
+  };
+  bossSpawn?: {
+    sourceBossId: string;
+    damageOnStomp: number;
+  };
 };
 
 export type ProjectileState = {
   id: string;
   owner: 'enemy' | 'player';
   variant?: TurretVariantId;
+  power?: PowerType;
   x: number;
   y: number;
   vx: number;
@@ -349,6 +382,25 @@ export type SessionProgress = {
   activePowers: PowerInventory;
   powerTimers: PowerTimers;
   runSettings: RunSettings;
+  telemetry: GameplayTelemetry;
+};
+
+export type ObjectiveTelemetry = {
+  completions: number;
+  totalCompletionMs: number;
+  bestCompletionMs: number | null;
+  lastCompletionMs: number | null;
+};
+
+export type StageTelemetry = {
+  deathsBySegment: Record<string, number>;
+  checkpointRetries: Record<string, number>;
+  secretRouteUses: Record<string, number>;
+  objective: ObjectiveTelemetry;
+};
+
+export type GameplayTelemetry = {
+  stages: Record<string, StageTelemetry>;
 };
 
 export const POWER_ORDER: PowerType[] = ['doubleJump', 'shooter', 'invincible', 'dash'];
@@ -576,12 +628,31 @@ export const createDefaultRunSettings = (): RunSettings => ({
   enemyPressure: 'normal',
 });
 
+export const createDefaultObjectiveTelemetry = (): ObjectiveTelemetry => ({
+  completions: 0,
+  totalCompletionMs: 0,
+  bestCompletionMs: null,
+  lastCompletionMs: null,
+});
+
+export const createDefaultStageTelemetry = (): StageTelemetry => ({
+  deathsBySegment: {},
+  checkpointRetries: {},
+  secretRouteUses: {},
+  objective: createDefaultObjectiveTelemetry(),
+});
+
+export const createDefaultGameplayTelemetry = (): GameplayTelemetry => ({
+  stages: {},
+});
+
 export const createDefaultSessionProgress = (): SessionProgress => ({
-  unlockedStageIndex: 0,
+  unlockedStageIndex: 6,
   totalCoins: 0,
   activePowers: createDefaultPowerInventory(),
   powerTimers: createDefaultPowerTimers(),
   runSettings: createDefaultRunSettings(),
+  telemetry: createDefaultGameplayTelemetry(),
 });
 
 export const getActivePowerLabels = (powers: PowerInventory, timers: PowerTimers): string[] =>

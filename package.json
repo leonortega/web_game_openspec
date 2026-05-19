@@ -21,6 +21,7 @@
     "localforage": "^1.10.0",
     "phaser": "^4.1.0",
     "phaser4-rex-plugins": "^4.0.6",
+    "puppeteer": "^25.0.4",
     "xstate": "^5.13.0"
   },
   "devDependencies": {

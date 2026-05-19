@@ -20,6 +20,8 @@ import {
 import { drawEnemyGraphic } from '../../view/runtimeCharacterGraphics';
 import { drawHazardGraphic, drawProjectileGraphic } from '../../view/runtimeWorldGraphics';
 
+export const BOSS_PAIN_ANIMATION_MS = 760;
+
 const ignoreFromUiCamera = (scene: Phaser.Scene, target: Phaser.GameObjects.GameObject): void => {
   const uiCamera = (scene as Phaser.Scene & { uiCamera?: Phaser.Cameras.Scene2D.Camera }).uiCamera;
   uiCamera?.ignore(target);
@@ -31,6 +33,7 @@ const ENEMY_VISUAL_HEIGHTS = {
   turret: TURRET_TEXTURE_SIZE.height,
   charger: CHARGER_TEXTURE_SIZE.height,
   flyer: FLYER_TEXTURE_SIZE.height,
+  boss: 260,
 } as const;
 
 export type GameSceneEnemyRenderingContext = Phaser.Scene & {
@@ -42,6 +45,7 @@ export type GameSceneEnemyRenderingContext = Phaser.Scene & {
   projectileSprites: Map<string, Phaser.GameObjects.Graphics>;
   enemyDefeatVisibleUntilMs: Map<string, number>;
   enemyHitFlashUntilMs: Map<string, number>;
+  bossPainUntilMs?: Map<string, number>;
 };
 
 export const getSpikeHazardToothRects = (
@@ -81,21 +85,32 @@ function syncEnemyContactStrip(scene: GameSceneEnemyRenderingContext, enemy: Ene
 }
 
 export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemyState): void {
-  const sprite = scene.enemySprites.get(enemy.id);
+  let sprite = scene.enemySprites.get(enemy.id);
   const accents = scene.enemyAccentSprites.get(enemy.id) ?? [];
   if (!sprite) {
-    return;
+    sprite = scene.add.graphics().setDepth(enemy.kind === 'boss' ? 4.8 : 2.8);
+    ignoreFromUiCamera(scene, sprite);
+    scene.enemySprites.set(enemy.id, sprite);
+    scene.enemyAccentSprites.set(enemy.id, []);
   }
   const defeatHoldUntilMs = scene.enemyDefeatVisibleUntilMs.get(enemy.id) ?? Number.NEGATIVE_INFINITY;
   const defeatHoldActive = !enemy.alive && scene.time.now < defeatHoldUntilMs;
   const hitFlashBlend = getRetroHitFlashBlend(scene.time.now, scene.enemyHitFlashUntilMs.get(enemy.id) ?? Number.NEGATIVE_INFINITY, 'enemy-hit');
+  const bossPainUntilMs = scene.bossPainUntilMs?.get(enemy.id) ?? Number.NEGATIVE_INFINITY;
+  const bossPainActive = Number.isFinite(bossPainUntilMs) && scene.time.now < bossPainUntilMs;
+  const bossPainProgress = bossPainActive
+    ? Phaser.Math.Clamp(1 - (bossPainUntilMs - scene.time.now) / BOSS_PAIN_ANIMATION_MS, 0, 1)
+    : 0;
+  if (!bossPainActive) {
+    scene.bossPainUntilMs?.delete(enemy.id);
+  }
   if (hitFlashBlend === 0) {
     scene.enemyHitFlashUntilMs.delete(enemy.id);
   }
   sprite.setVisible(enemy.alive || defeatHoldActive);
   if (enemy.alive) {
     const motion = getRetroEnemyPose(enemy, scene.time.now);
-    const visualHeight = ENEMY_VISUAL_HEIGHTS[enemy.kind];
+    const visualHeight = enemy.kind === 'boss' ? enemy.height : ENEMY_VISUAL_HEIGHTS[enemy.kind];
     const plantedOffsetY = enemy.kind !== 'flyer' && enemy.supportY !== null && Math.abs(enemy.y - enemy.supportY) <= 4 ? 0 : motion.yOffset;
     const renderY =
       enemy.kind === 'flyer'
@@ -104,12 +119,12 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
     const snappedEnemyX = snapRetroValue(enemy.x);
     const snappedRenderY = snapRetroValue(renderY);
     sprite.setPosition(snappedEnemyX, snappedRenderY);
-    sprite.setData('visualWidth', enemy.width);
-    sprite.setData('visualHeight', visualHeight);
+    sprite.setData?.('visualWidth', enemy.width);
+    sprite.setData?.('visualHeight', visualHeight);
     sprite.setScale(motion.scaleX, motion.scaleY);
     sprite.setAlpha(motion.alpha);
     sprite.setAngle(0);
-    sprite.setDepth(0);
+    sprite.setDepth(enemy.kind === 'boss' ? 4.8 : 2.8);
     const turretVariant = enemy.variant ? TURRET_VARIANT_CONFIG[enemy.variant] : null;
     const ramp = getRetroEnemyPaletteRamp(enemy, scene.retroPalette);
     let tint =
@@ -117,6 +132,8 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
         ? scene.retroPalette.alert
         : enemy.kind === 'flyer'
           ? scene.retroPalette.cool
+          : enemy.kind === 'boss'
+            ? 0xc458b6
           : turretVariant
             ? turretVariant.baseColor
             : enemy.kind === 'hopper'
@@ -131,12 +148,13 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
     if (ramp) {
       tint = ramp.baseTint;
     }
-    drawEnemyGraphic(sprite, {
+    drawEnemyGraphic(sprite as Phaser.GameObjects.Graphics, {
       enemy,
       pose: motion,
       tint,
       alpha: hitFlashBlend > 0 ? Math.max(motion.alpha, 0.88) : motion.alpha,
       hitFlashBlend,
+      bossPainProgress: bossPainActive ? bossPainProgress : undefined,
       brightColor: scene.retroPalette.bright,
       borderColor: scene.retroPalette.border,
     });
@@ -170,12 +188,12 @@ export function syncEnemy(scene: GameSceneEnemyRenderingContext, enemy: EnemySta
 
   if (defeatHoldActive) {
     const defeatPreset = getRetroDefeatTweenPreset(enemy.defeatCause === 'plasma-blast' ? 'plasma-blast' : 'stomp');
-    sprite.setData('visualWidth', enemy.width);
-    sprite.setData('visualHeight', ENEMY_VISUAL_HEIGHTS[enemy.kind]);
+    sprite.setData?.('visualWidth', enemy.width);
+    sprite.setData?.('visualHeight', ENEMY_VISUAL_HEIGHTS[enemy.kind]);
     sprite.setDepth(defeatPreset.depth);
     sprite.setAlpha(1);
     const defeatTint = enemy.defeatCause === 'plasma-blast' ? scene.retroPalette.bright : scene.retroPalette.alert;
-    drawEnemyGraphic(sprite, {
+    drawEnemyGraphic(sprite as Phaser.GameObjects.Graphics, {
       enemy,
       pose: { state: 'idle', yOffset: 0, scaleX: 1, scaleY: 1, alpha: 1, accentAlpha: 0, accentOffsetX: 0, accentOffsetY: 0 },
       tint: hitFlashBlend > 0 ? mixColor(defeatTint, scene.retroPalette.border, hitFlashBlend) : defeatTint,
@@ -215,11 +233,18 @@ export function syncProjectile(scene: GameSceneEnemyRenderingContext, projectile
   }
 
   sprite.setPosition(snapRetroValue(projectile.x), snapRetroValue(projectile.y));
+  const color = projectile.power
+    ? projectile.power === 'doubleJump'
+      ? 0xdfe8bf
+      : 0xf0c6a1
+    : projectile.variant
+      ? TURRET_VARIANT_CONFIG[projectile.variant].projectileColor
+      : 0xffc15b;
   drawProjectileGraphic(sprite, {
     projectile,
-    color: projectile.variant ? TURRET_VARIANT_CONFIG[projectile.variant].projectileColor : 0xffc15b,
+    color,
     brightColor: scene.retroPalette.bright,
     borderColor: scene.retroPalette.border,
-    alpha: projectile.variant ? 0.96 : 0.9,
+    alpha: projectile.variant || projectile.power ? 0.96 : 0.9,
   });
 }

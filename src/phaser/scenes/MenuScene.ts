@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
 import { AUDIO_CUES } from '../../audio/audioContract';
+import { stageDefinitions } from '../../game/content/stages';
 import {
   DIFFICULTY_LABELS,
   ENEMY_PRESSURE_LABELS,
@@ -15,7 +16,7 @@ import {
 } from '../retroPostFx';
 import { bindScaleOuter, createNinePatch, getAuthoredGameSize, getViewportMetrics, RETRO_TEXT_STYLE, UI_COLORS } from '../ui/rexUiTheme';
 
-type MenuView = 'root' | 'options' | 'help';
+type MenuView = 'root' | 'options' | 'help' | 'levelSelect';
 type RootOptionId = 'primary' | 'options' | 'help';
 type OptionsOptionId = 'difficulty' | 'enemies' | 'musicVolume' | 'sfxVolume' | 'crt';
 
@@ -31,6 +32,8 @@ const difficultyValues = ['casual', 'standard', 'expert'] as const;
 const enemyValues = ['low', 'normal', 'high'] as const;
 const rootOptions: RootOptionId[] = ['primary', 'options', 'help'];
 const optionEntries: OptionsOptionId[] = ['difficulty', 'enemies', 'musicVolume', 'sfxVolume', 'crt'];
+const stageShortcutKeys = ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX'] as const;
+const stageTierLabels = ['Easy', 'Easy+', 'Medium', 'Medium+', 'Hard', 'Hardest'] as const;
 
 const HELP_TEXT = [
   '[title]Controls[/title]',
@@ -80,6 +83,8 @@ export class MenuScene extends Phaser.Scene {
   private rootSelectedIndex = 0;
 
   private optionsSelectedIndex = 0;
+
+  private levelSelectedIndex = 0;
 
   private createMenuButton(
     x: number,
@@ -235,7 +240,7 @@ export class MenuScene extends Phaser.Scene {
         0,
         0,
         620,
-        54,
+        48,
         '',
         () => {
           this.optionsSelectedIndex = index;
@@ -249,6 +254,32 @@ export class MenuScene extends Phaser.Scene {
       button.text.setFontSize('15px');
       return {
         id: option,
+        container: button.container,
+        background: button.background,
+        hitArea: button.hitArea,
+        text: button.text,
+      };
+    });
+
+    const levelButtons: MenuButton[] = stageDefinitions.map((stage, index) => {
+      const button = this.createMenuButton(
+        0,
+        0,
+        620,
+        50,
+        '',
+        () => {
+          this.levelSelectedIndex = index;
+          syncSelection();
+        },
+        () => {
+          this.levelSelectedIndex = index;
+          startSelectedLevel();
+        },
+      );
+      button.text.setFontSize('14px');
+      return {
+        id: stage.id,
         container: button.container,
         background: button.background,
         hitArea: button.hitArea,
@@ -329,7 +360,7 @@ export class MenuScene extends Phaser.Scene {
       const rootStartY = frameTop + 232;
       const optionsStartY = frameTop + 168;
       const helpCenterY = frameTop + Math.min(frameHeight - 178, 310);
-      const footerY = centerY + frameHeight / 2 - (this.view === 'help' ? 14 : 12);
+      const footerY = centerY + frameHeight / 2 - (this.view === 'help' || this.view === 'levelSelect' ? 18 : 12);
 
       menuTitleText.setPosition(centerX, titleY);
       subtitleText.setPosition(centerX, subtitleY);
@@ -343,9 +374,35 @@ export class MenuScene extends Phaser.Scene {
       });
 
       optionButtons.forEach((button, index) => {
-        resizePanel(button.background, optionButtonWidth, 54);
-        button.hitArea.setSize(optionButtonWidth, 54);
-        button.container.setPosition(centerX, optionsStartY + index * 62);
+        resizePanel(button.background, optionButtonWidth, 48);
+        button.hitArea.setSize(optionButtonWidth, 48);
+        button.container.setPosition(centerX, optionsStartY + index * 54);
+      });
+
+      const levelColumns = frameWidth >= 640 && levelButtons.length > 6 ? 2 : 1;
+      const levelRows = Math.max(1, Math.ceil(levelButtons.length / levelColumns));
+      const levelTop = frameTop + 166;
+      const levelBottom = frameTop + frameHeight - 54;
+      const levelAvailableHeight = Math.max(160, levelBottom - levelTop);
+      const levelRowPitch = levelColumns > 1
+        ? Math.min(54, Math.floor(levelAvailableHeight / levelRows))
+        : Math.min(56, Math.floor(levelAvailableHeight / levelRows));
+      const levelButtonHeight = Math.max(32, Math.min(levelColumns > 1 ? 44 : 50, levelRowPitch - 6));
+      const levelColumnGap = 24;
+      const levelButtonWidth =
+        levelColumns > 1
+          ? Math.min(360, Math.max(240, (frameWidth - 112 - levelColumnGap) / 2))
+          : Math.min(620, Math.max(280, frameWidth - 92));
+      levelButtons.forEach((button, index) => {
+        const column = index % levelColumns;
+        const row = Math.floor(index / levelColumns);
+        const columnOffset =
+          levelColumns === 1 ? 0 : (column - (levelColumns - 1) / 2) * (levelButtonWidth + levelColumnGap);
+        resizePanel(button.background, levelButtonWidth, levelButtonHeight);
+        button.hitArea.setSize(levelButtonWidth, levelButtonHeight);
+        button.text.setFontSize(levelColumns > 1 ? '12px' : levelButtonHeight <= 36 ? '12px' : '14px');
+        button.text.setWordWrapWidth(Math.max(180, levelButtonWidth - 24), true);
+        button.container.setPosition(centerX + columnOffset, levelTop + row * levelRowPitch);
       });
 
       helpPanelWidth = Math.min(760, Math.max(300, frameWidth - 72));
@@ -367,10 +424,19 @@ export class MenuScene extends Phaser.Scene {
     const unlockSceneAudio = () => {
       void runUnlockedAudioAction(this.audio, () => {
         this.audio.startMenuMusic();
+        this.input.keyboard?.off('keydown', unlockSceneAudio);
+        this.input.off('pointerdown', unlockSceneAudio);
+        this.input.off('pointerup', unlockSceneAudio);
       });
     };
-    this.input.keyboard?.once('keydown', unlockSceneAudio);
-    this.input.once('pointerdown', unlockSceneAudio);
+    this.input.keyboard?.on('keydown', unlockSceneAudio);
+    this.input.on('pointerdown', unlockSceneAudio);
+    this.input.on('pointerup', unlockSceneAudio);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.keyboard?.off('keydown', unlockSceneAudio);
+      this.input.off('pointerdown', unlockSceneAudio);
+      this.input.off('pointerup', unlockSceneAudio);
+    });
 
     const renderOptionLabels = (): void => {
       const state = bridge.getSession().getState();
@@ -384,6 +450,15 @@ export class MenuScene extends Phaser.Scene {
 
       optionButtons.forEach((button) => {
         button.text.setText(labels[button.id as OptionsOptionId]);
+      });
+    };
+
+    const renderLevelLabels = (): void => {
+      levelButtons.forEach((button, index) => {
+        const stage = stageDefinitions[index];
+        const tierLabel = stageTierLabels[index] ?? 'Survey';
+        button.text.setText(`${index + 1}. ${stage.name}  ${tierLabel}`);
+        button.container.setAlpha(0.92);
       });
     };
 
@@ -410,29 +485,71 @@ export class MenuScene extends Phaser.Scene {
         setButtonState(button, active);
       });
 
-      titleText.setText(this.view === 'root' ? 'Main Menu' : this.view === 'options' ? 'Options' : 'Help');
+      levelButtons.forEach((button, index) => {
+        const active = this.view === 'levelSelect' && index === this.levelSelectedIndex;
+        button.container.setVisible(this.view === 'levelSelect');
+        setButtonState(button, active);
+      });
+
+      titleText.setText(
+        this.view === 'root'
+          ? 'Main Menu'
+          : this.view === 'options'
+            ? 'Options'
+            : this.view === 'help'
+              ? 'Help'
+              : 'Level Select',
+      );
       subtitleText.setText(
         this.view === 'root'
           ? 'Start the next survey run, tune the mission settings, or review powers and alien hazards before drop-in.'
           : this.view === 'options'
             ? 'Adjust run settings. Left / Right changes the highlighted row.'
-            : 'Field reference for powers, hazards, and controls.',
+            : this.view === 'help'
+              ? 'Field reference for powers, hazards, and controls.'
+              : 'Choose an unlocked stage.',
       );
       helpArea.setVisible(this.view === 'help');
       footerText.setText(
         this.view === 'root'
-          ? 'Enter selects. Arrow keys move. Press 1, 2, or 3 to jump directly into an unlocked sector.'
+          ? 'Enter selects. Arrow keys move.'
           : this.view === 'options'
             ? 'ESC returns to the root menu.'
-            : 'Mouse wheel or Up / Down scroll. ESC returns to the root menu.',
+            : this.view === 'help'
+              ? 'Mouse wheel or Up / Down scroll. ESC returns to the root menu.'
+              : 'Enter starts stage. ESC returns.',
       );
       syncLayout(authoredGameSize);
     };
 
     const startRun = (stageIndex = bridge.getSession().getState().stageIndex): void => {
       void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
+      bridge.beginTelemetrySession();
       bridge.startStage(stageIndex);
       this.scene.start('stage-intro');
+    };
+
+    const startSecretLevel = (stageIndex: number): void => {
+      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
+      bridge.beginTelemetrySession();
+      bridge.forceStartStage(stageIndex);
+      this.scene.start('stage-intro');
+    };
+
+    const startSelectedLevel = (): void => {
+      startSecretLevel(this.levelSelectedIndex);
+    };
+
+    const openLevelSelect = (): void => {
+      void playMenuInteractionCue(this.audio, AUDIO_CUES.menuConfirm);
+      this.levelSelectedIndex = clamp(
+        bridge.getSession().getState().stageIndex,
+        0,
+        Math.max(0, stageDefinitions.length - 1),
+      );
+      this.view = 'levelSelect';
+      renderLevelLabels();
+      syncSelection();
     };
 
     const activateRootOption = (option: RootOptionId): void => {
@@ -445,6 +562,8 @@ export class MenuScene extends Phaser.Scene {
       this.view = option;
       if (option === 'help') {
         resetHelpScroll();
+      } else {
+        renderOptionLabels();
       }
       syncSelection();
     };
@@ -459,6 +578,7 @@ export class MenuScene extends Phaser.Scene {
         bridge.updateRunSettings({ enemyPressure: enemyValues[wrapIndex(currentIndex + direction, enemyValues.length)] });
       } else if (option === 'musicVolume') {
         bridge.updateRunSettings({ musicVolume: clamp(state.progress.runSettings.musicVolume + direction * 0.1, 0, 1) });
+        this.audio.applyMusicVolume();
       } else if (option === 'sfxVolume') {
         bridge.updateRunSettings({ sfxVolume: clamp(state.progress.runSettings.sfxVolume + direction * 0.1, 0, 1) });
       } else if (option === 'crt') {
@@ -491,6 +611,8 @@ export class MenuScene extends Phaser.Scene {
 
       if (this.view === 'root') {
         this.rootSelectedIndex = wrapIndex(this.rootSelectedIndex - 1, rootButtons.length);
+      } else if (this.view === 'levelSelect') {
+        this.levelSelectedIndex = wrapIndex(this.levelSelectedIndex - 1, levelButtons.length);
       } else {
         this.optionsSelectedIndex = wrapIndex(this.optionsSelectedIndex - 1, optionButtons.length);
       }
@@ -506,6 +628,8 @@ export class MenuScene extends Phaser.Scene {
 
       if (this.view === 'root') {
         this.rootSelectedIndex = wrapIndex(this.rootSelectedIndex + 1, rootButtons.length);
+      } else if (this.view === 'levelSelect') {
+        this.levelSelectedIndex = wrapIndex(this.levelSelectedIndex + 1, levelButtons.length);
       } else {
         this.optionsSelectedIndex = wrapIndex(this.optionsSelectedIndex + 1, optionButtons.length);
       }
@@ -526,6 +650,8 @@ export class MenuScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ENTER', () => {
       if (this.view === 'root') {
         activateRootOption(rootOptions[this.rootSelectedIndex]);
+      } else if (this.view === 'levelSelect') {
+        startSelectedLevel();
       } else if (this.view === 'options') {
         cycleValue(optionEntries[this.optionsSelectedIndex], 1);
       }
@@ -533,23 +659,38 @@ export class MenuScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-SPACE', () => {
       if (this.view === 'root') {
         activateRootOption(rootOptions[this.rootSelectedIndex]);
+      } else if (this.view === 'levelSelect') {
+        startSelectedLevel();
       } else if (this.view === 'options') {
         cycleValue(optionEntries[this.optionsSelectedIndex], 1);
       }
     });
-    this.input.keyboard?.on('keydown-ESC', returnToRoot);
+    const escCtrlSHandler = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' || event.keyCode === 27) {
+        returnToRoot();
+        return;
+      }
+      if ((event.key === 's' || event.key === 'S') && event.ctrlKey && !event.metaKey && !event.altKey && this.view === 'root') {
+        event.preventDefault();
+        openLevelSelect();
+      }
+    };
+    window.addEventListener('keydown', escCtrlSHandler, true);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      window.removeEventListener('keydown', escCtrlSHandler, true);
+    });
     this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gos: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
       if (this.view === 'help') {
         scrollHelp(dy > 0 ? 1 : -1);
       }
     });
 
-    for (const key of ['ONE', 'TWO', 'THREE'] as const) {
+    for (const key of stageShortcutKeys.slice(0, stageDefinitions.length)) {
       this.input.keyboard?.on(`keydown-${key}`, () => {
         if (this.view !== 'root') {
           return;
         }
-        const stageIndex = { ONE: 0, TWO: 1, THREE: 2 }[key];
+        const stageIndex = stageShortcutKeys.indexOf(key);
         startRun(stageIndex);
       });
     }
@@ -567,6 +708,7 @@ export class MenuScene extends Phaser.Scene {
     });
 
     renderOptionLabels();
+    renderLevelLabels();
     syncSelection();
   }
 
@@ -581,7 +723,9 @@ export class MenuScene extends Phaser.Scene {
         ? ['Orbital Survey', 'Start', 'Options', 'Help']
         : this.view === 'options'
           ? ['Options', ...optionEntries]
-          : ['Help'];
+          : this.view === 'levelSelect'
+            ? ['Level Select', ...stageDefinitions.map((stage) => stage.name)]
+            : ['Help'];
     return {
       view: this.view,
       selectedText:

@@ -98,6 +98,15 @@ const CUE_PROFILES: Record<AudioCue, CueProfile> = {
       { frequency: 246.94, durationMs: 120, type: 'triangle', volume: 0.018, offsetMs: 30 },
     ],
   },
+  [AUDIO_CUES.bossPain]: {
+    family: 'boss',
+    signature: 'heavy crab pain rasp',
+    tones: [
+      { frequency: 146.83, durationMs: 90, type: 'sawtooth', volume: 0.03 },
+      { frequency: 110, durationMs: 150, type: 'triangle', volume: 0.024, offsetMs: 24 },
+      { frequency: 73.42, durationMs: 190, type: 'sine', volume: 0.018, offsetMs: 70 },
+    ],
+  },
   [AUDIO_CUES.turretFire]: { family: 'danger', signature: 'mechanical cannon bark', tones: [{ frequency: 349.23, durationMs: 90, type: 'square', volume: 0.026 }, { frequency: 233.08, durationMs: 110, type: 'triangle', volume: 0.018, offsetMs: 20 }] },
   [AUDIO_CUES.enemyPatrol]: { family: 'danger', signature: 'patrol turn tick', tones: [{ frequency: 277.18, durationMs: 60, type: 'square', volume: 0.02 }, { frequency: 233.08, durationMs: 70, type: 'triangle', volume: 0.015, offsetMs: 28 }] },
   [AUDIO_CUES.enemyHop]: { family: 'danger', signature: 'enemy leap boing', tones: [{ frequency: 392, durationMs: 70, type: 'square', volume: 0.022 }, { frequency: 523.25, durationMs: 90, type: 'triangle', volume: 0.018, offsetMs: 34 }] },
@@ -339,7 +348,11 @@ export class SynthAudio {
 
   private pendingPlaybackRequest?: PlaybackRequest;
 
+  private pendingSampledCue?: NonNullable<ReturnType<typeof getSfxAsset>>;
+
   private waitingForSoundManagerUnlock = false;
+
+  private activeAssetSound?: { sound: Phaser.Sound.BaseSound & { volume: number }; assetVolume: number };
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -363,7 +376,7 @@ export class SynthAudio {
 
       pushDebugEvent({ type: 'unlock', state: context.state, at: Date.now() });
       if (context.state === 'running') {
-        this.flushPendingPlaybackRequest();
+        this.flushPendingAudio();
       }
       return context.state === 'running';
     } catch {
@@ -416,6 +429,17 @@ export class SynthAudio {
     this.requestThemeMusic({ kind: 'theme', owner: 'transition', profile, phrase: 'stage-clear', stageId: source.id });
   }
 
+  applyMusicVolume(): void {
+    if (!this.activeAssetSound) {
+      return;
+    }
+    const musicSetting = clamp(this.getMusicVolume(), 0, 1);
+    const musicMultiplier = musicSetting * MUSIC_MULTIPLIER_SCALE;
+    try {
+      this.activeAssetSound.sound.volume = clamp(this.activeAssetSound.assetVolume * musicMultiplier, 0, 1);
+    } catch {}
+  }
+
   stopMusic(): void {
     this.pendingPlaybackRequest = undefined;
     this.activeStopper?.();
@@ -452,7 +476,14 @@ export class SynthAudio {
   }
 
   private playSampledCue(asset: NonNullable<ReturnType<typeof getSfxAsset>>): void {
-    if (!this.isPlaybackUnlocked() || this.isSoundManagerLocked()) {
+    if (!this.isPlaybackUnlocked()) {
+      this.pendingSampledCue = asset;
+      return;
+    }
+
+    if (this.isSoundManagerLocked()) {
+      this.pendingSampledCue = asset;
+      this.ensureSoundManagerUnlocked();
       return;
     }
 
@@ -464,6 +495,7 @@ export class SynthAudio {
     try {
       const sound = this.scene.sound.add(asset.assetKey);
       sound.play({ volume: clamp(asset.volume * sfxMasterVolume, 0, 1) });
+      this.pendingSampledCue = undefined;
     } catch {}
   }
 
@@ -508,7 +540,17 @@ export class SynthAudio {
     this.startThemeMusic(request, requestKey);
   }
 
-  private flushPendingPlaybackRequest(): void {
+  private flushPendingAudio(): void {
+    if (!this.isPlaybackUnlocked() || this.isSoundManagerLocked()) {
+      return;
+    }
+
+    const pendingCue = this.pendingSampledCue;
+    this.pendingSampledCue = undefined;
+    if (pendingCue) {
+      this.playSampledCue(pendingCue);
+    }
+
     const request = this.pendingPlaybackRequest;
     if (!request) {
       return;
@@ -567,7 +609,9 @@ export class SynthAudio {
         sourceUrl: asset.sourceUrl,
         at: Date.now(),
       });
+      this.activeAssetSound = { sound: sound as Phaser.Sound.BaseSound & { volume: number }, assetVolume: asset.volume };
       this.startOwnedMusic(owner, requestKey, () => {
+        this.activeAssetSound = undefined;
         try {
           sound.stop();
         } catch {}
@@ -802,7 +846,7 @@ export class SynthAudio {
       this.waitingForSoundManagerUnlock = true;
       soundManager.once?.('unlocked', () => {
         this.waitingForSoundManagerUnlock = false;
-        this.flushPendingPlaybackRequest();
+        this.flushPendingAudio();
       });
     }
 
@@ -812,7 +856,7 @@ export class SynthAudio {
 
     if (!soundManager.locked) {
       this.waitingForSoundManagerUnlock = false;
-      this.flushPendingPlaybackRequest();
+      this.flushPendingAudio();
     }
   }
 

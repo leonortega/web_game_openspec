@@ -39,6 +39,7 @@ const REQUIRED_BOOT_TEXTURE_KEYS = [
   'turret',
   'charger',
   'flyer',
+  'boss',
   'projectile',
   'retro-particle',
   'retro-particle-burst',
@@ -46,7 +47,7 @@ const REQUIRED_BOOT_TEXTURE_KEYS = [
   'checkpoint',
 ] as const;
 
-const BOOT_TEXTURE_VERSION = 8;
+const BOOT_TEXTURE_VERSION = 9;
 const BOOT_TEXTURE_VERSION_KEY = '__bootTextureVersion';
 
 const PLAYER_SHEET_FRAME_SIZE = {
@@ -77,6 +78,11 @@ export const CHARGER_TEXTURE_SIZE = {
 export const FLYER_TEXTURE_SIZE = {
   width: 34,
   height: 24,
+} as const;
+
+export const BOSS_TEXTURE_SIZE = {
+  width: 384,
+  height: 384,
 } as const;
 
 export const CHECKPOINT_TEXTURE_SIZE = {
@@ -156,6 +162,33 @@ export const drawFlyerTextureArt = (artist: PixelTextureArtist): void => {
   artist.fillRect(11, 16, 12, 2, '#fff7d8');
   artist.fillRect(12, 18, 10, 2, '#f5cf64');
   artist.fillRect(15, 20, 4, 2, '#8fdff2');
+};
+
+export const drawBossTextureArt = (artist: PixelTextureArtist): void => {
+  const s = 4;
+  const outline = (x: number, y: number, width: number, height: number, fill: string) =>
+    artist.outlinedRect(x * s, y * s, width * s, height * s, fill);
+  const fill = (x: number, y: number, width: number, height: number, color: string) =>
+    artist.fillRect(x * s, y * s, width * s, height * s, color);
+  outline(16, 4, 64, 76, '#7d8ca8');
+  fill(20, 8, 56, 68, '#c5d3ee');
+  outline(24, 10, 48, 58, '#ffd80d');
+  fill(28, 14, 40, 50, '#fff11c');
+  fill(16, 42, 12, 8, '#ffd80d');
+  fill(68, 42, 12, 8, '#ffd80d');
+  outline(34, 25, 28, 12, '#fff8c7');
+  fill(41, 29, 14, 4, '#2b1632');
+  outline(34, 47, 28, 12, '#fff8c7');
+  fill(41, 51, 14, 4, '#2b1632');
+  outline(18, 72, 60, 16, '#667489');
+  fill(26, 75, 10, 5, '#ff315f');
+  fill(48, 78, 6, 5, '#ff315f');
+  fill(60, 76, 10, 5, '#ff315f');
+  fill(25, 88, 4, 7, '#7d6ca8');
+  fill(50, 84, 5, 12, '#7d6ca8');
+  fill(70, 88, 4, 7, '#7d6ca8');
+  fill(20, 93, 9, 4, '#6c56a0');
+  fill(66, 93, 9, 4, '#6c56a0');
 };
 
 export const drawCheckpointTextureArt = (artist: PixelTextureArtist): void => {
@@ -265,6 +298,13 @@ export const registerBootTextures = (scene: Phaser.Scene): void => {
 
   createPixelTexture(scene, 'flyer', FLYER_TEXTURE_SIZE.width, FLYER_TEXTURE_SIZE.height, (context) => {
     drawFlyerTextureArt({
+      outlinedRect: (x, y, width, height, fill) => outlinedRect(context, x, y, width, height, fill),
+      fillRect: (x, y, width, height, fill) => fillRect(context, x, y, width, height, fill),
+    });
+  });
+
+  createPixelTexture(scene, 'boss', BOSS_TEXTURE_SIZE.width, BOSS_TEXTURE_SIZE.height, (context) => {
+    drawBossTextureArt({
       outlinedRect: (x, y, width, height, fill) => outlinedRect(context, x, y, width, height, fill),
       fillRect: (x, y, width, height, fill) => fillRect(context, x, y, width, height, fill),
     });

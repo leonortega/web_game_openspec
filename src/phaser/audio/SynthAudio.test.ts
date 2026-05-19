@@ -124,6 +124,33 @@ const createScene = (): FakeScene => {
   } as unknown as FakeScene;
 };
 
+const createLockedScene = () => {
+  const scene = createScene();
+  let locked = true;
+  let unlockedListener: (() => void) | undefined;
+
+  (scene as any).sound = {
+    ...scene.sound,
+    get locked() {
+      return locked;
+    },
+    once: vi.fn((event: string, listener: () => void) => {
+      if (event === 'unlocked') {
+        unlockedListener = listener;
+      }
+    }),
+    unlock: vi.fn(),
+  };
+
+  return {
+    scene,
+    unlockSoundManager: () => {
+      locked = false;
+      unlockedListener?.();
+    },
+  };
+};
+
 describe('SynthAudio', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -183,9 +210,7 @@ describe('SynthAudio', () => {
     expect(fakeContext.createGain).toHaveBeenCalledTimes(0);
     expect(scene.__sounds).toHaveLength(5);
     expect(debugEvents.every((event) => event.playback === 'sample')).toBe(true);
-    expect(debugEvents.find((event) => event.cue === AUDIO_CUES.capsuleTeleport)?.signature).toBe(
-      'sampled capsule portal sweep',
-    );
+    expect(debugEvents.find((event) => event.cue === AUDIO_CUES.capsuleTeleport)?.signature).toBe('short capsule teleport');
   });
 
   it('keeps thruster, projectile, hurt, and death cues distinct on the sampled path', () => {
@@ -234,17 +259,36 @@ describe('SynthAudio', () => {
     expect(scene.__sounds).toHaveLength(0);
   });
 
+  it('replays the first sampled cue after the sound manager unlocks', async () => {
+    const fakeContext = new FakeAudioContext();
+    vi.stubGlobal('AudioContext', vi.fn(() => fakeContext as unknown as AudioContext));
+    const { scene, unlockSoundManager } = createLockedScene();
+    const audio = new SynthAudio(scene, () => 1, () => 1);
+
+    await audio.unlock();
+    audio.playCue(AUDIO_CUES.menuConfirm);
+
+    expect(scene.__sounds).toHaveLength(0);
+
+    unlockSoundManager();
+
+    expect(scene.__sounds).toHaveLength(1);
+    expect(scene.__sounds[0].play).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps checked-in provenance manifests for menu, per-stage music, and sampled cues', () => {
-    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST).toHaveLength(4);
+    const activeMusicKeys = new Set([
+      MENU_SUSTAINED_MUSIC.assetKey,
+      ...stageDefinitions.map((stage) => getStageSustainedMusic(stage.id)?.assetKey).filter((assetKey) => assetKey !== undefined),
+    ]);
+    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST).toHaveLength(activeMusicKeys.size);
     expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.license === 'CC-BY-4.0')).toBe(true);
     expect(MENU_SUSTAINED_MUSIC.title).toBe('Call For Love');
-    expect(getStageSustainedMusic('forest-ruins')?.title).toBe('Hour For Two');
-    expect(getStageSustainedMusic('amber-cavern')?.title).toBe('Give Her Shadow');
-    expect(getStageSustainedMusic('sky-sanctum')?.title).toBe('Get Out');
-    expect(getAllMappedSfxAssets()).toHaveLength(Object.keys(AUDIO_CUES).length);
+    expect([...activeMusicKeys].every((assetKey) => ACTIVE_SUSTAINED_MUSIC_MANIFEST.some((entry) => entry.assetKey === assetKey))).toBe(true);
+    expect(getAllMappedSfxAssets()).toHaveLength(Object.keys(AUDIO_CUES).length - 1);
     expect(getAllMappedSfxAssets().every((entry) => entry.license === 'CC0')).toBe(true);
     expect(getAllMappedSfxAssets().every((entry) => entry.localAssetPath.startsWith('/audio/sfx/juhani-junkala-512/'))).toBe(true);
-    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.localAssetPath.startsWith('/audio/music/chillmindscapes-pack-4/'))).toBe(true);
+    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.localAssetPath.startsWith('/audio/music/'))).toBe(true);
     expect([...ACTIVE_SUSTAINED_MUSIC_MANIFEST, ...getAllMappedSfxAssets()].every((entry) => !entry.localAssetPath.includes('source-packs'))).toBe(true);
   });
 
@@ -271,9 +315,9 @@ describe('SynthAudio', () => {
     const completeAudio = new SynthAudio(completeScene, () => 1, () => 1);
 
     menuAudio.startMenuMusic();
-    gameplayAudio.startStageMusic(stageDefinitions[0]);
-    introAudio.playStageIntro(stageDefinitions[1]);
-    completeAudio.playStageClear(stageDefinitions[2], true);
+    gameplayAudio.startStageMusic(stageDefinitions.find((stage) => stage.id === 'surveyors-runoff')!);
+    introAudio.playStageIntro(stageDefinitions.find((stage) => stage.id === 'forest-ruins')!);
+    completeAudio.playStageClear(stageDefinitions.find((stage) => stage.id === 'sky-sanctum')!, true);
 
     await Promise.all([menuAudio.unlock(), gameplayAudio.unlock(), introAudio.unlock(), completeAudio.unlock()]);
 
@@ -295,8 +339,9 @@ describe('SynthAudio', () => {
     const introAudio = new SynthAudio(introScene, () => 1, () => 1);
     const finalAudio = new SynthAudio(finalScene, () => 1, () => 1);
 
-    introAudio.playStageIntro(stageDefinitions[2]);
-    finalAudio.playStageClear(stageDefinitions[2], true);
+    const skyStage = stageDefinitions.find((stage) => stage.id === 'sky-sanctum')!;
+    introAudio.playStageIntro(skyStage);
+    finalAudio.playStageClear(skyStage, true);
 
     await introAudio.unlock();
     await finalAudio.unlock();

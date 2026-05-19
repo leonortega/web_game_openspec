@@ -45,7 +45,7 @@ export class StageIntroScene extends Phaser.Scene {
     const authoredGameSize = getAuthoredGameSize(this);
     const state = bridge.getSession().getState();
     const stagePresentation = state.stage.presentation;
-    const samplesTaken = state.progress.totalCoins;
+    const stageSampleCount = state.stageRuntime.totalCoins;
     const powerVariant = state.player.presentationPower ?? getPrimaryPowerVariant(state.progress.activePowers, state.progress.powerTimers);
     const variantStyle = PLAYER_POWER_VARIANTS[powerVariant];
     this.audio = new SynthAudio(
@@ -108,7 +108,7 @@ export class StageIntroScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setDepth(3);
     const loadoutBodyText = this.add
-      .text(0, 0, `Samples: ${samplesTaken}\nBiome: ${stagePresentation.biomeLabel}\nStatus: ${describePowerVariant(powerVariant)}`, {
+      .text(0, 0, `Samples: ${stageSampleCount}\nBiome: ${stagePresentation.biomeLabel}\nStatus: ${describePowerVariant(powerVariant)}`, {
         ...RETRO_TEXT_STYLE,
         fontSize: '11px',
         color: UI_COLORS.text,

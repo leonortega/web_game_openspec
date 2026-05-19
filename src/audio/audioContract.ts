@@ -16,6 +16,7 @@ export const AUDIO_CUES = {
   thrusterImpact: 'thruster-impact',
   shoot: 'shoot',
   shootHit: 'shoot-hit',
+  bossPain: 'boss-pain',
   turretFire: 'turret-fire',
   enemyPatrol: 'enemy-patrol',
   enemyHop: 'enemy-hop',

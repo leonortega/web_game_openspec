@@ -23,7 +23,8 @@ const springPlatforms = (stage: StageDefinition) => stage.platforms.filter((plat
 
 const STAGE_START_CABIN_BASE_HEIGHT = 12;
 
-const cloneStage = (): StageDefinition => JSON.parse(JSON.stringify(stageDefinitions[0])) as StageDefinition;
+const cloneForestStage = (): StageDefinition =>
+  JSON.parse(JSON.stringify(stageDefinitions.find((stage) => stage.id === 'forest-ruins'))) as StageDefinition;
 const cloneAmberStage = (): StageDefinition =>
   JSON.parse(JSON.stringify(stageDefinitions.find((stage) => stage.id === 'amber-cavern'))) as StageDefinition;
 const cloneSkyStage = (): StageDefinition =>
@@ -83,13 +84,13 @@ const qualifyingEmptyPlatformRuns = (stage: StageDefinition) => stage.emptyPlatf
 
 describe('spring stage validation', () => {
   it('accepts exits that stay grounded on a supported final platform', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
 
     expect(validateStageDefinition(stage).exit).toEqual(stage.exit);
   });
 
   it('rejects unsupported floating exit endpoints', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
 
     stage.exit = {
       ...stage.exit,
@@ -100,7 +101,7 @@ describe('spring stage validation', () => {
   });
 
   it('rejects exits that only stand on reveal-only helper support', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     stage.exit = {
       ...stage.exit,
       x: stage.world.width - 60,
@@ -123,7 +124,7 @@ describe('spring stage validation', () => {
   });
 
   it('rejects retired bounce and gas surface mechanics authored on static support', () => {
-    const stage = cloneStage() as StageDefinition & { platforms: Array<StageDefinition['platforms'][number] & { surfaceMechanic?: unknown }> };
+    const stage = cloneForestStage() as StageDefinition & { platforms: Array<StageDefinition['platforms'][number] & { surfaceMechanic?: unknown }> };
 
     stage.platforms = stage.platforms.map((platform) =>
       platform.id === 'platform-510-575'
@@ -139,7 +140,7 @@ describe('spring stage validation', () => {
   });
 
   it('rejects overlapping spring platforms that fake a token overlay conversion', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
 
     stage.platforms.push(
       { id: 'overlap-a', kind: 'spring', x: 530, y: 575, width: 80, height: 32, spring: { boost: 860, cooldownMs: 350 } },
@@ -152,7 +153,7 @@ describe('spring stage validation', () => {
   });
 
   it('rejects deprecated spring launcher metadata encoded as launcher annotations', () => {
-    const stage = cloneStage() as StageDefinition & { launchers?: unknown[] };
+    const stage = cloneForestStage() as StageDefinition & { launchers?: unknown[] };
 
     stage.launchers = [
       { id: 'deprecated-spring', kind: 'spring', x: 530, y: 575, width: 80, height: 14 },
@@ -164,7 +165,7 @@ describe('spring stage validation', () => {
   });
 
   it('accepts shipped spring-platform conversions while keeping the shipped catalog free of launcher annotations', () => {
-    const forest = validateStageDefinition(cloneStage());
+    const forest = validateStageDefinition(cloneForestStage());
     const amber = validateStageDefinition(cloneAmberStage());
     const sky = validateStageDefinition(cloneSkyStage());
 
@@ -186,13 +187,13 @@ describe('spring stage validation', () => {
 
 describe('enemy placement validation', () => {
   it('accepts current grounded non-flying enemy placement across the authored stage', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
 
     expect(validateStageDefinition(stage).enemies).toEqual(stage.enemies);
   });
 
   it('keeps shipped grounded enemies authored flush to their resolved support across current stages', () => {
-    const stages = [cloneStage(), cloneAmberStage(), cloneSkyStage()];
+    const stages = [cloneForestStage(), cloneAmberStage(), cloneSkyStage()];
 
     for (const stage of stages) {
       for (const enemy of stage.enemies.filter((entry) => entry.kind !== 'flyer')) {
@@ -206,7 +207,7 @@ describe('enemy placement validation', () => {
   });
 
   it('keeps shipped spike hazards authored flush to their resolved support across current stages', () => {
-    const stages = [cloneStage(), cloneAmberStage(), cloneSkyStage()];
+    const stages = [cloneForestStage(), cloneAmberStage(), cloneSkyStage()];
 
     for (const stage of stages) {
       for (const hazard of stage.hazards.filter((entry) => entry.kind === 'spikes')) {
@@ -222,7 +223,7 @@ describe('enemy placement validation', () => {
   });
 
   it('keeps shipped checkpoints authored flush to their resolved support across current stages', () => {
-    const stages = [cloneStage(), cloneAmberStage(), cloneSkyStage()];
+    const stages = [cloneForestStage(), cloneAmberStage(), cloneSkyStage()];
 
     for (const stage of stages) {
       for (const checkpoint of stage.checkpoints) {
@@ -238,7 +239,7 @@ describe('enemy placement validation', () => {
   });
 
   it('keeps shipped exits authored flush to their resolved support across current stages', () => {
-    const stages = [cloneStage(), cloneAmberStage(), cloneSkyStage()];
+    const stages = [cloneForestStage(), cloneAmberStage(), cloneSkyStage()];
 
     for (const stage of stages) {
       const support = findExitSupport(stage, stage.exit);
@@ -249,7 +250,7 @@ describe('enemy placement validation', () => {
   });
 
   it('keeps shipped stage-start cabin bases planted on the start platform surface', () => {
-    const stages = [cloneStage(), cloneAmberStage(), cloneSkyStage()];
+    const stages = [cloneForestStage(), cloneAmberStage(), cloneSkyStage()];
 
     for (const stage of stages) {
       const support = stage.platforms.find(
@@ -265,7 +266,7 @@ describe('enemy placement validation', () => {
   });
 
   it('keeps shipped reward blocks authored high enough that visible support never snaps them upward', () => {
-    const stages = [cloneStage(), cloneAmberStage(), cloneSkyStage()];
+    const stages = [cloneForestStage(), cloneAmberStage(), cloneSkyStage()];
 
     for (const stage of stages) {
       for (const block of stage.rewardBlocks) {
@@ -278,7 +279,7 @@ describe('enemy placement validation', () => {
   });
 
   it('accepts grounded hoppers that start on real support and have a reachable supported first landing', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     const hopper = stage.enemies.find((enemy) => enemy.id === 'hopper-1');
     if (!hopper || hopper.kind !== 'hopper') {
       throw new Error('Expected forest hopper fixture.');
@@ -290,7 +291,7 @@ describe('enemy placement validation', () => {
   });
 
   it('rejects non-flying enemies that sit off readable platform support', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     const walker = stage.enemies.find((enemy) => enemy.id === 'walker-1');
     if (!walker || walker.kind !== 'walker') {
       throw new Error('Expected forest walker fixture.');
@@ -303,7 +304,7 @@ describe('enemy placement validation', () => {
   });
 
   it('rejects grounded hoppers that would start floating above nearby support', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     const hopper = stage.enemies.find((enemy) => enemy.id === 'hopper-1');
     if (!hopper || hopper.kind !== 'hopper') {
       throw new Error('Expected forest hopper fixture.');
@@ -315,14 +316,14 @@ describe('enemy placement validation', () => {
   });
 
   it('rejects grounded hoppers whose first hop has no reachable supported landing', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     stage.platforms = stage.platforms.filter((platform) => platform.id !== 'platform-2180-495');
 
     expect(() => validateStageDefinition(stage)).toThrow('Grounded hoppers must author a reachable supported first landing');
   });
 
   it('rejects non-flying enemies hidden below the stage floor while allowing flyers off platforms', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     const hopper = stage.enemies.find((enemy) => enemy.id === 'hopper-1');
     const flyer = stage.enemies.find((enemy) => enemy.id === 'flyer-1');
     if (!hopper || hopper.kind !== 'hopper' || !flyer || flyer.kind !== 'flyer') {
@@ -339,7 +340,7 @@ describe('enemy placement validation', () => {
   });
 
   it('rejects hazards that float off readable grounded support', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     const hazard = stage.hazards.find((entry) => entry.id === 'spikes-1');
     if (!hazard) {
       throw new Error('Expected forest hazard fixture.');
@@ -351,7 +352,7 @@ describe('enemy placement validation', () => {
   });
 
   it('rejects hazards that only pass by tolerant normalization instead of authored flush support', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     const hazard = stage.hazards.find((entry) => entry.id === 'spikes-1');
     if (!hazard) {
       throw new Error('Expected forest hazard fixture.');
@@ -363,7 +364,7 @@ describe('enemy placement validation', () => {
   });
 
   it('rejects grounded enemies that only stand on reveal-only helper support', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
 
     stage.platforms = stage.platforms.filter((platform) => platform.id !== 'platform-1020-470');
     stage.platforms.push({
@@ -383,12 +384,21 @@ describe('enemy placement validation', () => {
 describe('stage audio composition validation', () => {
   it('maps the current menu and playable stages to distinct ChillMindscapes sustained tracks', () => {
     expect(MENU_SUSTAINED_MUSIC.title).toBe('Call For Love');
-    expect(getStageSustainedMusic('forest-ruins')?.title).toBe('Hour For Two');
+    expect(getStageSustainedMusic('surveyors-runoff')?.title).toBe('Call For Love');
+    expect(getStageSustainedMusic('signal-weir')?.title).toBe('Goodbye Tales');
+    expect(getStageSustainedMusic('prism-liftworks')?.title).toBe('Give Her Shadow');
+    expect(getStageSustainedMusic('forest-ruins')?.title).toBe('Goodbye Tales');
     expect(getStageSustainedMusic('amber-cavern')?.title).toBe('Give Her Shadow');
     expect(getStageSustainedMusic('sky-sanctum')?.title).toBe('Get Out');
     expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.license === 'CC-BY-4.0')).toBe(true);
-    expect(new Set(ACTIVE_SUSTAINED_MUSIC_MANIFEST.map((entry) => entry.localAssetPath)).size).toBe(4);
-    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) => entry.localAssetPath.startsWith('/audio/music/chillmindscapes-pack-4/'))).toBe(true);
+    expect(ACTIVE_SUSTAINED_MUSIC_MANIFEST).toHaveLength(7);
+    expect(new Set(ACTIVE_SUSTAINED_MUSIC_MANIFEST.map((entry) => entry.stageId).filter(Boolean)).size).toBe(6);
+    expect(
+      ACTIVE_SUSTAINED_MUSIC_MANIFEST.every((entry) =>
+        entry.localAssetPath.startsWith('/audio/music/chillmindscapes-pack-4/') ||
+        entry.localAssetPath.startsWith('/audio/music/chillmindscapes-free-chiptune-music-pack-4/'),
+      ),
+    ).toBe(true);
     expect(BACKUP_SUSTAINED_MUSIC_MANIFEST.map((entry) => entry.title)).toEqual([
       'She Will Try',
       'Easy Dreams',
@@ -408,14 +418,14 @@ describe('stage audio composition validation', () => {
   });
 
   it('rejects stages missing required transition metadata', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     stage.audio.themeId = '';
 
     expect(() => validateStageDefinition(stage)).toThrow(
       'Stage audio metadata must declare a transition theme and signature',
     );
 
-    const missingPhraseFamily = cloneStage();
+    const missingPhraseFamily = cloneForestStage();
     missingPhraseFamily.audio.transitionPhrases.clear.relationship = '';
 
     expect(() => validateStageDefinition(missingPhraseFamily)).toThrow(
@@ -426,14 +436,14 @@ describe('stage audio composition validation', () => {
 
 describe('activation-node magnetic platform stage validation', () => {
   it('accepts the bounded forest rollout with one nearby activation node and one retry-safe magnetic platform', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
 
     expect(validateStageDefinition(stage).activationNodes).toHaveLength(1);
     expect(validateStageDefinition(stage).platforms.filter((platform) => platform.magnetic)).toHaveLength(1);
   });
 
   it('rejects magnetic platforms linked to unknown activation nodes', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     const magnetic = stage.platforms.find((platform) => platform.magnetic);
     if (!magnetic?.magnetic) {
       throw new Error('Expected forest magnetic fixture.');
@@ -445,14 +455,14 @@ describe('activation-node magnetic platform stage validation', () => {
   });
 
   it('rejects activation nodes that are too far from their linked magnetic platform', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     stage.activationNodes[0].x -= 40;
 
     expect(() => validateStageDefinition(stage)).toThrow('Activation nodes must stay nearby their linked magnetic platforms');
   });
 
   it('rejects magnetic routes that remove the retry-safe fallback below the powered platform', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     stage.platforms = stage.platforms.filter((platform) => platform.id !== 'platform-9920-540');
 
     expect(() => validateStageDefinition(stage)).toThrow(
@@ -463,7 +473,7 @@ describe('activation-node magnetic platform stage validation', () => {
 
 describe('gravity field stage validation', () => {
   it('requires every main stage to keep live brittle or sticky rollout while still authoring gravity sections', () => {
-    const forest = validateStageDefinition(cloneStage());
+    const forest = validateStageDefinition(cloneForestStage());
     const amber = validateStageDefinition(cloneAmberStage());
     const sky = validateStageDefinition(cloneSkyStage());
 
@@ -489,7 +499,7 @@ describe('gravity field stage validation', () => {
     const combinedKinds = new Set([...terrainKindsPresent(forest), ...terrainKindsPresent(amber), ...terrainKindsPresent(sky)]);
     expect(combinedKinds).toEqual(new Set(['crystal', 'magnet']));
 
-    const forestWithoutTerrain = cloneStage();
+    const forestWithoutTerrain = cloneForestStage();
     forestWithoutTerrain.platforms = forestWithoutTerrain.platforms.map((platform) =>
       platform.id === 'platform-9920-540-magnet' ? { ...platform, kind: 'static' as const } : platform,
     );
@@ -542,7 +552,7 @@ describe('gravity field stage validation', () => {
   });
 
   it('rejects legacy brittle and sticky terrain overlays and non-static platform variant usage', () => {
-    const legacyOverlayStage = cloneStage() as ReturnType<typeof cloneStage> & { terrainSurfaces?: unknown[] };
+    const legacyOverlayStage = cloneForestStage() as ReturnType<typeof cloneForestStage> & { terrainSurfaces?: unknown[] };
     legacyOverlayStage.platforms = legacyOverlayStage.platforms.map((platform) => ({ ...platform }));
     legacyOverlayStage.terrainSurfaces = [
       { id: 'legacy-sticky', kind: 'magnet', x: 8350, y: 520, width: 132, height: 12 },
@@ -552,7 +562,7 @@ describe('gravity field stage validation', () => {
       'Crystal and magnet routes must be authored as platform kinds instead of terrain surfaces',
     );
 
-    const mixedAuthoringStage = cloneStage();
+    const mixedAuthoringStage = cloneForestStage();
     mixedAuthoringStage.gravityCapsules = mixedAuthoringStage.gravityCapsules.map((capsule, index) =>
       index === 0
         ? {
@@ -569,7 +579,7 @@ describe('gravity field stage validation', () => {
       'Gravity rooms must reference platform-owned surface mechanics through platform ids',
     );
 
-    const movingVariantStage = cloneStage();
+    const movingVariantStage = cloneForestStage();
     movingVariantStage.platforms = movingVariantStage.platforms.map((platform) =>
       platform.kind === 'moving' ? { ...platform, kind: 'magnet' as const } : platform,
     );
@@ -595,7 +605,7 @@ describe('gravity field stage validation', () => {
   });
 
   it('encloses every current playable gravity field in its own authored gravity room', () => {
-    const forest = validateStageDefinition(cloneStage());
+    const forest = validateStageDefinition(cloneForestStage());
     const amber = validateStageDefinition(cloneAmberStage());
     const sky = validateStageDefinition(cloneSkyStage());
 
@@ -612,7 +622,7 @@ describe('gravity field stage validation', () => {
   });
 
   it('rejects current playable stages that leave any gravity field outside its own linked room', () => {
-    const forest = cloneStage();
+    const forest = cloneForestStage();
     forest.gravityFields[0] = {
       ...forest.gravityFields[0],
       gravityCapsuleId: undefined,
@@ -718,7 +728,7 @@ describe('gravity field stage validation', () => {
   });
 
   it('accepts current gravity rooms that reuse authored intended route supports without doorway-only helper ledges', () => {
-    const forest = validateStageDefinition(cloneStage());
+    const forest = validateStageDefinition(cloneForestStage());
     const amber = validateStageDefinition(cloneAmberStage());
     const sky = validateStageDefinition(cloneSkyStage());
 
@@ -736,7 +746,7 @@ describe('gravity field stage validation', () => {
   });
 
   it('accepts the current four gravity rooms only when IN reads left, the button sits mid-room, and OUT reads right', () => {
-    const forestFlow = gravityRoomFlowSummary(validateStageDefinition(cloneStage()), 'forest-anti-grav-canopy-room');
+    const forestFlow = gravityRoomFlowSummary(validateStageDefinition(cloneForestStage()), 'forest-anti-grav-canopy-room');
     const amberFlow = gravityRoomFlowSummary(validateStageDefinition(cloneAmberStage()), 'amber-inversion-smelter-room');
     const skyAntiGravFlow = gravityRoomFlowSummary(validateStageDefinition(cloneSkyStage()), 'sky-anti-grav-capsule');
     const skyInversionFlow = gravityRoomFlowSummary(validateStageDefinition(cloneSkyStage()), 'sky-gravity-inversion-capsule');
@@ -757,7 +767,7 @@ describe('gravity field stage validation', () => {
 
   it('accepts current gravity rooms only when the inverse-jump button route rises above the entry and exit supports', () => {
     const rooms = [
-      validateStageDefinition(cloneStage()).gravityCapsules[0],
+      validateStageDefinition(cloneForestStage()).gravityCapsules[0],
       validateStageDefinition(cloneAmberStage()).gravityCapsules[0],
       ...validateStageDefinition(cloneSkyStage()).gravityCapsules,
     ];
@@ -996,7 +1006,7 @@ describe('gravity field stage validation', () => {
   });
 
   it('accepts gravity rooms whose doorway path is provided by a moving platform', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     const entrySupport = stage.platforms.find((platform) => platform.id === 'platform-8610-450-moving');
     if (!entrySupport) {
       throw new Error('Expected forest gravity-room moving entry path fixture.');
@@ -1074,13 +1084,13 @@ describe('gravity field stage validation', () => {
   });
 
   it('accepts checkpoints that stand on visible stable authored support', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
 
     expect(validateStageDefinition(stage).checkpoints.map((checkpoint) => checkpoint.id)).toContain('cp-1');
   });
 
   it('rejects checkpoints that only stand on reveal-platform support', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     stage.stageObjective = undefined;
     stage.platforms = [
       ...stage.platforms.filter(
@@ -1102,7 +1112,7 @@ describe('gravity field stage validation', () => {
   });
 
   it('rejects checkpoints that only stand on temporary bridge support', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     stage.stageObjective = undefined;
     stage.scannerVolumes = [
       {
@@ -1134,7 +1144,7 @@ describe('gravity field stage validation', () => {
   });
 
   it('rejects airborne checkpoints without grounded support', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     stage.checkpoints[0] = {
       ...stage.checkpoints[0],
       rect: { x: 1420, y: 410, width: 24, height: 80 },
@@ -1144,7 +1154,7 @@ describe('gravity field stage validation', () => {
   });
 
   it('rejects checkpoints that only pass by tolerant normalization instead of authored flush support', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     stage.checkpoints[0] = {
       ...stage.checkpoints[0],
       rect: { ...stage.checkpoints[0].rect, y: stage.checkpoints[0].rect.y + 4 },
@@ -1154,7 +1164,7 @@ describe('gravity field stage validation', () => {
   });
 
   it('rejects checkpoints that overlap spring footing instead of stable grounded support', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     stage.collectibles = [];
     stage.rewardBlocks = [];
     stage.platforms = stage.platforms.map((platform) =>
@@ -1171,7 +1181,7 @@ describe('gravity field stage validation', () => {
   });
 
   it('rejects reward blocks that only clear nearby support after hidden snap fallback', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     stage.rewardBlocks[0] = {
       ...stage.rewardBlocks[0],
       y: stage.rewardBlocks[0].y + 8,
@@ -1204,7 +1214,7 @@ describe('gravity field stage validation', () => {
 
 describe('empty-platform variety validation', () => {
   it('accepts shipped empty-platform traversal challenge metadata with mixed mechanic families', () => {
-    const stages = [validateStageDefinition(cloneStage()), validateStageDefinition(cloneAmberStage()), validateStageDefinition(cloneSkyStage())];
+    const stages = [validateStageDefinition(cloneForestStage()), validateStageDefinition(cloneAmberStage()), validateStageDefinition(cloneSkyStage())];
 
     for (const stage of stages) {
       const qualifyingRuns = qualifyingEmptyPlatformRuns(stage);
@@ -1216,7 +1226,7 @@ describe('empty-platform variety validation', () => {
   });
 
   it('rejects jump-only empty-platform traversal challenge runs', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
     stage.emptyPlatformRuns = [
       {
         id: 'forest-jump-only-fixture',
@@ -1374,7 +1384,7 @@ describe('lightweight stage objective validation', () => {
   });
 
   it('rejects stage objectives that reference unknown authored targets', () => {
-    const stage = cloneStage();
+    const stage = cloneForestStage();
 
     stage.stageObjective = {
       kind: 'restoreBeacon',

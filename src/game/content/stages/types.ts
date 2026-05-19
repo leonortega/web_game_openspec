@@ -95,6 +95,27 @@ export type EnemyDefinition = {
   turret?: { intervalMs: number };
   charger?: { left: number; right: number; patrolSpeed: number; chargeSpeed: number; windupMs: number; cooldownMs: number };
   flyer?: { left: number; right: number; speed: number; bobAmp: number; bobSpeed: number };
+  boss?: {
+    health: number;
+    visualStyle?: 'core' | 'crab';
+    minIntervalMs: number;
+    maxIntervalMs: number;
+    minMoveIntervalMs: number;
+    maxMoveIntervalMs: number;
+    runSpeed: number;
+    jumpImpulse: number;
+    left: number;
+    right: number;
+    projectileSpeed: number;
+    shotHeights: number[];
+    powerShotChance: number;
+    powerShots: Array<'doubleJump' | 'shooter'>;
+    walkerSpawn?: {
+      speed: number;
+      maxAlive: number;
+      damageOnStomp: number;
+    };
+  };
 };
 
 export type RewardBlockDefinition = Rect & {

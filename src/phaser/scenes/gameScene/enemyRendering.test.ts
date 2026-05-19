@@ -6,20 +6,30 @@ vi.mock('phaser', () => ({
   },
 }));
 
-import { syncEnemy } from './enemyRendering';
+import { BOSS_PAIN_ANIMATION_MS, syncEnemy } from './enemyRendering';
+
+const createGraphicsMock = () => ({
+  clear: vi.fn().mockReturnThis(),
+  setAlpha: vi.fn().mockReturnThis(),
+  setData: vi.fn().mockReturnThis(),
+  setVisible: vi.fn().mockReturnThis(),
+  setPosition: vi.fn().mockReturnThis(),
+  setFlipX: vi.fn().mockReturnThis(),
+  setScale: vi.fn().mockReturnThis(),
+  setAngle: vi.fn().mockReturnThis(),
+  setDepth: vi.fn().mockReturnThis(),
+  setTint: vi.fn().mockReturnThis(),
+  fillStyle: vi.fn().mockReturnThis(),
+  fillRoundedRect: vi.fn().mockReturnThis(),
+  fillRect: vi.fn().mockReturnThis(),
+  lineStyle: vi.fn().mockReturnThis(),
+  lineBetween: vi.fn().mockReturnThis(),
+  strokeRoundedRect: vi.fn().mockReturnThis(),
+});
 
 describe('syncEnemy', () => {
   it('keeps grounded hoppers visually planted on support instead of lifting with pose offsets', () => {
-    const sprite = {
-      setVisible: vi.fn().mockReturnThis(),
-      setPosition: vi.fn().mockReturnThis(),
-      setFlipX: vi.fn().mockReturnThis(),
-      setScale: vi.fn().mockReturnThis(),
-      setAlpha: vi.fn().mockReturnThis(),
-      setAngle: vi.fn().mockReturnThis(),
-      setDepth: vi.fn().mockReturnThis(),
-      setTint: vi.fn().mockReturnThis(),
-    };
+    const sprite = createGraphicsMock();
     
     const stripMethods = {
       setPosition: vi.fn().mockReturnThis(),
@@ -77,20 +87,11 @@ describe('syncEnemy', () => {
     const lastCall = sprite.setPosition.mock.calls[sprite.setPosition.mock.calls.length - 1] ?? [];
     const [, renderY] = lastCall;
 
-    expect(renderY).toBeCloseTo(510 + 30 - 28 * 0.86, 5);
+    expect(renderY).toBe(516);
   });
 
   it('still allows airborne hoppers to use pose offsets during jump arc', () => {
-    const sprite = {
-      setVisible: vi.fn().mockReturnThis(),
-      setPosition: vi.fn().mockReturnThis(),
-      setFlipX: vi.fn().mockReturnThis(),
-      setScale: vi.fn().mockReturnThis(),
-      setAlpha: vi.fn().mockReturnThis(),
-      setAngle: vi.fn().mockReturnThis(),
-      setDepth: vi.fn().mockReturnThis(),
-      setTint: vi.fn().mockReturnThis(),
-    };
+    const sprite = createGraphicsMock();
     
     const stripMethods = {
       setPosition: vi.fn().mockReturnThis(),
@@ -148,20 +149,11 @@ describe('syncEnemy', () => {
     const lastCall = sprite.setPosition.mock.calls[sprite.setPosition.mock.calls.length - 1] ?? [];
     const [, renderY] = lastCall;
 
-    expect(renderY).toBeCloseTo(480 + 30 - 28 * 1.12 - 2, 5);
+    expect(renderY).toBe(476);
   });
 
   it('drops expired enemy hit flashes and keeps palette-ramp accents local to turret variants', () => {
-    const sprite = {
-      setVisible: vi.fn().mockReturnThis(),
-      setPosition: vi.fn().mockReturnThis(),
-      setFlipX: vi.fn().mockReturnThis(),
-      setScale: vi.fn().mockReturnThis(),
-      setAlpha: vi.fn().mockReturnThis(),
-      setAngle: vi.fn().mockReturnThis(),
-      setDepth: vi.fn().mockReturnThis(),
-      setTint: vi.fn().mockReturnThis(),
-    };
+    const sprite = createGraphicsMock();
     const accentA = {
       setVisible: vi.fn().mockReturnThis(),
       setPosition: vi.fn().mockReturnThis(),
@@ -215,6 +207,60 @@ describe('syncEnemy', () => {
     expect(scene.enemyHitFlashUntilMs.has('turret-1')).toBe(false);
     expect(accentA.setVisible).toHaveBeenCalledWith(true);
     expect(accentB.setVisible).toHaveBeenCalledWith(true);
-    expect(sprite.setTint).toHaveBeenCalled();
+    expect(sprite.setData).toHaveBeenCalledWith('renderTint', expect.any(Number));
+  });
+
+  it('keeps boss-2 pain animation active on the first redraw frame', () => {
+    const sprite = createGraphicsMock();
+    const scene = {
+      enemySprites: new Map([['boss-2', sprite]]),
+      enemyContactStrips: new Map(),
+      enemyAccentSprites: new Map(),
+      enemyDefeatVisibleUntilMs: new Map(),
+      enemyHitFlashUntilMs: new Map(),
+      bossPainUntilMs: new Map([['boss-2', BOSS_PAIN_ANIMATION_MS]]),
+      retroPalette: {
+        alert: 0xff0000,
+        cool: 0x00aaff,
+        safe: 0x00ff00,
+        warm: 0xffaa00,
+        bright: 0xffffff,
+        border: 0xf7f3d6,
+        ink: 0x101010,
+      },
+      time: {
+        now: 0,
+      },
+    } as any;
+
+    syncEnemy(scene, {
+      id: 'boss-2',
+      alive: true,
+      defeatCause: null,
+      x: 900,
+      y: 280,
+      width: 96,
+      height: 260,
+      direction: -1,
+      supportY: 280,
+      supportPlatformId: 'floor',
+      kind: 'boss',
+      vx: 0,
+      vy: 0,
+      boss: {
+        health: 49,
+        maxHealth: 50,
+        visualStyle: 'crab',
+        shotTimerMs: 0,
+        shotIntervalMs: 0,
+        shotHeights: [],
+        projectileSpeed: 0,
+        powerShots: [],
+        powerShotChance: 0,
+      },
+    } as any);
+
+    expect(scene.bossPainUntilMs.has('boss-2')).toBe(true);
+    expect(sprite.fillRoundedRect.mock.calls.some(([, , width, height, radius]) => width === 7 && height < 3 && radius === 1)).toBe(true);
   });
 });
